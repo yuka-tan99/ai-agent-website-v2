@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+body { @apply bg-white text-gray-900; }
+.container { @apply max-w-6xl mx-auto px-4; }
+.card { @apply rounded-2xl border shadow-sm bg-white; }
+.blur-lock { @apply backdrop-blur-md bg-white/50 border; }

@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     if (!hasPlan) return NextResponse.json({ error: 'Plan required' }, { status: 403 })
   }
 
-  const stripe = new Stripe(secret, { apiVersion: '2023-10-16' })
+  const stripe = new Stripe(secret, { apiVersion: '2024-06-20' })
 
   const session = await stripe.checkout.sessions.create({
     mode: product === 'advisor' ? 'subscription' : 'payment',

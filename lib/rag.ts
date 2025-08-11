@@ -1,10 +1,14 @@
-// lib/rag.ts
 import { supabaseBrowser } from './supabaseClient'
 import { geminiEmbeddings } from './gemini'
 
 // Gemini embeddings -> 768-dim
 export async function embed(text: string) {
-  const res = await geminiEmbeddings.embedContent({ content: { parts: [{ text }] } })
+  const res = await geminiEmbeddings.embedContent({
+    content: {
+      role: "user", // ✅ required by Gemini SDK
+      parts: [{ text }]
+    }
+  })
   return res.embedding.values // number[]
 }
 

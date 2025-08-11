@@ -9,6 +9,7 @@ type Plan = {
   profile_summary: string
   overall_strategy: string
   platform_strategies: { platform: string; strategy: string }[]
+  roadblocks?: { issue: string; solution: string }[] // ✅ Added
   audience_blueprint?: string
   content_pillars?: string[]
   hook_swipefile?: string[]
@@ -17,9 +18,17 @@ type Plan = {
   collaboration_ideas?: string[]
   distribution_playbook?: string[]
   experiments?: string[]
-  timeline_30_60_90?: { day_0_30?: string[]; day_31_60?: string[]; day_61_90?: string[] }
+  timeline_30_60_90?: {
+    day_0_30?: string[]
+    day_31_60?: string[]
+    day_61_90?: string[]
+  }
   weekly_routine?: string[]
-  kpis?: { weekly_posts?: number; target_view_rate_pct?: number; target_followers_30d?: number }
+  kpis?: {
+    weekly_posts?: number
+    target_view_rate_pct?: number
+    target_followers_30d?: number
+  }
   content_ideas?: { title: string; outline: string }[]
   risk_watchouts?: string[]
   next_steps: string[]

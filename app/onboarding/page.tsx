@@ -1,17 +1,20 @@
 'use client'
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
-type Question = {
-  id: string;
-  text: string;
-  options: string[];
-  sub?: any;
-  sub2?: any;
-};
+type BaseQ = {
+  id: string
+  text: string
+  options: string[]
+  multiple?: boolean
+}
+type Question = BaseQ & {
+  // sub can be: a single follow-up OR an object mapping from chosen option -> follow-up
+  sub?: BaseQ | Record<string, BaseQ>
+  sub2?: BaseQ
+}
 
 const questions: Question[] = [
-
   {
     id: 'creatingAs',
     text: 'Are you creating as?',
@@ -22,6 +25,7 @@ const questions: Question[] = [
       'a hobbyist sharing for fun',
       'not sure yet',
     ],
+    multiple: true,
     sub: {
       'a personal brand (influencer, artist, creator)': {
         id: 'focusPersonal',
@@ -30,8 +34,9 @@ const questions: Question[] = [
           'building my influence',
           'showcasing my art/work',
           'connecting with a niche community',
-          'sharing my unique perspective'
-        ]
+          'sharing my unique perspective',
+        ],
+        multiple: true
       },
       'a business or product brand': {
         id: 'focusBusiness',
@@ -40,8 +45,9 @@ const questions: Question[] = [
           'selling products or services',
           'building brand awareness',
           'generating leads',
-          'showing thought leadership'
-        ]
+          'showing thought leadership',
+        ],
+        multiple: true
       },
       'a public figure (musician, coach, expert)': {
         id: 'focusPublic',
@@ -50,8 +56,9 @@ const questions: Question[] = [
           'growing a fanbase',
           'sharing expertise',
           'driving event attendance',
-          'securing partnerships'
-        ]
+          'securing partnerships',
+        ],
+        multiple: true
       },
       'a hobbyist sharing for fun': {
         id: 'focusHobbyist',
@@ -60,10 +67,11 @@ const questions: Question[] = [
           'showcasing my art/work',
           'sharing expertise',
           'connecting with a niche community',
-          'sharing my unique expertise'
-        ]
-      }
-    }
+          'sharing my unique expertise',
+        ],
+        multiple: true
+      },
+    },
   },
   {
     id: 'identity',
@@ -75,6 +83,7 @@ const questions: Question[] = [
       'have a large following but want more engagement',
       'looking to pivot or redefine my brand',
     ],
+    multiple: true,
     sub: {
       id: 'stuckReason',
       text: 'what does "stuck" feel like?',
@@ -83,8 +92,9 @@ const questions: Question[] = [
         'not sure what content to make next',
         'my engagement is dropping',
         'feeling uninspired',
-      ]
-    }
+      ],
+      multiple: true
+    },
   },
   {
     id: 'goal',
@@ -98,6 +108,7 @@ const questions: Question[] = [
       'share my journey | life authentically',
       'drive traffic to my website | business',
     ],
+    multiple: true,
     sub: {
       id: 'brandFocus',
       text: 'what’s your focus with brand deals?',
@@ -106,8 +117,9 @@ const questions: Question[] = [
         'getting free products',
         'building long-term partnerships',
         'creating user-generated content',
-      ]
-    }
+      ],
+      multiple: true
+    },
   },
   {
     id: 'face',
@@ -115,18 +127,15 @@ const questions: Question[] = [
     options: [
       'yes, I’m cool with that',
       'no, I’d rather stay behind the scenes',
-      'maybe / I’m not sure yet'
+      'maybe / I’m not sure yet',
     ],
+    multiple: true,
     sub: {
       id: 'howOften',
       text: 'how often?',
-      options: [
-        'in all my videos',
-        'occasionally',
-        'in photos but not video',
-        'for live streams',
-      ]
-    }
+      options: ['in all my videos', 'occasionally', 'in photos but not video', 'for live streams'],
+      multiple: true
+    },
   },
   {
     id: 'camera',
@@ -135,22 +144,21 @@ const questions: Question[] = [
       'love it - comfortable talking | performing',
       'It’s okay - depends on the day | content',
       'kinda awkward - prefer voiceovers | edits',
-      "no thanks - rather stay off-camera"
+      'no thanks - rather stay off-camera',
     ],
+    multiple: true,
     sub: {
       id: 'comfortable',
       text: 'what makes you comfortable?',
-      options: [
-        'I’m a natural entertainer',
-        'I enjoy public speaking',
-        'I feel confident',
-        'I love connecting directly',
-      ]
-    }
+      options: ['I’m a natural entertainer', 'I enjoy public speaking', 'I feel confident', 'I love connecting directly'],
+      multiple: true
+    },
+    
   },
   {
     id: 'topics',
     text: 'what topics do you love talking about most?',
+    multiple: true, 
     options: [
       'my passion | hobby',
       'my expertise | job',
@@ -161,32 +169,25 @@ const questions: Question[] = [
       'education | giving tips',
       'personal stories | experiences',
       'comedy | entertainment',
-      'something else...'
+      'something else...',
     ],
     sub: {
       id: 'trends',
       text: 'what kind of trends?',
-      options: [
-        'pop culture commentary',
-        'news & politics',
-        'industry trends',
-        'viral challenges',
-      ]
+      multiple: true, 
+      options: ['pop culture commentary', 'news & politics', 'industry trends', 'viral challenges'],
     },
     sub2: {
       id: 'creativity',
       text: 'how do you share your creativity?',
-      options: [
-        'my creative process',
-        'tutorials & how-tos',
-        'critiques & reviews',
-        'artist showcases',
-      ]
-    }
+      multiple: true, 
+      options: ['my creative process', 'tutorials & how-tos', 'critiques & reviews', 'artist showcases'],
+    },
   },
   {
     id: 'reach',
     text: 'who are you trying to reach?',
+    multiple: true, 
     options: [
       'people with similar interests | hobbies',
       'potential customers for my business',
@@ -194,76 +195,87 @@ const questions: Question[] = [
       'a broad general audience',
       'a specific age group',
       'people in a specific location',
-      'I haven’t thought about this yet'
-    ]
-  }
-
-];
+      'I haven’t thought about this yet',
+    ],
+  },
+]
 
 const Button = ({ label, active, onClick }: any) => (
   <button
     onClick={onClick}
-    className={`px-5 py-3 rounded-xl min-w-[240px] text-sm font-medium
-      transition text-center
-      ${active
-        ? 'bg-[#C9B8F9] text-black border border-transparent'
-        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'}`
-    }
+    className={`px-5 py-3 rounded-xl min-w-[240px] text-sm font-medium transition text-center
+      ${active ? 'bg-[#C9B8F9] text-black border border-transparent' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'}`}
   >
     {label}
   </button>
-);
+)
 
 export default function Onboarding() {
-  const router = useRouter();
-  const [step, setStep] = useState(0);
-  const [showSub, setShowSub] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const router = useRouter()
+  const [step, setStep] = useState(0)
+  const [showSub, setShowSub] = useState(false)
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
 
-  const current = questions[step];
-  const mainSelected = answers[current.id];
+  const current = questions[step]
+  const mainSelected = answers[current.id]
 
-  const isDynamicSub = current.sub && typeof current.sub === 'object' && !('id' in current.sub);
-  const dynamicSub = isDynamicSub ? current.sub[mainSelected] : null;
-  const staticSub = !isDynamicSub && current.sub ? current.sub : null;
+  const isDynamicSub = current.sub && typeof current.sub === 'object' && !('id' in current.sub)
+  const dynamicSub = isDynamicSub ? (current.sub as Record<string, any>)[String(mainSelected)] : null
+  const staticSub = !isDynamicSub && current.sub ? (current.sub as any) : null
+  const subQuestion: BaseQ | null = dynamicSub || staticSub || null
 
-  const subQuestion = dynamicSub || staticSub;
-  const subSelected = subQuestion ? answers[subQuestion.id] : null;
+  const subSelected = subQuestion ? answers[subQuestion.id] : null
 
-  const handleSelect = (key: string, value: string) => {
-    setAnswers((prev) => ({ ...prev, [key]: value }));
-  };
+  const toggleSelect = (existing: string | string[] | undefined, value: string): string | string[] => {
+    if (!Array.isArray(existing)) return [value]
+    return existing.includes(value) ? existing.filter(v => v !== value) : [...existing, value]
+  }
+
+  const handleSelect = (key: string, value: string, multi?: boolean) => {
+    setAnswers(prev => {
+      const cur = prev[key]
+      if (multi) return { ...prev, [key]: toggleSelect(cur, value) }
+      return { ...prev, [key]: value }
+    })
+  }
+
+  const hasAnswer = (q: BaseQ, val: string | string[] | undefined) =>
+    q.multiple ? Array.isArray(val) && val.length > 0 : typeof val === 'string' && val.length > 0
+
+  const isActive = (q: BaseQ, val: string) =>
+    q.multiple ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(val) : answers[q.id] === val
 
   const handleContinue = async () => {
-    if (!mainSelected) return;
+    if (!hasAnswer(current, mainSelected)) return
 
     if (subQuestion && !showSub) {
-      setShowSub(true);
-      return;
+      setShowSub(true)
+      return
     }
 
-    if (subQuestion && !subSelected) return;
+    if (subQuestion && !hasAnswer(subQuestion, subSelected || undefined)) return
 
     if (step + 1 < questions.length) {
-      setStep(step + 1);
-      setShowSub(false);
+      setStep(step + 1)
+      setShowSub(false)
     } else {
-      localStorage.setItem('onboarding', JSON.stringify(answers));
-      router.push('/paywall');
+      localStorage.setItem('onboarding', JSON.stringify(answers))
+      router.push('/paywall')
     }
-  };
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">
       <div className="w-full max-w-2xl">
         <h2 className="text-2xl font-bold mb-6 text-gray-900">{current.text}</h2>
+
         <div className="flex flex-wrap justify-center gap-3 mb-10">
-          {current.options.map((opt) => (
+          {current.options.map(opt => (
             <Button
               key={opt}
               label={opt}
-              active={mainSelected === opt}
-              onClick={() => handleSelect(current.id, opt)}
+              active={isActive(current, opt)}
+              onClick={() => handleSelect(current.id, opt, !!current.multiple)}
             />
           ))}
         </div>
@@ -276,8 +288,8 @@ export default function Onboarding() {
                 <Button
                   key={opt}
                   label={opt}
-                  active={subSelected === opt}
-                  onClick={() => handleSelect(subQuestion.id, opt)}
+                  active={isActive(subQuestion, opt)}
+                  onClick={() => handleSelect(subQuestion.id, opt, !!subQuestion.multiple)}
                 />
               ))}
             </div>
@@ -292,5 +304,5 @@ export default function Onboarding() {
         </button>
       </div>
     </div>
-  );
+  )
 }

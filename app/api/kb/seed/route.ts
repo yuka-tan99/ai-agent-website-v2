@@ -20,7 +20,9 @@ async function embed(text: string): Promise<number[]> {
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({ model: GEMINI_EMBED_MODEL })
 
-  const res = await model.embedContent({ content: { parts: [{ text }] } })
+  const res = await model.embedContent({
+    content: { role: "user", parts: [{ text }] }
+  })
   return res.embedding.values
 }
 

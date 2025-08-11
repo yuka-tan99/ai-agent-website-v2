@@ -63,7 +63,7 @@ export default function CreatorReport() {
     {/* Header */}
     <header className="space-y-2">
         <h1 className="text-3xl font-semibold">Your Growth Strategy</h1>
-        <p className="text-gray-600">Straightforward plan based on your answers. No fluff.</p>
+        <p className="text-gray-600">we only give straightforward answers. no fluff.</p>
     </header>
 
     {/* Profile */}

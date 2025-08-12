@@ -1,0 +1,282 @@
+// lib/reportMapping.ts
+export type Persona = Record<string, any>
+
+const asArray = (v: any): string[] => (!v ? [] : Array.isArray(v) ? v : [v])
+
+// --- Normalize answers coming from the onboarding ---
+export function normalizeAnswers(p: Persona) {
+  return {
+    creatingAs: p.creatingAs || '',
+    identity: p.identity || '',
+    goals: asArray(p.goal),
+    platforms: asArray(p.platforms || p.platformFocus || p.focusPlatforms),
+    topics: asArray(p.topics),
+    trends: asArray(p.trends),
+    creativity: asArray(p.creativity),
+    reach: asArray(p.reach),
+    face: Array.isArray(p.face) ? p.face.join(', ') : (p.face || ''),
+    camera: Array.isArray(p.camera) ? p.camera.join(', ') : (p.camera || ''),
+    vibe: asArray(p.vibe || p.friendsDescribe || p.personality),
+    planVsWing: p.planVsWing || '',
+    contentEnjoyMaking: asArray(p.contentEnjoyMaking),
+    contentLoveWatching: asArray(p.contentLoveWatching),
+    timeAvailable: p.timeAvailable || '',
+    techComfort: p.techComfort || '',
+    feedbackApproach: p.feedbackApproach || '',
+    holdingBack: asArray(p.holdingBack),
+    triedButDidntWork: asArray(p.triedButDidntWork),
+    monetizationMethods: asArray(p.monetizationMethods),
+  }
+}
+
+// --- Derive signals the model should respect ---
+export function deriveSignals(a: ReturnType<typeof normalizeAnswers>) {
+  const wantsFace = a.face.toLowerCase().includes('yes')
+  const cam = a.camera.toLowerCase()
+  const cameraComfort =
+    cam.includes('love') ? 'high'
+      : cam.includes('okay') ? 'medium'
+      : cam.includes('awk') || cam.includes('no') ? 'low'
+      : 'unknown'
+
+  const id = a.identity.toLowerCase()
+  const stage =
+    id.includes('zero') ? 'new'
+      : id.includes('small') ? 'early'
+      : id.includes('stuck') ? 'stalled'
+      : id.includes('large') ? 'scaled'
+      : id.includes('pivot') ? 'pivot'
+      : 'unknown'
+
+  const platforms = a.platforms.length ? a.platforms : ['TikTok', 'Instagram', 'YouTube', 'Pinterest']
+
+  return {
+    stage,
+    wantsFace,
+    cameraComfort,
+    platforms,
+    goals: a.goals,
+    audienceHints: a.reach,
+    contentInterests: [...a.topics, ...a.trends, ...a.creativity],
+    timeAvailable: a.timeAvailable,
+    techComfort: a.techComfort,
+    planVsWing: a.planVsWing,
+    userPainPoints: a.holdingBack,
+    triedButDidntWork: a.triedButDidntWork,
+    vibe: a.vibe,
+    monetizationMethods: a.monetizationMethods,
+    contentEnjoyMaking: a.contentEnjoyMaking,
+    contentLoveWatching: a.contentLoveWatching,
+  }
+}
+
+// --- Seed chart data to guarantee visuals even if LLM omits ---
+export function chartSeeds(sig: ReturnType<typeof deriveSignals>) {
+  const base = sig.platforms
+  const slice = base.length ? Math.round(100 / base.length) : 25
+  const platform_focus = base.map((name, i) => ({ name, value: i === 0 ? 100 - slice * (base.length - 1) : slice }))
+  const posting_cadence = [
+    { name: 'Mon', posts: sig.stage === 'new' ? 2 : 1 },
+    { name: 'Tue', posts: sig.stage === 'new' ? 2 : 1 },
+    { name: 'Wed', posts: sig.stage === 'new' ? 2 : 1 },
+    { name: 'Thu', posts: sig.stage === 'new' ? 2 : 1 },
+    { name: 'Fri', posts: sig.stage === 'new' ? 3 : 2 },
+    { name: 'Sat', posts: 1 },
+    { name: 'Sun', posts: 1 },
+  ]
+  const content_type_mix = [
+    { name: 'Educational', value: sig.contentInterests.some(s => /education|tips|how/i.test(s)) ? 45 : 30 },
+    { name: 'Entertainment', value: 30 },
+    { name: 'Personal', value: 25 },
+  ]
+  return { platform_focus, posting_cadence, content_type_mix }
+}
+
+// --- Prompt builder that injects mapping + KB ---
+export function buildPrompt(mapping: {
+  answers: ReturnType<typeof normalizeAnswers>,
+  signals: ReturnType<typeof deriveSignals>,
+  seeds: ReturnType<typeof chartSeeds>,
+  kbText?: string
+}) {
+  const DASHBOARD_PROMPT = `
+You are an expert social growth strategist and dashboard designer.
+Use ALL relevant answers explicitly. Output JSON only (no markdown fences).
+
+OUTPUT SHAPE:
+{
+  "profile_summary": "string",
+  "overall_strategy": "string or string[]",
+  "platform_strategies": [{ "platform": "TikTok", "strategy": "string or string[]" }],
+  "roadblocks": [{ "issue": "string", "solution": "string or string[]" }],
+  "next_steps": ["..."],
+  "audience_blueprint": "string",
+  "content_pillars": ["..."],
+  "hook_swipefile": ["..."],
+  "cadence_plan": "string",
+  "hashtag_seo": ["..."],
+  "collaboration_ideas": ["..."],
+  "distribution_playbook": ["..."],
+  "experiments": ["..."],
+  "timeline_30_60_90": { "day_0_30": ["..."], "day_31_60": ["..."], "day_61_90": ["..."] },
+  "weekly_routine": ["..."],
+  "kpis": { "weekly_posts":  number, "target_view_rate_pct": number, "target_followers_30d": number },
+  "risks_watchouts": ["..."],
+  "monetization_plan": ["..."],
+  "time_capacity": "string",
+  "skill_upgrades": ["..."],
+  "feedback_approach": "string",
+  "charts": {
+    "platform_focus": [{ "name": "TikTok", "value": 40 }],
+    "posting_cadence": [{ "name": "Mon", "posts": 2 }],
+    "content_type_mix": [{ "name": "Educational", "value": 50 }],
+    "pillar_allocation": [{ "name": "Pillar A", "value": 40 }]
+  }
+}
+Always include ALL fields from the output shape, even if you must infer or guess. Never omit a field or leave it empty.
+If information is missing, create a plausible, useful default based on the user's profile.
+Rules: Align with answers/signals/seeds. Keep tone direct, no fluff.`
+
+  return `${DASHBOARD_PROMPT}
+
+### RAW_ONBOARDING_ANSWERS
+${JSON.stringify(mapping.answers, null, 2)}
+
+### DERIVED_SIGNALS
+${JSON.stringify(mapping.signals, null, 2)}
+
+### CHART_SEEDS
+${JSON.stringify(mapping.seeds, null, 2)}
+
+### OPTIONAL_KB
+${mapping.kbText || '(none)'}`
+}
+
+// --- Shape & fallback helpers ---
+export function coercePlanShape(input: any) {
+  const defaults = {
+    profile_summary: 'Unable to generate right now.',
+    overall_strategy: '- Post daily short-form.\n- Optimize hooks.\n- Review weekly.',
+    platform_strategies: [] as { platform: string; strategy: string }[],
+    roadblocks: [] as { issue: string; solution: string }[],
+    next_steps: ['Day 1–3: Define 3 pillars', 'Day 4–7: Batch 5 posts', 'Day 8–14: Post daily, review'],
+    charts: {
+      platform_focus: [
+        { name: 'TikTok', value: 50 },
+        { name: 'Instagram', value: 30 },
+        { name: 'YouTube', value: 20 },
+      ],
+      posting_cadence: [
+        { name: 'Mon', posts: 2 }, { name: 'Tue', posts: 2 }, { name: 'Wed', posts: 2 },
+        { name: 'Thu', posts: 2 }, { name: 'Fri', posts: 3 }, { name: 'Sat', posts: 1 }, { name: 'Sun', posts: 1 },
+      ],
+      content_type_mix: [
+        { name: 'Educational', value: 50 },
+        { name: 'Entertainment', value: 30 },
+        { name: 'Personal', value: 20 },
+      ],
+      pillar_allocation: [] as { name: string; value: number }[],
+    },
+  }
+
+  if (!input || typeof input !== 'object') return defaults
+
+  const joinLines = (v: any) => Array.isArray(v) ? v.map(String).join('\n- ') : String(v || '').trim()
+  const ensureArr = (v: any, fb: any[]) => (Array.isArray(v) ? v : fb)
+
+  const out: any = { ...defaults, ...input }
+  if (out.overall_strategy) out.overall_strategy = '- ' + joinLines(out.overall_strategy).replace(/^\-+\s*/, '')
+  if (Array.isArray(out.platform_strategies)) {
+    out.platform_strategies = out.platform_strategies.map((it: any) => ({
+      platform: it.platform,
+      strategy: '- ' + joinLines(it.strategy || '').replace(/^\-+\s*/, ''),
+    }))
+  }
+  if (Array.isArray(out.roadblocks)) {
+    out.roadblocks = out.roadblocks.map((r: any) => ({
+      issue: String(r.issue || ''),
+      solution: '- ' + joinLines(r.solution || '').replace(/^\-+\s*/, ''),
+    }))
+  }
+
+  out.platform_strategies = ensureArr(out.platform_strategies, defaults.platform_strategies)
+  out.roadblocks = ensureArr(out.roadblocks, defaults.roadblocks)
+  out.next_steps = ensureArr(out.next_steps, defaults.next_steps)
+  out.charts ||= defaults.charts
+  out.charts.platform_focus = ensureArr(out.charts.platform_focus, defaults.charts.platform_focus)
+  out.charts.posting_cadence = ensureArr(out.charts.posting_cadence, defaults.charts.posting_cadence)
+  out.charts.content_type_mix = ensureArr(out.charts.content_type_mix, defaults.charts.content_type_mix)
+  out.charts.pillar_allocation = ensureArr(out.charts.pillar_allocation, defaults.charts.pillar_allocation)
+  return out
+}
+
+export function inferPlatforms(persona: Persona): string[] {
+  const list: string[] = []
+  const from = (...xs: any[]) => xs.flat().filter(Boolean).map((s: string) => s.toLowerCase()).join(' ')
+  const blob = from(persona.platforms, persona.goal, persona.topics, persona.creatingAs)
+  if (blob.includes('youtube')) list.push('YouTube')
+  if (blob.includes('instagram')) list.push('Instagram')
+  if (blob.includes('tiktok')) list.push('TikTok')
+  if (blob.includes('pinterest')) list.push('Pinterest')
+  if (list.length === 0) list.push('TikTok', 'Instagram')
+  return Array.from(new Set(list)).slice(0, 4)
+}
+
+export function fillFromPersonaIfMissing(plan: any, persona: Persona) {
+  const platforms = inferPlatforms(persona)
+  if (!Array.isArray(plan.platform_strategies) || plan.platform_strategies.length === 0) {
+    plan.platform_strategies = platforms.map(p => ({
+      platform: p,
+      strategy: p === 'YouTube'
+        ? '- 2 Shorts/day.\n- Title = outcome + timeframe.\n- First 2s show result.'
+        : '- 1–2 posts/day.\n- Hook in 2s.\n- 3 pillars. Weekly review.',
+    }))
+  } else {
+    const have = new Set(plan.platform_strategies.map((s: any) => s.platform))
+    platforms.forEach(p => {
+      if (!have.has(p)) {
+        plan.platform_strategies.push({
+          platform: p,
+          strategy: '- 1–2 posts/day.\n- Tight hooks.\n- Batch record.\n- Analyze weekly.',
+        })
+      }
+    })
+  }
+  if (!Array.isArray(plan.roadblocks) || plan.roadblocks.length === 0) {
+    plan.roadblocks = [
+      { issue: 'Inconsistent posting', solution: '- Schedule 14-day cadence.\n- Batch 5 videos today.\n- Post same hour.' },
+      { issue: 'Weak hooks', solution: '- 10 hook variations per idea.\n- Outcome/tension first.\n- Cut first 2s if slow.' },
+    ]
+  }
+  return plan
+}
+
+export function mergeRoadblocksFromPersona(plan: any, sig: ReturnType<typeof deriveSignals>) {
+  const mapped = (issue: string) => {
+    if (/hook|intro|open/i.test(issue)) return {
+      issue: 'Weak hooks',
+      solution: '- Write 10 hook variants per idea\n- Lead with outcome/tension in first 2s\n- Cut first 2s if no action\n- Test 3 thumbnails/titles weekly',
+    }
+    if (/inconsistent|consisten|schedule|routine/i.test(issue)) return {
+      issue: 'Inconsistent posting',
+      solution: '- Batch 5–10 clips every Sun (90 min)\n- Schedule with a simple calendar\n- Set daily 20-min “publish window”\n- Track streak; reset weekly targets',
+    }
+    if (/idea|what to post|uninspired/i.test(issue)) return {
+      issue: 'Not sure what to post',
+      solution: '- Define 3 content pillars from onboarding interests\n- Save 20 reference videos this week\n- Turn each into 3 remixes (A/B hooks)\n- Keep an ideas doc; add 5/day',
+    }
+    if (/camera|on-camera|awkward|shy/i.test(issue)) return {
+      issue: 'On-camera discomfort',
+      solution: '- Start with voiceover + b-roll for 2 weeks\n- Record 3 selfie drafts/day, publish 1\n- Script beats: Hook → 3 points → CTA\n- Eye-level framing + natural light',
+    }
+    return {
+      issue: issue || 'Execution gaps',
+      solution: '- Set weekly targets (posts/watchtime)\n- Duplicate patterns from top 10% posts\n- Cut low-ROI tasks for 14 days\n- End every session with next 3 actions',
+    }
+  }
+
+  const userRB = sig.userPainPoints?.map(mapped) || []
+  const aiRB = Array.isArray(plan.roadblocks) ? plan.roadblocks : []
+  plan.roadblocks = [...userRB, ...aiRB]
+  return plan
+}

@@ -1,6 +1,6 @@
 // app/api/plan/route.ts
 import { NextResponse } from "next/server";
-import { searchKB } from "@/lib/rag";
+import { searchKBServer } from "@/lib/rag";
 import { geminiTextModel, GEMINI_SAFETY } from "@/lib/gemini";
 
 type Persona = Record<string, any>;
@@ -344,7 +344,7 @@ export async function POST(req: Request) {
 
     let kbText = "";
     try {
-      const kb = await searchKB(forQuery, 6);
+      const kb = await searchKBServer(forQuery, 6);
       kbText = Array.isArray(kb) ? kb.map((k) => k.content).join("\n---\n") : "";
     } catch {}
 

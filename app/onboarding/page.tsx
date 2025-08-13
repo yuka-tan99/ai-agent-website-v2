@@ -1,8 +1,8 @@
 'use client'
+
 import React, { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-/** ---------- Types ---------- */
 type BaseQ = {
   id: string
   text: string
@@ -10,16 +10,12 @@ type BaseQ = {
   multiple?: boolean
   allowOther?: boolean
 }
-
 type Question = BaseQ & {
-  // sub can be: a single follow-up OR an object mapping from chosen option -> follow-up
   sub?: BaseQ | Record<string, BaseQ>
   sub2?: BaseQ
-  // show this question only if some condition on previously chosen answers
   when?: (answers: Record<string, any>) => boolean
 }
 
-/** ---------- UI Bits ---------- */
 const Button = ({ label, active, onClick }: any) => (
   <button
     onClick={onClick}
@@ -43,14 +39,8 @@ const OtherInput = ({
   />
 )
 
-/** ---------- Questions ---------- */
-/** NOTE:
- *  – Single-select questions: omit `multiple`
- *  – Multi-select questions: set `multiple: true`
- *  – allowOther shows a free-text box when "other" is picked
- */
+/** -------------------- QUESTIONS -------------------- */
 const questions: Question[] = [
-  // 1) Role
   {
     id: 'creatingAs',
     text: 'are you creating as?',
@@ -71,8 +61,6 @@ const questions: Question[] = [
       },
     },
   },
-
-  // 2) Stage
   {
     id: 'identity',
     text: 'who are you now..?',
@@ -91,8 +79,6 @@ const questions: Question[] = [
       options: ['my growth has plateaued', 'not sure what content to make next', 'my engagement is dropping', 'feeling uninspired'],
     },
   },
-
-  // 3) Goals
   {
     id: 'goal',
     text: 'what are your main goals?',
@@ -107,8 +93,6 @@ const questions: Question[] = [
       'drive traffic to my website | business',
     ],
   },
-
-  // 3b) Monetization (shown only if monetization goal)
   {
     id: 'monetizationMethods',
     text: 'how do you ideally want to make money from your content?',
@@ -126,8 +110,6 @@ const questions: Question[] = [
     ],
     when: (a) => Array.isArray(a.goal) && a.goal.some((g: string) => /monetize|sell|brand deals|service|product|revenue/i.test(g)),
   },
-
-  // 4) Face / Camera
   {
     id: 'face',
     text: 'do you want to show your face in your content?',
@@ -152,8 +134,6 @@ const questions: Question[] = [
       options: ['I’m a natural entertainer', 'I enjoy public speaking', 'I feel confident', 'I love connecting directly'],
     },
   },
-
-  // 5) Topics (+ branches)
   {
     id: 'topics',
     text: 'what topics do you love talking about most?',
@@ -183,8 +163,6 @@ const questions: Question[] = [
       options: ['my creative process', 'tutorials & how-tos', 'critiques & reviews', 'artist showcases'],
     },
   },
-
-  // 6) Audience
   {
     id: 'reach',
     text: 'who are you trying to reach?',
@@ -199,8 +177,6 @@ const questions: Question[] = [
       'I haven’t thought about this yet',
     ],
   },
-
-  // 7) Platforms
   {
     id: 'platforms',
     text: 'what platforms do you use or want to grow on?',
@@ -208,8 +184,6 @@ const questions: Question[] = [
     allowOther: true,
     options: ['instagram', 'tiktok', 'youtube', 'twitter/x', 'facebook', 'pinterest', 'linkedin', 'twitch', 'other'],
   },
-
-  // 8) Content you enjoy making
   {
     id: 'contentEnjoyMaking',
     text: 'what kind of content do you enjoy making (or think you’d enjoy)?',
@@ -226,8 +200,6 @@ const questions: Question[] = [
       'storytelling | sharing personal journeys',
     ],
   },
-
-  // 9) Vibe (personality)
   {
     id: 'vibe',
     text: 'how would your friends describe your vibe?',
@@ -244,16 +216,12 @@ const questions: Question[] = [
       'approachable | friendly',
     ],
   },
-
-  // 10) Planning style
   {
     id: 'planVsWing',
     text: 'do you like planning things ahead or just winging it?',
     multiple: false,
     options: ['i like to plan content in advance', 'i prefer posting in the moment', 'a mix of both'],
   },
-
-  // 11) Content you love watching
   {
     id: 'contentLoveWatching',
     text: 'what kind of content do you love watching?',
@@ -277,8 +245,6 @@ const questions: Question[] = [
       'other',
     ],
   },
-
-  // 12) Roadblocks
   {
     id: 'holdingBack',
     text: "what's holding you back right now?",
@@ -291,12 +257,10 @@ const questions: Question[] = [
       "my content isn't getting attention",
       "i don't have much time",
       "i'm not sure how to monetize effectively",
-      'i\'m afraid of judgment or negative feedback',
+      "i'm afraid of judgment or negative feedback",
       'something else',
     ],
   },
-
-  // 13) Tried but didn’t work
   {
     id: 'triedButDidntWork',
     text: "what have you tried for growth that didn't work well?",
@@ -313,16 +277,12 @@ const questions: Question[] = [
       "i haven't tried anything specific yet",
     ],
   },
-
-  // 14) Time
   {
     id: 'timeAvailable',
     text: 'how much time can you realistically spend on content creation and engagement each week?',
     multiple: false,
     options: ['less than 2 hours', '2-5 hours', '5-10 hours', '10+ hours'],
   },
-
-  // 15) Tech comfort (+ branch: gaps)
   {
     id: 'techComfort',
     text: 'how comfortable are you with the technical side (editing, analytics)?',
@@ -335,8 +295,6 @@ const questions: Question[] = [
       options: ['video editing', 'photo editing | design', 'using analytics', 'posting | scheduling'],
     },
   },
-
-  // 16) Feedback approach
   {
     id: 'feedbackApproach',
     text: 'which statement best describes your approach to feedback or criticism?',
@@ -351,30 +309,40 @@ const questions: Question[] = [
   },
 ]
 
-/** ---------- Component ---------- */
+// ------------------- Links step (appended) -------------------
+const LINKS_STEP_ID = '___links___'
+
 export default function Onboarding() {
   const router = useRouter()
   const [step, setStep] = useState(0)
   const [showSub, setShowSub] = useState(false)
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
-  const [otherDrafts, setOtherDrafts] = useState<Record<string, string>>({}) // id -> text
+  const [otherDrafts, setOtherDrafts] = useState<Record<string, string>>({})
+  const [linksDraft, setLinksDraft] = useState({
+    instagram: '', tiktok: '', youtube: '', twitter: '',
+    facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
+  })
+
+  // Inject a virtual final step for links
+  const totalSteps = questions.length + 1
+  const isLinksStep = step === questions.length
 
   const current = useMemo(() => {
-    // Skip conditional questions that shouldn’t be shown yet
+    if (isLinksStep) return { id: LINKS_STEP_ID, text: 'drop links to your public profiles (optional)' } as any
+    // Skip conditional questions
     let idx = step
     while (idx < questions.length && questions[idx].when && !questions[idx].when!(answers)) {
       idx++
     }
     if (idx !== step) setStep(idx)
     return questions[idx]
-  }, [step, answers])
+  }, [step, answers, isLinksStep])
 
-  const mainSelected = answers[current.id]
-
-  const isDynamicSub = current.sub && typeof current.sub === 'object' && !('id' in current.sub)
+  const mainSelected = !isLinksStep ? answers[current.id] : null
+  const isDynamicSub = !isLinksStep && current.sub && typeof current.sub === 'object' && !('id' in current.sub)
   const dynamicSub = isDynamicSub ? (current.sub as Record<string, BaseQ>)[String(mainSelected)] : null
-  const staticSub = !isDynamicSub && current.sub ? (current.sub as BaseQ) : null
-  const subQuestion: BaseQ | null = dynamicSub || staticSub || null
+  const staticSub = !isLinksStep && !isDynamicSub && current.sub ? (current.sub as BaseQ) : null
+  const subQuestion: BaseQ | null = isLinksStep ? null : (dynamicSub || staticSub || null)
   const subSelected = subQuestion ? answers[subQuestion.id] : null
 
   const toggleSelect = (existing: string | string[] | undefined, value: string): string | string[] => {
@@ -391,12 +359,11 @@ export default function Onboarding() {
   }
 
   const isActive = (q: BaseQ, val: string) =>
-    q.multiple ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(val) : answers[q.id] === val
+    Array.isArray(answers[q.id]) ? (answers[q.id] as string[]).includes(val) : answers[q.id] === val
 
   const hasAnswer = (q: BaseQ, val: string | string[] | undefined) =>
     q.multiple ? Array.isArray(val) && val.length > 0 : typeof val === 'string' && val.length > 0
 
-  // Merge "other" typed value into selection array on continue
   const mergeOtherIfNeeded = (q: BaseQ) => {
     if (!q.allowOther) return
     const sel = answers[q.id]
@@ -409,25 +376,29 @@ export default function Onboarding() {
   }
 
   const handleContinue = async () => {
-    mergeOtherIfNeeded(current)
-    if (subQuestion) mergeOtherIfNeeded(subQuestion)
-
-    if (!hasAnswer(current, mainSelected)) return
-    if (subQuestion && !showSub) {
-      setShowSub(true)
+    // Links step: save and finish
+    if (isLinksStep) {
+      const links = Object.values(linksDraft)
+        .map(s => s.trim())
+        .filter(Boolean)
+      localStorage.setItem('social_links', JSON.stringify(links))
+      localStorage.setItem('onboarding', JSON.stringify(answers))
+      router.push('/dashboard')
       return
     }
+
+    // Normal steps
+    mergeOtherIfNeeded(current as BaseQ)
+    if (subQuestion) mergeOtherIfNeeded(subQuestion)
+
+    if (!hasAnswer(current as BaseQ, mainSelected || undefined)) return
+    if (subQuestion && !showSub) { setShowSub(true); return }
     if (subQuestion && !hasAnswer(subQuestion, subSelected || undefined)) return
 
-    // next step or finish
     const nextIdx = step + 1
-    if (nextIdx < questions.length) {
+    if (nextIdx < totalSteps) {
       setStep(nextIdx)
       setShowSub(false)
-    } else {
-      localStorage.setItem('onboarding', JSON.stringify(answers))
-      // router.push('/paywall')
-      router.push('/dashboard')
     }
   }
 
@@ -436,54 +407,86 @@ export default function Onboarding() {
       <div className="w-full max-w-2xl">
         <h2 className="text-2xl font-bold mb-6 text-gray-900">{current.text}</h2>
 
-        <div className="flex flex-wrap justify-center gap-3 mb-6">
-          {current.options.map((opt) => (
-            <Button
-              key={opt}
-              label={opt}
-              active={isActive(current, opt)}
-              onClick={() => handleSelect(current.id, opt, !!current.multiple)}
-            />
-          ))}
-        </div>
-
-        {current.allowOther && Array.isArray(answers[current.id]) && (answers[current.id] as string[]).includes('other') && (
-          <OtherInput
-            value={otherDrafts[current.id] || ''}
-            onChange={(v) => setOtherDrafts((p) => ({ ...p, [current.id]: v }))}
-            placeholder="add your platform or content type…"
-          />
-        )}
-
-        {showSub && subQuestion && (
+        {!isLinksStep ? (
           <>
-            <p className="text-gray-500 text-lg mt-8 mb-4">{subQuestion.text}</p>
             <div className="flex flex-wrap justify-center gap-3 mb-6">
-              {subQuestion.options.map((opt: string) => (
+              {(current as any).options?.map((opt: string) => (
                 <Button
                   key={opt}
                   label={opt}
-                  active={isActive(subQuestion, opt)}
-                  onClick={() => handleSelect(subQuestion.id, opt, !!subQuestion.multiple)}
+                  active={isActive(current as any, opt)}
+                  onClick={() => handleSelect((current as any).id, opt, !!(current as any).multiple)}
                 />
               ))}
             </div>
-            {subQuestion.allowOther &&
-              Array.isArray(answers[subQuestion.id]) &&
-              (answers[subQuestion.id] as string[]).includes('other') && (
+
+            {(current as any).allowOther &&
+              Array.isArray(answers[(current as any).id]) &&
+              (answers[(current as any).id] as string[]).includes('other') && (
                 <OtherInput
-                  value={otherDrafts[subQuestion.id] || ''}
-                  onChange={(v) => setOtherDrafts((p) => ({ ...p, [subQuestion.id]: v }))}
+                  value={otherDrafts[(current as any).id] || ''}
+                  onChange={(v) => setOtherDrafts((p) => ({ ...p, [(current as any).id]: v }))}
+                  placeholder="add your platform or content type…"
                 />
               )}
+
+            {showSub && subQuestion && (
+              <>
+                <p className="text-gray-500 text-lg mt-8 mb-4">{subQuestion.text}</p>
+                <div className="flex flex-wrap justify-center gap-3 mb-6">
+                  {subQuestion.options.map((opt: string) => (
+                    <Button
+                      key={opt}
+                      label={opt}
+                      active={isActive(subQuestion, opt)}
+                      onClick={() => handleSelect(subQuestion.id, opt, !!subQuestion.multiple)}
+                    />
+                  ))}
+                </div>
+                {subQuestion.allowOther &&
+                  Array.isArray(answers[subQuestion.id]) &&
+                  (answers[subQuestion.id] as string[]).includes('other') && (
+                    <OtherInput
+                      value={otherDrafts[subQuestion.id] || ''}
+                      onChange={(v) => setOtherDrafts((p) => ({ ...p, [subQuestion.id]: v }))}
+                    />
+                  )}
+              </>
+            )}
           </>
+        ) : (
+          // LINKS STEP UI
+          <div className="grid gap-3 text-left">
+            {[
+              ["instagram", "https://instagram.com/username"],
+              ["tiktok", "https://www.tiktok.com/@handle"],
+              ["youtube", "https://www.youtube.com/@handle or channel URL"],
+              ["twitter", "https://x.com/handle or https://twitter.com/handle"],
+              ["linkedin", "https://www.linkedin.com/in/handle or /company/..."],
+              ["twitch", "https://www.twitch.tv/handle"],
+              ["facebook", "https://www.facebook.com/handle"],
+              ["pinterest", "https://www.pinterest.com/handle"],
+              ["other", "any other public link…"],
+            ].map(([k, ph]) => (
+              <div key={k}>
+                <label className="block text-sm mb-1 capitalize">{k}</label>
+                <input
+                  value={(linksDraft as any)[k]}
+                  onChange={(e) => setLinksDraft(prev => ({ ...prev, [k]: e.target.value }))}
+                  placeholder={ph}
+                  className="w-full rounded-xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black/20"
+                />
+              </div>
+            ))}
+            <p className="text-xs text-gray-500 mt-1">optional — we’ll analyze public info to tailor your plan</p>
+          </div>
         )}
 
         <button
           onClick={handleContinue}
           className="mt-6 px-8 py-2 rounded-full bg-black text-white hover:bg-gray-800 transition"
         >
-          continue
+          {isLinksStep ? 'generate my plan' : 'continue'}
         </button>
       </div>
     </div>

@@ -2,11 +2,132 @@
 import { NextResponse } from "next/server";
 import { searchKBServer } from "@/lib/rag";
 import { geminiTextModel, GEMINI_SAFETY } from "@/lib/gemini";
+import { collectSnapshots, summarizeSnapshots } from "@/lib/publicScrape";
 
 type Persona = Record<string, any>;
 
 /* -------------------- helpers -------------------- */
 const asArray = (v: any): string[] => (Array.isArray(v) ? v : v ? [v] : []);
+/** ---------- Normalization & de-dup helpers ---------- */
+const PLATFORM_CANON: Record<string, string> = {
+  'yt': 'YouTube', 'youtube': 'YouTube',
+  'ig': 'Instagram', 'instagram': 'Instagram',
+  'tiktok': 'TikTok', 'tik tok': 'TikTok',
+  'twitter': 'Twitter/X', 'x': 'Twitter/X', 'twitter/x': 'Twitter/X', 'tw': 'Twitter/X',
+  'linkedin': 'LinkedIn', 'li': 'LinkedIn',
+  'fb': 'Facebook', 'facebook': 'Facebook',
+  'pinterest': 'Pinterest',
+  'twitch': 'Twitch',
+};
+
+function canonPlatform(label: string = ''): string {
+  const key = label.trim().toLowerCase();
+  return PLATFORM_CANON[key] || 
+         // try to strip punctuation and re-check
+         PLATFORM_CANON[key.replace(/[^\w]/g, '')] ||
+         // Title-case fallback
+         label.trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function splitBullets(s: string): string[] {
+  if (!s) return [];
+  const raw = s.replace(/\r/g, '').split('\n');
+  const lines = raw.map(l => l.replace(/^\s*[-•]\s?/, '').trim()).filter(Boolean);
+  return Array.from(new Set(lines)); // unique
+}
+
+function joinBullets(lines: string[]): string {
+  const uniq = Array.from(new Set(lines.map(l => l.trim()).filter(Boolean)));
+  return uniq.length ? ('- ' + uniq.join('\n- ')) : '';
+}
+
+function uniqStrings(arr?: string[]): string[] {
+  if (!Array.isArray(arr)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of arr) {
+    const key = (v || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(v);
+  }
+  return out;
+}
+
+function uniqObjectsBy<T>(arr: T[] | undefined, keyFn: (t: T) => string): T[] {
+  if (!Array.isArray(arr)) return [];
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const it of arr) {
+    const k = keyFn(it).toLowerCase().trim();
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(it);
+  }
+  return out;
+}
+
+/** Merge duplicate platform cards by canonical platform name */
+function normalizePlatformStrategies(list: { platform: string; strategy: string }[] | undefined) {
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const map = new Map<string, string[]>(); // plat -> bullet lines
+  for (const item of list) {
+    const plat = canonPlatform(item.platform);
+    const bullets = splitBullets(item.strategy);
+    const prev = map.get(plat) || [];
+    map.set(plat, Array.from(new Set([...prev, ...bullets])));
+  }
+  return Array.from(map.entries()).map(([platform, bullets]) => ({
+    platform,
+    strategy: joinBullets(bullets),
+  }));
+}
+
+/** Map common issue aliases to one canonical label */
+function normalizeIssueAlias(raw: string): string {
+  let s = (raw || '').toLowerCase().trim();
+
+  // strip punctuation & extra spaces
+  s = s.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+
+  // alias buckets
+  if (
+    /not sure (what|which).*(post|content)/i.test(raw) ||
+    /what to post/i.test(raw) ||
+    /content to make next/i.test(raw) ||
+    /idea(s)?\b.*(stuck|unsure|don.?t know)/i.test(raw)
+  ) return 'Not sure what content to make next';
+
+  if (/inconsisten|consisten|schedule|routine/i.test(raw))
+    return 'Inconsistent posting';
+
+  if (/hook|intro|open/i.test(raw))
+    return 'Weak hooks';
+
+  if (/camera|on-?camera|awkward|shy/i.test(raw))
+    return 'On-camera discomfort';
+
+  // default: Title-case the cleaned string
+  return raw.replace(/\s+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Normalize/uniq roadblocks by issue (with aliasing) */
+function normalizeRoadblocks(list: { issue: string; solution: string }[] | undefined) {
+  if (!Array.isArray(list)) return [];
+  const byIssue = new Map<string, string[]>(); // canonIssue -> solution bullets[]
+
+  for (const rb of list) {
+    const canon = normalizeIssueAlias(rb.issue || '');
+    const bullets = splitBullets(rb.solution || (rb as any).solution || '');
+    const prev = byIssue.get(canon) || [];
+    byIssue.set(canon, Array.from(new Set([...prev, ...bullets])));
+  }
+
+  return Array.from(byIssue.entries()).map(([issue, bullets]) => ({
+    issue,
+    solution: joinBullets(bullets),
+  }));
+}
 
 function normalizeAnswers(p: Persona) {
   return {
@@ -45,6 +166,8 @@ function deriveSignals(a: ReturnType<typeof normalizeAnswers>) {
     ? "stalled"
     : id.includes("large")
     ? "scaled"
+    : id.includes("pivot")
+    ? "pivot"
     : "unknown";
 
   const platforms =
@@ -95,7 +218,6 @@ function chartSeeds(sig: ReturnType<typeof deriveSignals>) {
     { name: "Personal", value: 25 },
   ];
 
-  // simple pillar allocations that mirror goals/topics
   const pillar_allocation = [
     { name: "Pillar A", value: 40 },
     { name: "Pillar B", value: 35 },
@@ -194,7 +316,7 @@ function inferPlatforms(persona: Persona): string[] {
   if (blob.includes("instagram")) list.push("Instagram");
   if (blob.includes("tiktok")) list.push("TikTok");
   if (blob.includes("pinterest")) list.push("Pinterest");
-  if (blob.includes("twitter") || blob.includes("x")) list.push("twitter/x");
+  if (blob.includes("twitter") || blob.includes("x")) list.push("Twitter/X");
   if (blob.includes("linkedin")) list.push("LinkedIn");
   if (list.length === 0) list.push("TikTok", "Instagram");
   return Array.from(new Set(list)).slice(0, 4);
@@ -294,7 +416,10 @@ const DASHBOARD_PROMPT = `
 You are an expert social growth strategist and dashboard designer.
 Use ALL relevant answers explicitly. If a field is missing, state one assumption once in the Profile Summary.
 
-OUTPUT (JSON ONLY; no markdown):
+PLATFORM LABELS (use EXACTLY these; each at most once if relevant):
+YouTube, Instagram, TikTok, Twitter/X, LinkedIn, Facebook, Pinterest, Twitch
+
+OUTPUT (JSON ONLY; no markdown fences):
 {
   "profile_summary": "1 concise paragraph citing brand type, stage, goals, camera comfort, platform focus.",
   "overall_strategy": "- 4–8 concrete bullets tied to answers.",
@@ -319,8 +444,10 @@ OUTPUT (JSON ONLY; no markdown):
     "pillar_allocation": [{ "name": "Pillar A", "value": 40 }]
   }
 }
-Rules:
-- Align charts with the persona/platform focus and stage.
+STRICT RULES:
+- Use platform labels exactly as listed; do not invent variants (e.g., output "Twitter/X", not "twitter/x").
+- Output each platform at most once in platform_strategies.
+- Roadblocks must be unique by issue; do not repeat the same issue with different casing.
 - Tone: direct, no fluff.
 `;
 
@@ -329,8 +456,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const persona: Persona = body.persona || {};
+    const links: string[] = Array.isArray(body.links) ? body.links.filter(Boolean) : [];
 
-    // RAG snippet
+    // RAG snippet from KB
     const forQuery = [
       persona.goal,
       persona.creatingAs,
@@ -347,6 +475,13 @@ export async function POST(req: Request) {
       const kb = await searchKBServer(forQuery, 6);
       kbText = Array.isArray(kb) ? kb.map((k) => k.content).join("\n---\n") : "";
     } catch {}
+
+    // Links snapshot (no paid APIs)
+    let linkSummary = "";
+    if (links.length) {
+      const snaps = await collectSnapshots(links);
+      linkSummary = summarizeSnapshots(snaps);
+    }
 
     // answers/signals/seeds
     const answers = normalizeAnswers(persona);
@@ -366,6 +501,9 @@ ${JSON.stringify(seeds, null, 2)}
 
 ### OPTIONAL_KB
 ${kbText || "(none)"}
+
+### PUBLIC_LINKS_INSIGHTS
+${links.length ? linkSummary : "(no links provided)"}
 `;
 
     const model = geminiTextModel();
@@ -381,10 +519,6 @@ ${kbText || "(none)"}
     });
 
     const raw = (result.response?.text?.() || "").trim();
-    if (process.env.DEBUG_PLAN === "true") {
-      console.log("[api/plan] RAW len:", raw.length);
-      console.log("[api/plan] RAW head:", raw.slice(0, 400));
-    }
 
     // strip accidental fences
     const cleaned = raw
@@ -403,15 +537,34 @@ ${kbText || "(none)"}
     try {
       parsed = cleaned ? JSON.parse(largestJson(cleaned)) : null;
     } catch {
-      if (process.env.DEBUG_PLAN === "true") {
-        console.warn("[api/plan] Non-JSON. Head:", cleaned.slice(0, 300));
-      }
       parsed = null;
     }
 
     let plan = coercePlanShape(parsed);
     plan = fillFromPersonaIfMissing(plan, persona);
 
+    // merge may add another “not sure what to post”, etc.
+    plan = mergeRoadblocksFromPersona(plan, signals);
+
+    // NOW normalize/dedupe
+    plan.platform_strategies = normalizePlatformStrategies(plan.platform_strategies);
+    plan.roadblocks          = normalizeRoadblocks(plan.roadblocks);
+
+    plan.next_steps             = uniqStrings(plan.next_steps);
+    plan.experiments            = uniqStrings(plan.experiments);
+    plan.hashtag_seo            = uniqStrings(plan.hashtag_seo);
+    plan.collaboration_ideas    = uniqStrings(plan.collaboration_ideas);
+    plan.distribution_playbook  = uniqStrings(plan.distribution_playbook);
+    plan.hook_swipefile         = uniqStrings(plan.hook_swipefile);
+    plan.content_pillars        = uniqStrings(plan.content_pillars);
+
+    // also canon labels in platform_focus
+    if (plan?.charts?.platform_focus) {
+      plan.charts.platform_focus = uniqObjectsBy(
+        plan.charts.platform_focus.map((p: any) => ({ ...p, name: canonPlatform(p.name) })),
+        (p: any) => p.name
+      );
+    }
     // ensure charts exist (fill from seeds if missing)
     plan.charts = {
       platform_focus:
@@ -432,7 +585,6 @@ ${kbText || "(none)"}
           : seeds.pillar_allocation,
     };
 
-    plan = mergeRoadblocksFromPersona(plan, signals);
 
     return NextResponse.json(plan);
   } catch (err: any) {

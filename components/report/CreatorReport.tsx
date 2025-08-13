@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Section from './Section'
 import TOC from './TOC'
 import CopyButton from './CopyButton'
@@ -36,23 +36,54 @@ type Plan = {
   }
 }
 
+// ---- helper: don’t let a weak/empty response clobber a good one
+function isValidPlan(p: any): p is Plan {
+  if (!p || typeof p !== 'object') return false
+  const s = String(p.profile_summary || '').trim()
+  if (!s) return false
+  // your default text from coercePlanShape:
+  if (s.toLowerCase().startsWith('unable to generate')) return false
+  // require at least 1 strategy or platform entry
+  if (!Array.isArray(p.platform_strategies) || p.platform_strategies.length === 0) return false
+  return true
+}
+
 export default function CreatorReport() {
   const [data, setData] = useState<Plan | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // React StrictMode in Next dev calls effects twice on mount.
+  const ranOnce = useRef(false)
+
   useEffect(() => {
-    (async () => {
+    if (ranOnce.current) return
+    ranOnce.current = true
+
+    ;(async () => {
       try {
         const persona = JSON.parse(localStorage.getItem('onboarding') || '{}')
+        // include any stored links if you added link capture:
+        const links = JSON.parse(localStorage.getItem('profile_links') || '[]')
+
         const res = await fetch('/api/plan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ persona }),
+          body: JSON.stringify({ persona, links }),
           cache: 'no-store',
         })
+
         const json = await res.json()
-        setData(json)
+
+        // if we already have a valid plan, never replace it with an invalid one
+        setData(prev => {
+          if (prev && !isValidPlan(json)) {
+            // keep the previous good plan
+            return prev
+          }
+          // otherwise accept the new one if valid (or first attempt even if invalid)
+          return isValidPlan(json) ? json : prev ?? json
+        })
       } catch (e: any) {
         setError(e.message || 'Failed to load plan')
       } finally {
@@ -89,8 +120,8 @@ export default function CreatorReport() {
     []
   )
 
-  if (loading) return <div className="py-16 text-center text-gray-500">Generating your plan…</div>
-  if (error) return <div className="py-16 text-center text-red-600">{error}</div>
+  if (loading && !data) return <div className="py-16 text-center text-gray-500">Generating your plan…</div>
+  if (error && !data) return <div className="py-16 text-center text-red-600">{error}</div>
   if (!data) return null
 
   const pf = data.charts?.platform_focus || []

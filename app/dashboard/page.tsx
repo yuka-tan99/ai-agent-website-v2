@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { supabaseServer } from '@/lib/supabaseServer'
 import CreatorReport from '@/components/report/CreatorReport'
 import Link from 'next/link'

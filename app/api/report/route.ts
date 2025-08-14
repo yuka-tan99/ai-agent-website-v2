@@ -1,4 +1,6 @@
-
+// app/api/report/route.ts
+export const dynamic = 'force-dynamic'   // fine here
+export const runtime = 'nodejs'          // (optional but explicit)
 
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'

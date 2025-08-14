@@ -1,4 +1,5 @@
-export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 import { supabaseServer } from '@/lib/supabaseServer'
 import Link from 'next/link'
 

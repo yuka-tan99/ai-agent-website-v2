@@ -1,8 +1,10 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession' // must exist (see note below)
 
+/** ---------- Types ---------- */
 type BaseQ = {
   id: string
   text: string
@@ -16,6 +18,7 @@ type Question = BaseQ & {
   when?: (answers: Record<string, any>) => boolean
 }
 
+/** ---------- UI Bits ---------- */
 const Button = ({ label, active, onClick }: any) => (
   <button
     onClick={onClick}
@@ -309,11 +312,31 @@ const questions: Question[] = [
   },
 ]
 
-// ------------------- Links step (appended) -------------------
+/** ------------------- Links step (appended) ------------------- */
 const LINKS_STEP_ID = '___links___'
 
 export default function Onboarding() {
   const router = useRouter()
+
+  // ✅ Create or reuse a sessionId ONCE per browser
+  const [sessionId] = useState(() => getOrCreateOnboardingSessionId())
+
+  // 🔹 NEW: initialize a row immediately so anon visitors get a record
+  useEffect(() => {
+    ;(async () => {
+      try {
+        await fetch('/api/onboarding/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, answers: {} }),
+          cache: 'no-store',
+        })
+      } catch (e) {
+        console.warn('init onboarding session failed', e)
+      }
+    })()
+  }, [sessionId])
+
   const [step, setStep] = useState(0)
   const [showSub, setShowSub] = useState(false)
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
@@ -322,6 +345,48 @@ export default function Onboarding() {
     instagram: '', tiktok: '', youtube: '', twitter: '',
     facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
   })
+
+  // 🔸 helper: persist partial changes incrementally to your session row
+  const persistDraft = async (patch: { answers?: any; links?: string[] }) => {
+    try {
+      await fetch('/api/onboarding/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, ...patch }),
+        cache: 'no-store',
+      })
+    } catch {
+      // swallow; keep UI snappy even if offline
+    }
+  }
+
+  // OPTIONAL: restore any previous progress for this session (answers + links)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`/api/onboarding/save?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
+        if (!res.ok) return
+        const json = await res.json()
+        if (json?.answers && typeof json.answers === 'object') setAnswers(json.answers)
+        if (Array.isArray(json?.links)) {
+          const toMap: any = { instagram:'', tiktok:'', youtube:'', twitter:'', facebook:'', pinterest:'', linkedin:'', twitch:'', other:'' }
+          for (const url of json.links) {
+            const u = String(url).toLowerCase()
+            if (u.includes('instagram.com')) toMap.instagram = url
+            else if (u.includes('tiktok.com')) toMap.tiktok = url
+            else if (u.includes('youtube.com') || u.includes('youtu.be')) toMap.youtube = url
+            else if (u.includes('x.com') || u.includes('twitter.com')) toMap.twitter = url
+            else if (u.includes('facebook.com')) toMap.facebook = url
+            else if (u.includes('pinterest.com')) toMap.pinterest = url
+            else if (u.includes('linkedin.com')) toMap.linkedin = url
+            else if (u.includes('twitch.tv')) toMap.twitch = url
+            else toMap.other = url
+          }
+          setLinksDraft(toMap)
+        }
+      } catch {}
+    })()
+  }, [sessionId])
 
   // Inject a virtual final step for links
   const totalSteps = questions.length + 1
@@ -338,10 +403,10 @@ export default function Onboarding() {
     return questions[idx]
   }, [step, answers, isLinksStep])
 
-  const mainSelected = !isLinksStep ? answers[current.id] : null
-  const isDynamicSub = !isLinksStep && current.sub && typeof current.sub === 'object' && !('id' in current.sub)
-  const dynamicSub = isDynamicSub ? (current.sub as Record<string, BaseQ>)[String(mainSelected)] : null
-  const staticSub = !isLinksStep && !isDynamicSub && current.sub ? (current.sub as BaseQ) : null
+  const mainSelected = !isLinksStep ? answers[(current as any).id] : null
+  const isDynamicSub = !isLinksStep && (current as any).sub && typeof (current as any).sub === 'object' && !('id' in (current as any).sub)
+  const dynamicSub = isDynamicSub ? ((current as any).sub as Record<string, BaseQ>)[String(mainSelected)] : null
+  const staticSub = !isLinksStep && !isDynamicSub && (current as any).sub ? ((current as any).sub as BaseQ) : null
   const subQuestion: BaseQ | null = isLinksStep ? null : (dynamicSub || staticSub || null)
   const subSelected = subQuestion ? answers[subQuestion.id] : null
 
@@ -350,16 +415,19 @@ export default function Onboarding() {
     return existing.includes(value) ? existing.filter((v) => v !== value) : [...existing, value]
   }
 
+  // ✅ Save after each selection
   const handleSelect = (key: string, value: string, multi?: boolean) => {
     setAnswers((prev) => {
       const cur = prev[key]
-      if (multi) return { ...prev, [key]: toggleSelect(cur, value) }
-      return { ...prev, [key]: value }
+      const next = multi ? toggleSelect(cur, value) : value
+      const merged = { ...prev, [key]: next }
+      persistDraft({ answers: merged })
+      return merged
     })
   }
 
   const isActive = (q: BaseQ, val: string) =>
-    Array.isArray(answers[q.id]) ? (answers[q.id] as string[]).includes(val) : answers[q.id] === val
+    q.multiple ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(val) : answers[q.id] === val
 
   const hasAnswer = (q: BaseQ, val: string | string[] | undefined) =>
     q.multiple ? Array.isArray(val) && val.length > 0 : typeof val === 'string' && val.length > 0
@@ -371,23 +439,24 @@ export default function Onboarding() {
     const draft = otherDrafts[q.id]?.trim()
     if (otherPicked && draft) {
       const merged = [...(sel as string[]).filter((x) => x !== 'other'), draft]
-      setAnswers((prev) => ({ ...prev, [q.id]: merged }))
+      setAnswers((prev) => {
+        const next = { ...prev, [q.id]: merged }
+        persistDraft({ answers: next })
+        return next
+      })
+      setOtherDrafts((p) => ({ ...p, [q.id]: '' }))
     }
   }
 
   const handleContinue = async () => {
-    // Links step: save and finish
     if (isLinksStep) {
-      const links = Object.values(linksDraft)
-        .map(s => s.trim())
-        .filter(Boolean)
+      const links = Object.values(linksDraft).map(s => s.trim()).filter(Boolean)
       localStorage.setItem('social_links', JSON.stringify(links))
       localStorage.setItem('onboarding', JSON.stringify(answers))
-      router.push('/dashboard')
-      return
+      await persistDraft({ links })
+      return router.push('/signin')   // redirect to sign-in; report generates later
     }
 
-    // Normal steps
     mergeOtherIfNeeded(current as BaseQ)
     if (subQuestion) mergeOtherIfNeeded(subQuestion)
 
@@ -405,7 +474,7 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">
       <div className="w-full max-w-2xl">
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">{current.text}</h2>
+        <h2 className="text-2xl font-bold mb-6 text-gray-900">{(current as any).text}</h2>
 
         {!isLinksStep ? (
           <>
@@ -455,18 +524,17 @@ export default function Onboarding() {
             )}
           </>
         ) : (
-          // LINKS STEP UI
           <div className="grid gap-3 text-left">
             {[
-              ["instagram", "https://instagram.com/username"],
-              ["tiktok", "https://www.tiktok.com/@handle"],
-              ["youtube", "https://www.youtube.com/@handle or channel URL"],
-              ["twitter", "https://x.com/handle or https://twitter.com/handle"],
-              ["linkedin", "https://www.linkedin.com/in/handle or /company/..."],
-              ["twitch", "https://www.twitch.tv/handle"],
-              ["facebook", "https://www.facebook.com/handle"],
-              ["pinterest", "https://www.pinterest.com/handle"],
-              ["other", "any other public link…"],
+              ['instagram', 'https://instagram.com/username'],
+              ['tiktok', 'https://www.tiktok.com/@handle'],
+              ['youtube', 'https://www.youtube.com/@handle or channel URL'],
+              ['twitter', 'https://x.com/handle or https://twitter.com/handle'],
+              ['linkedin', 'https://www.linkedin.com/in/handle or /company/...'],
+              ['twitch', 'https://www.twitch.tv/handle'],
+              ['facebook', 'https://www.facebook.com/handle'],
+              ['pinterest', 'https://www.pinterest.com/handle'],
+              ['other', 'any other public link…'],
             ].map(([k, ph]) => (
               <div key={k}>
                 <label className="block text-sm mb-1 capitalize">{k}</label>

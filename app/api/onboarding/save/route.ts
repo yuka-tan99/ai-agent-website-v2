@@ -9,8 +9,9 @@ export const dynamic = 'force-dynamic'
 type Body = {
   sessionId: string
   answers?: Record<string, any>
-  patch?: Record<string, any>   // backward compatible field name
+  patch?: Record<string, any>   // legacy alias
   links?: string[]
+  replace?: boolean             // optional: force replace instead of merge (even when authed)
 }
 
 function uniqStrings(arr?: string[]) {
@@ -26,20 +27,20 @@ function uniqStrings(arr?: string[]) {
 
 function requireEnv(name: string) {
   const v = process.env[name]
-  if (!v) {
-    throw new Error(`Missing required env: ${name}`)
-  }
+  if (!v) throw new Error(`Missing required env: ${name}`)
   return v
 }
 
-/** Create service client (works anon or authed). */
+/** Service client for server-side write access (no browser SDK). */
 function serviceClient() {
   const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL')
-  const key = requireEnv('SUPABASE_SERVICE_KEY')
-  return createClient(url, key)
+  const key = requireEnv('SUPABASE_SERVICE_KEY') // service role
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
 }
 
-/* ------------------------- POST: upsert (merge) ------------------------- */
+/* --------------------------- POST: create / update --------------------------- */
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as Body
@@ -48,48 +49,65 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
     }
 
-    // Try to get current user (optional).
+    // Determine current user (optional). If not signed in, we want a clean slate.
     let userId: string | null = null
     try {
       const sb = await supabaseServer()
       const { data } = await sb.auth.getUser()
       userId = data?.user?.id ?? null
     } catch {
-      /* ignore */
+      /* ignore auth lookup failures */
     }
 
     const supa = serviceClient()
 
-    // Read existing so we can merge JSONB safely
-    const { data: existing, error: readErr } = await supa
-      .from('onboarding_sessions')
-      .select('answers, links, user_id')
-      .eq('id', sessionId)
-      .maybeSingle()
+    // Read existing row only if we might merge (i.e., user signed in and not forcing replace)
+    const shouldMerge = !!userId && !body.replace
 
-    if (readErr) {
-      return NextResponse.json({ error: `[read] ${readErr.message}` }, { status: 500 })
+    let existing: { answers: any; links: string[] | null; user_id: string | null } | null = null
+    if (shouldMerge) {
+      const { data, error } = await supa
+        .from('onboarding_sessions')
+        .select('answers,links,user_id')
+        .eq('id', sessionId)
+        .maybeSingle()
+      if (error) return NextResponse.json({ error: `[read] ${error.message}` }, { status: 500 })
+      existing = data
+      // If an existing row belongs to a *different* user, block to avoid mixing accounts.
+      if (existing?.user_id && existing.user_id !== userId) {
+        return NextResponse.json(
+          { error: 'Session belongs to another user', code: 'SESSION_OWNED_BY_OTHER' },
+          { status: 409 }
+        )
+      }
     }
 
+    // Incoming payload
     const incomingAnswers = body.answers ?? body.patch ?? {}
-    const mergedAnswers = {
-      ...(existing?.answers ?? {}),
-      ...(incomingAnswers ?? {}),
-    }
-
     const incomingLinks = uniqStrings(body.links)
-    const mergedLinks = uniqStrings([...(existing?.links ?? []), ...incomingLinks])
 
+    // For signed-out users (userId === null): **REPLACE** with incoming (fresh start).
+    // For signed-in users: merge unless body.replace === true.
+    const answers = shouldMerge
+      ? { ...(existing?.answers ?? {}), ...(incomingAnswers ?? {}) }
+      : (incomingAnswers ?? {})
+
+    const links = shouldMerge
+      ? uniqStrings([...(existing?.links ?? []), ...incomingLinks])
+      : incomingLinks
+
+    const now = new Date().toISOString()
     const payload: any = {
       id: sessionId,
-      answers: mergedAnswers,
-      updated_at: new Date().toISOString(),
+      answers,
+      updated_at: now,
     }
 
-    if (mergedLinks.length) payload.links = mergedLinks
-    // only set/overwrite user_id when present
+    // Only include links if caller sent any (prevents accidental wipe on partial PATCHes)
+    if (Array.isArray(body.links)) payload.links = links
+
+    // Attach user_id if signed in (don’t overwrite a different user because we guard above)
     if (userId) payload.user_id = userId
-    if (!existing) payload.created_at = new Date().toISOString()
 
     const { error: upsertErr } = await supa
       .from('onboarding_sessions')
@@ -99,14 +117,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `[upsert] ${upsertErr.message}` }, { status: 500 })
     }
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, userAttached: !!userId, merged: shouldMerge && !body.replace })
   } catch (e: any) {
+    console.error('[onboarding/save] POST error:', e)
     return NextResponse.json({ error: e?.message || 'Save failed' }, { status: 500 })
   }
 }
 
-/* --------------------------- GET: read for debug --------------------------- */
-/** GET /api/onboarding/save?sessionId=...  -> returns stored row (answers+links) */
+/* ----------------------------- GET: read row ----------------------------- */
+/** GET /api/onboarding/save?sessionId=... -> returns stored row (answers+links) */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url)
@@ -118,7 +137,7 @@ export async function GET(req: Request) {
     const supa = serviceClient()
     const { data, error } = await supa
       .from('onboarding_sessions')
-      .select('id, user_id, answers, links, created_at, updated_at')
+      .select('id,user_id,answers,links,created_at,updated_at')
       .eq('id', sessionId)
       .maybeSingle()
 
@@ -128,6 +147,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json(data || null)
   } catch (e: any) {
+    console.error('[onboarding/save] GET error:', e)
     return NextResponse.json({ error: e?.message || 'Read failed' }, { status: 500 })
   }
 }

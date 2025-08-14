@@ -6,7 +6,7 @@ import { supabaseServer } from '@/lib/supabaseServer'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-type Body = { sessionId?: string }
+type Body = { sessionId?: string; merge?: boolean }
 type SessionRow = {
   id: string
   user_id: string | null
@@ -28,7 +28,7 @@ function uniqStrings(arr?: string[]) {
 
 export async function POST(req: Request) {
   try {
-    const { sessionId } = (await req.json().catch(() => ({}))) as Body
+    const { sessionId, merge = true } = (await req.json().catch(() => ({}))) as Body
     if (!sessionId || !sessionId.trim()) {
       return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 })
     }
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
         updated_at: now,
       })
       if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
-      return NextResponse.json({ ok: true, attached: true, created: true })
+      return NextResponse.json({ ok: true, attached: true, created: true, mergedFrom: null })
     }
 
     // If the session belongs to another user, do not reassign
@@ -74,40 +74,45 @@ export async function POST(req: Request) {
       )
     }
 
-    // Optional merge: if the user already has a different session, merge that into this target
-    const { data: otherSessions, error: listErr } = await supa
-      .from('onboarding_sessions')
-      .select('id,answers,links,updated_at')
-      .eq('user_id', user.id)
-      .neq('id', sessionId)
-      .order('updated_at', { ascending: false })
-      .limit(1) as unknown as { data: SessionRow[] | null, error: any }
-
+    // --- Optional merge (disabled for fresh flows) ---
     let mergedFrom: string | null = null
     let mergedAnswers = target.answers ?? {}
     let mergedLinks = uniqStrings(target.links ?? [])
 
-    if (!listErr && otherSessions && otherSessions.length > 0) {
-      const other = otherSessions[0]
-      mergedFrom = other.id
-      // Prefer the more recently updated record’s values per key (simple strategy: overlay target with other)
-      mergedAnswers = { ...(mergedAnswers ?? {}), ...(other.answers ?? {}) }
-      mergedLinks = uniqStrings([...(mergedLinks ?? []), ...uniqStrings(other.links ?? [])])
+    if (merge) {
+      const { data: otherSessions, error: listErr } = await supa
+        .from('onboarding_sessions')
+        .select('id,answers,links,updated_at')
+        .eq('user_id', user.id)
+        .neq('id', sessionId)
+        .order('updated_at', { ascending: false })
+        .limit(1) as unknown as { data: SessionRow[] | null, error: any }
 
-      // Optional: clean up the merged-away session
-      await supa.from('onboarding_sessions').delete().eq('id', other.id)
+      if (!listErr && otherSessions && otherSessions.length > 0) {
+        const other = otherSessions[0]
+        mergedFrom = other.id
+        // Overlay target with user's last session
+        mergedAnswers = { ...(mergedAnswers ?? {}), ...(other.answers ?? {}) }
+        mergedLinks = uniqStrings([...(mergedLinks ?? []), ...uniqStrings(other.links ?? [])])
+
+        // Optional: clean up the merged-away session
+        await supa.from('onboarding_sessions').delete().eq('id', other.id)
+      }
     }
 
     const now = new Date().toISOString()
     const { error: updErr } = await supa
       .from('onboarding_sessions')
-      .upsert({
-        id: sessionId,
-        user_id: user.id,
-        answers: mergedAnswers,
-        links: mergedLinks,
-        updated_at: now,
-      }, { onConflict: 'id' })
+      .upsert(
+        {
+          id: sessionId,
+          user_id: user.id,
+          answers: mergedAnswers,
+          links: mergedLinks,
+          updated_at: now,
+        },
+        { onConflict: 'id' }
+      )
 
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 

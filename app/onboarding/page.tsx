@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useMemo, useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession' // must exist (see note below)
 
 /** ---------- Types ---------- */
@@ -317,12 +317,41 @@ const LINKS_STEP_ID = '___links___'
 
 export default function Onboarding() {
   const router = useRouter()
+  const search = useSearchParams()
+  const isFresh = search.get('fresh') === '1'
 
-  // ✅ Create or reuse a sessionId ONCE per browser
-  const [sessionId] = useState(() => getOrCreateOnboardingSessionId())
+  // ---- session id (respects ?fresh=1) ----
+  const [sessionId, setSessionId] = useState<string>('')
 
-  // 🔹 NEW: initialize a row immediately so anon visitors get a record
   useEffect(() => {
+    // wipe local caches for a clean start
+    if (isFresh) {
+      try {
+        localStorage.removeItem('social_links')
+        localStorage.removeItem('onboarding')
+      } catch {}
+    }
+
+    // make/choose a session id
+    let sid = getOrCreateOnboardingSessionId()
+    if (isFresh) {
+      // force a new id so it won't reuse a past anonymous session
+      try {
+        const freshId =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        sid = freshId
+        // in case your helper stores a key in localStorage, also overwrite a common key name
+        try { localStorage.setItem('onboarding_session_id', freshId) } catch {}
+      } catch {}
+    }
+    setSessionId(sid)
+  }, [isFresh])
+
+  // ---- ensure a row exists in DB for this session (blank to start) ----
+  useEffect(() => {
+    if (!sessionId) return
     ;(async () => {
       try {
         await fetch('/api/onboarding/save', {
@@ -346,8 +375,22 @@ export default function Onboarding() {
     facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
   })
 
-  // 🔸 helper: persist partial changes incrementally to your session row
+  // reset in-memory state when starting fresh
+  useEffect(() => {
+    if (!isFresh) return
+    setStep(0)
+    setShowSub(false)
+    setAnswers({})
+    setOtherDrafts({})
+    setLinksDraft({
+      instagram: '', tiktok: '', youtube: '', twitter: '',
+      facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
+    })
+  }, [isFresh])
+
+  // helper: persist incremental changes for this session
   const persistDraft = async (patch: { answers?: any; links?: string[] }) => {
+    if (!sessionId) return
     try {
       await fetch('/api/onboarding/save', {
         method: 'POST',
@@ -360,8 +403,9 @@ export default function Onboarding() {
     }
   }
 
-  // OPTIONAL: restore any previous progress for this session (answers + links)
+  // restore any previous progress — but NOT when fresh=1
   useEffect(() => {
+    if (!sessionId || isFresh) return
     (async () => {
       try {
         const res = await fetch(`/api/onboarding/save?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
@@ -386,8 +430,9 @@ export default function Onboarding() {
         }
       } catch {}
     })()
-  }, [sessionId])
+  }, [sessionId, isFresh])
 
+  // ---- the rest of your component (unchanged) ----
   // Inject a virtual final step for links
   const totalSteps = questions.length + 1
   const isLinksStep = step === questions.length
@@ -454,7 +499,7 @@ export default function Onboarding() {
       localStorage.setItem('social_links', JSON.stringify(links))
       localStorage.setItem('onboarding', JSON.stringify(answers))
       await persistDraft({ links })
-      return router.push('/signin')   // redirect to sign-in; report generates later
+      return router.push('/signin?from=onboarding')   // small improvement
     }
 
     mergeOtherIfNeeded(current as BaseQ)
@@ -470,6 +515,7 @@ export default function Onboarding() {
       setShowSub(false)
     }
   }
+
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">

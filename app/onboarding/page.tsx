@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useMemo, useState, useEffect } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession' // must exist (see note below)
+import { useRouter } from 'next/navigation'
+import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession'
+import { supabaseBrowser } from '@/lib/supabaseClient'
 
 /** ---------- Types ---------- */
 type BaseQ = {
@@ -317,54 +318,10 @@ const LINKS_STEP_ID = '___links___'
 
 export default function Onboarding() {
   const router = useRouter()
-  const search = useSearchParams()
-  const isFresh = search.get('fresh') === '1'
+  const sb = supabaseBrowser()
 
-  // ---- session id (respects ?fresh=1) ----
-  const [sessionId, setSessionId] = useState<string>('')
-
-  useEffect(() => {
-    // wipe local caches for a clean start
-    if (isFresh) {
-      try {
-        localStorage.removeItem('social_links')
-        localStorage.removeItem('onboarding')
-      } catch {}
-    }
-
-    // make/choose a session id
-    let sid = getOrCreateOnboardingSessionId()
-    if (isFresh) {
-      // force a new id so it won't reuse a past anonymous session
-      try {
-        const freshId =
-          typeof crypto !== 'undefined' && 'randomUUID' in crypto
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-        sid = freshId
-        // in case your helper stores a key in localStorage, also overwrite a common key name
-        try { localStorage.setItem('onboarding_session_id', freshId) } catch {}
-      } catch {}
-    }
-    setSessionId(sid)
-  }, [isFresh])
-
-  // ---- ensure a row exists in DB for this session (blank to start) ----
-  useEffect(() => {
-    if (!sessionId) return
-    ;(async () => {
-      try {
-        await fetch('/api/onboarding/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, answers: {} }),
-          cache: 'no-store',
-        })
-      } catch (e) {
-        console.warn('init onboarding session failed', e)
-      }
-    })()
-  }, [sessionId])
+  // session id per browser
+  const [sessionId] = useState(() => getOrCreateOnboardingSessionId())
 
   const [step, setStep] = useState(0)
   const [showSub, setShowSub] = useState(false)
@@ -374,23 +331,33 @@ export default function Onboarding() {
     instagram: '', tiktok: '', youtube: '', twitter: '',
     facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
   })
+  const [authed, setAuthed] = useState<boolean | null>(null)
 
-  // reset in-memory state when starting fresh
+  // 🔐 track auth state
   useEffect(() => {
-    if (!isFresh) return
-    setStep(0)
-    setShowSub(false)
-    setAnswers({})
-    setOtherDrafts({})
-    setLinksDraft({
-      instagram: '', tiktok: '', youtube: '', twitter: '',
-      facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
-    })
-  }, [isFresh])
+    let unsub: (() => void) | undefined
+    sb.auth.getUser().then(({ data }) => setAuthed(!!data.user))
+    const sub = sb.auth.onAuthStateChange((_e, s) => setAuthed(!!s?.user))
+    unsub = () => sub?.data?.subscription?.unsubscribe?.()
+    return () => { try { unsub?.() } catch {} }
+  }, [sb])
 
-  // helper: persist incremental changes for this session
+  // 🆕 ensure a shell row exists immediately so the table isn't empty
+  useEffect(() => {
+    (async () => {
+      try {
+        await fetch('/api/onboarding/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, answers: {} }),
+          cache: 'no-store',
+        })
+      } catch {}
+    })()
+  }, [sessionId])
+
+  // 🔸 helper: persist partial changes incrementally to your session row
   const persistDraft = async (patch: { answers?: any; links?: string[] }) => {
-    if (!sessionId) return
     try {
       await fetch('/api/onboarding/save', {
         method: 'POST',
@@ -398,14 +365,11 @@ export default function Onboarding() {
         body: JSON.stringify({ sessionId, ...patch }),
         cache: 'no-store',
       })
-    } catch {
-      // swallow; keep UI snappy even if offline
-    }
+    } catch { /* ignore */ }
   }
 
-  // restore any previous progress — but NOT when fresh=1
+  // restore any previous progress for this session (answers + links)
   useEffect(() => {
-    if (!sessionId || isFresh) return
     (async () => {
       try {
         const res = await fetch(`/api/onboarding/save?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
@@ -430,9 +394,8 @@ export default function Onboarding() {
         }
       } catch {}
     })()
-  }, [sessionId, isFresh])
+  }, [sessionId])
 
-  // ---- the rest of your component (unchanged) ----
   // Inject a virtual final step for links
   const totalSteps = questions.length + 1
   const isLinksStep = step === questions.length
@@ -477,6 +440,7 @@ export default function Onboarding() {
   const hasAnswer = (q: BaseQ, val: string | string[] | undefined) =>
     q.multiple ? Array.isArray(val) && val.length > 0 : typeof val === 'string' && val.length > 0
 
+  // Merge "other" typed value into selection array on continue (and save)
   const mergeOtherIfNeeded = (q: BaseQ) => {
     if (!q.allowOther) return
     const sel = answers[q.id]
@@ -494,14 +458,31 @@ export default function Onboarding() {
   }
 
   const handleContinue = async () => {
+    // Links step: save links + local storage + go
     if (isLinksStep) {
       const links = Object.values(linksDraft).map(s => s.trim()).filter(Boolean)
       localStorage.setItem('social_links', JSON.stringify(links))
       localStorage.setItem('onboarding', JSON.stringify(answers))
       await persistDraft({ links })
-      return router.push('/signin?from=onboarding')   // small improvement
+
+      // 👇 If signed in: attach session to user and go straight to account
+      if (authed) {
+        try {
+          await fetch('/api/onboarding/attach', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId }),
+            cache: 'no-store',
+          })
+        } catch {}
+        return router.push('/account')
+      }
+
+      // Not signed in: send to sign-in as before
+      return router.push('/signin')
     }
 
+    // Normal steps
     mergeOtherIfNeeded(current as BaseQ)
     if (subQuestion) mergeOtherIfNeeded(subQuestion)
 
@@ -515,7 +496,6 @@ export default function Onboarding() {
       setShowSub(false)
     }
   }
-
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">
@@ -570,17 +550,18 @@ export default function Onboarding() {
             )}
           </>
         ) : (
+          // LINKS STEP UI
           <div className="grid gap-3 text-left">
             {[
-              ['instagram', 'https://instagram.com/username'],
-              ['tiktok', 'https://www.tiktok.com/@handle'],
-              ['youtube', 'https://www.youtube.com/@handle or channel URL'],
-              ['twitter', 'https://x.com/handle or https://twitter.com/handle'],
-              ['linkedin', 'https://www.linkedin.com/in/handle or /company/...'],
-              ['twitch', 'https://www.twitch.tv/handle'],
-              ['facebook', 'https://www.facebook.com/handle'],
-              ['pinterest', 'https://www.pinterest.com/handle'],
-              ['other', 'any other public link…'],
+              ["instagram", "https://instagram.com/username"],
+              ["tiktok", "https://www.tiktok.com/@handle"],
+              ["youtube", "https://www.youtube.com/@handle or channel URL"],
+              ["twitter", "https://x.com/handle or https://twitter.com/handle"],
+              ["linkedin", "https://www.linkedin.com/in/handle or /company/..."],
+              ["twitch", "https://www.twitch.tv/handle"],
+              ["facebook", "https://www.facebook.com/handle"],
+              ["pinterest", "https://www.pinterest.com/handle"],
+              ["other", "any other public link…"],
             ].map(([k, ph]) => (
               <div key={k}>
                 <label className="block text-sm mb-1 capitalize">{k}</label>
@@ -600,7 +581,7 @@ export default function Onboarding() {
           onClick={handleContinue}
           className="mt-6 px-8 py-2 rounded-full bg-black text-white hover:bg-gray-800 transition"
         >
-          {isLinksStep ? 'generate my plan' : 'continue'}
+          {isLinksStep ? (authed ? 'finish & go to my account' : 'sign in to see my plan') : 'continue'}
         </button>
       </div>
     </div>

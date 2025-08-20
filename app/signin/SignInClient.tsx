@@ -48,33 +48,57 @@ export default function SignInClient() {
     router.push('/')
   }
 
-  const submit = async () => {
+    const submit = async () => {
     if (!sb) return
     try {
-      setLoading(true); setMsg(null)
-      if (usePhone) {
-        if (mode === 'signup') {
-          const { error } = await sb.auth.signUp({ phone, password }); if (error) throw error
-          setMsg('Check your phone for confirmation (if enabled).')
+        setLoading(true); setMsg(null)
+
+        // quick input guards
+        if (!password) { setMsg('Please enter your password.'); return }
+        if (usePhone) {
+        if (!phone) { setMsg('Please enter your phone number.'); return }
         } else {
-          const { error } = await sb.auth.signInWithPassword({ phone, password }); if (error) throw error
-          router.replace('/account')
+        if (!email) { setMsg('Please enter your email.'); return }
         }
-      } else {
+
+        if (usePhone) {
+        // PHONE AUTH
         if (mode === 'signup') {
-          const { error } = await sb.auth.signUp({ email, password }); if (error) throw error
-          setMsg('Check your email to confirm your account.')
+            const { error } = await sb.auth.signUp({ phone, password })
+            if (error) throw error
+            setMsg('Check your phone for confirmation (if enabled).')
+            return
         } else {
-          const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error
-          router.replace('/account')
+            const { error } = await sb.auth.signInWithPassword({ phone, password })
+            if (error) throw error
+            router.replace('/account')
+            return
         }
-      }
+        } else {
+        // EMAIL AUTH
+        if (mode === 'signup') {
+            // Make Supabase send the magic confirmation link back to *this* origin
+            const redirectTo = `${window.location.origin}/auth/callback` // or '/account' if you prefer
+            const { error } = await sb.auth.signUp(
+            { email, password },
+            { emailRedirectTo: redirectTo } // 👈 ensures localhost redirects to localhost; vercel to vercel
+            )
+            if (error) throw error
+            setMsg('Check your email to confirm your account.')
+            return
+        } else {
+            const { error } = await sb.auth.signInWithPassword({ email, password })
+            if (error) throw error
+            router.replace('/account')
+            return
+        }
+        }
     } catch (e: any) {
-      setMsg(e?.message || 'Auth failed')
+        setMsg(e?.message || 'Auth failed')
     } finally {
-      setLoading(false)
+        setLoading(false)
     }
-  }
+    }
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-white px-4">

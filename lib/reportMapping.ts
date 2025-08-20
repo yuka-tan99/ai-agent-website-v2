@@ -99,33 +99,43 @@ export function buildPrompt(mapping: {
   seeds: ReturnType<typeof chartSeeds>,
   kbText?: string
 }) {
-  const DASHBOARD_PROMPT = `
-You are an expert social growth strategist and dashboard designer.
-Use ALL relevant answers explicitly. Output JSON only (no markdown fences).
+const DASHBOARD_PROMPT = `
+You’re a friendly, plain-spoken social growth strategist. Be direct, helpful, and human. Avoid corporate/robotic tone.
+Use the user’s answers. If something is missing, make ONE reasonable assumption once in the profile area.
 
-OUTPUT SHAPE:
+PLATFORM LABELS (use EXACTLY these; at most once each if relevant):
+YouTube, Instagram, TikTok, Twitter/X, LinkedIn, Facebook, Pinterest, Twitch
+
+OUTPUT (JSON ONLY; no markdown fences). Keep language simple and useful:
+
 {
-  "profile_summary": "string",
-  "overall_strategy": "string or string[]",
-  "platform_strategies": [{ "platform": "TikTok", "strategy": "string or string[]" }],
-  "roadblocks": [{ "issue": "string", "solution": "string or string[]" }],
-  "next_steps": ["..."],
-  "audience_blueprint": "string",
-  "content_pillars": ["..."],
-  "hook_swipefile": ["..."],
-  "cadence_plan": "string",
-  "hashtag_seo": ["..."],
-  "collaboration_ideas": ["..."],
-  "distribution_playbook": ["..."],
-  "experiments": ["..."],
+  "your_niche": "One paragraph on niche angle and who it resonates with.",
+  "platform_strategies": [
+    { "platform": "TikTok", "strategy": "- 3–6 bullets customized to persona" }
+  ],
+  "your_roadblocks_and_fix": [
+    { "issue": "string", "solution": "- step1\\n- step2\\n- step3" }
+  ],
+  "engagement_stage": "one of: new, early, stalled, scaled, pivot, unknown",
+  "strategy_type": "one of: plan-first, wing-it, hybrid",
+  "theory": ["Folder idea 1","Folder idea 2","Folder idea 3"],
+  "practical_advice": {
+    "low_effort_examples": ["Example 1","Example 2","Example 3"],
+    "high_effort_examples": ["Example 1","Example 2"]
+  },
+  "overall_strategy": "- 4–8 short bullets tied to answers.",
+  "next_steps": ["Day 1–3 ...", "Day 4–7 ...", "Week 2 ..."],
+  "audience_blueprint": "4–8 lines describing target segments and why.",
+  "content_pillars": ["Pillar A","Pillar B","Pillar C"],
+  "hook_swipefile": ["Hook 1","Hook 2","Hook 3"],
+  "cadence_plan": "Specific weekly posting counts aligned to camera comfort and stage.",
+  "hashtag_seo": ["keyword 1","keyword 2"],
+  "collaboration_ideas": ["idea 1","idea 2"],
+  "distribution_playbook": ["cross-post cadence, newsletter, communities"],
+  "experiments": ["A/B idea 1","A/B idea 2"],
   "timeline_30_60_90": { "day_0_30": ["..."], "day_31_60": ["..."], "day_61_90": ["..."] },
-  "weekly_routine": ["..."],
-  "kpis": { "weekly_posts":  number, "target_view_rate_pct": number, "target_followers_30d": number },
-  "risks_watchouts": ["..."],
-  "monetization_plan": ["..."],
-  "time_capacity": "string",
-  "skill_upgrades": ["..."],
-  "feedback_approach": "string",
+  "weekly_routine": ["Mon: ...","Tue: ...","Fri: Review ..."],
+  "kpis": { "weekly_posts": number, "target_view_rate_pct": number, "target_followers_30d": number },
   "charts": {
     "platform_focus": [{ "name": "TikTok", "value": 40 }],
     "posting_cadence": [{ "name": "Mon", "posts": 2 }],
@@ -133,9 +143,13 @@ OUTPUT SHAPE:
     "pillar_allocation": [{ "name": "Pillar A", "value": 40 }]
   }
 }
-Always include ALL fields from the output shape, even if you must infer or guess. Never omit a field or leave it empty.
-If information is missing, create a plausible, useful default based on the user's profile.
-Rules: Align with answers/signals/seeds. Keep tone direct, no fluff.`
+
+STRICT RULES:
+- Use platform labels exactly as listed (e.g., "Twitter/X" not "twitter/x").
+- Don’t duplicate a platform in platform_strategies.
+- Roadblocks must be unique by issue and short.
+- Keep sentences short and clear. No fluff.
+`
 
   return `${DASHBOARD_PROMPT}
 
@@ -153,60 +167,101 @@ ${mapping.kbText || '(none)'}`
 }
 
 // --- Shape & fallback helpers ---
-export function coercePlanShape(input: any) {
+function coercePlanShape(input: any) {
   const defaults = {
-    profile_summary: 'Unable to generate right now.',
-    overall_strategy: '- Post daily short-form.\n- Optimize hooks.\n- Review weekly.',
+    your_niche: "",
+    your_roadblocks_and_fix: [] as { issue: string; solution: string }[],
     platform_strategies: [] as { platform: string; strategy: string }[],
-    roadblocks: [] as { issue: string; solution: string }[],
-    next_steps: ['Day 1–3: Define 3 pillars', 'Day 4–7: Batch 5 posts', 'Day 8–14: Post daily, review'],
+    engagement_stage: "unknown",
+    strategy_type: "hybrid",
+    theory: [] as string[],
+    practical_advice: {
+      low_effort_examples: [] as string[],
+      high_effort_examples: [] as string[],
+    },
+    overall_strategy: "- Post daily short-form.\n- Optimize hooks.\n- Review weekly.",
+    roadblocks: [] as { issue: string; solution: string }[], // keep for backward compat
+    next_steps: [
+      "Day 1–3: Define 3 pillars",
+      "Day 4–7: Batch 5 posts",
+      "Day 8–14: Post daily, review",
+    ],
+    audience_blueprint: "",
+    content_pillars: [] as string[],
+    hook_swipefile: [] as string[],
+    cadence_plan: "",
+    hashtag_seo: [] as string[],
+    collaboration_ideas: [] as string[],
+    distribution_playbook: [] as string[],
+    experiments: [] as string[],
+    timeline_30_60_90: { day_0_30: [] as string[], day_31_60: [] as string[], day_61_90: [] as string[] },
+    weekly_routine: [] as string[],
+    kpis: { weekly_posts: 10, target_view_rate_pct: 25, target_followers_30d: 1000 },
     charts: {
       platform_focus: [
-        { name: 'TikTok', value: 50 },
-        { name: 'Instagram', value: 30 },
-        { name: 'YouTube', value: 20 },
+        { name: "TikTok", value: 50 },
+        { name: "Instagram", value: 30 },
+        { name: "YouTube", value: 20 },
       ],
       posting_cadence: [
-        { name: 'Mon', posts: 2 }, { name: 'Tue', posts: 2 }, { name: 'Wed', posts: 2 },
-        { name: 'Thu', posts: 2 }, { name: 'Fri', posts: 3 }, { name: 'Sat', posts: 1 }, { name: 'Sun', posts: 1 },
+        { name: "Mon", posts: 2 },
+        { name: "Tue", posts: 2 },
+        { name: "Wed", posts: 2 },
+        { name: "Thu", posts: 2 },
+        { name: "Fri", posts: 3 },
+        { name: "Sat", posts: 1 },
+        { name: "Sun", posts: 1 },
       ],
       content_type_mix: [
-        { name: 'Educational', value: 50 },
-        { name: 'Entertainment', value: 30 },
-        { name: 'Personal', value: 20 },
+        { name: "Educational", value: 50 },
+        { name: "Entertainment", value: 30 },
+        { name: "Personal", value: 20 },
       ],
-      pillar_allocation: [] as { name: string; value: number }[],
+      pillar_allocation: [
+        { name: "Pillar A", value: 40 },
+        { name: "Pillar B", value: 35 },
+        { name: "Pillar C", value: 25 },
+      ],
     },
   }
 
-  if (!input || typeof input !== 'object') return defaults
+  if (!input || typeof input !== "object") return defaults
 
-  const joinLines = (v: any) => Array.isArray(v) ? v.map(String).join('\n- ') : String(v || '').trim()
-  const ensureArr = (v: any, fb: any[]) => (Array.isArray(v) ? v : fb)
-
+  // shallow merge
   const out: any = { ...defaults, ...input }
-  if (out.overall_strategy) out.overall_strategy = '- ' + joinLines(out.overall_strategy).replace(/^\-+\s*/, '')
-  if (Array.isArray(out.platform_strategies)) {
-    out.platform_strategies = out.platform_strategies.map((it: any) => ({
-      platform: it.platform,
-      strategy: '- ' + joinLines(it.strategy || '').replace(/^\-+\s*/, ''),
-    }))
-  }
-  if (Array.isArray(out.roadblocks)) {
-    out.roadblocks = out.roadblocks.map((r: any) => ({
-      issue: String(r.issue || ''),
-      solution: '- ' + joinLines(r.solution || '').replace(/^\-+\s*/, ''),
-    }))
-  }
 
+  // defensive array/shape guards
+  const ensureArr = (v: any, fb: any[]) => (Array.isArray(v) ? v : fb)
   out.platform_strategies = ensureArr(out.platform_strategies, defaults.platform_strategies)
-  out.roadblocks = ensureArr(out.roadblocks, defaults.roadblocks)
+  out.your_roadblocks_and_fix = ensureArr(out.your_roadblocks_and_fix, defaults.your_roadblocks_and_fix)
+  out.theory = ensureArr(out.theory, defaults.theory)
   out.next_steps = ensureArr(out.next_steps, defaults.next_steps)
+  out.audience_blueprint ||= defaults.audience_blueprint
+  out.content_pillars = ensureArr(out.content_pillars, defaults.content_pillars)
+  out.hook_swipefile = ensureArr(out.hook_swipefile, defaults.hook_swipefile)
+  out.hashtag_seo = ensureArr(out.hashtag_seo, defaults.hashtag_seo)
+  out.collaboration_ideas = ensureArr(out.collaboration_ideas, defaults.collaboration_ideas)
+  out.distribution_playbook = ensureArr(out.distribution_playbook, defaults.distribution_playbook)
+  out.experiments = ensureArr(out.experiments, defaults.experiments)
+  out.timeline_30_60_90 ||= defaults.timeline_30_60_90
+  out.weekly_routine = ensureArr(out.weekly_routine, defaults.weekly_routine)
+  out.kpis ||= defaults.kpis
+
+  out.practical_advice ||= defaults.practical_advice
+  out.practical_advice.low_effort_examples = ensureArr(out.practical_advice.low_effort_examples, defaults.practical_advice.low_effort_examples)
+  out.practical_advice.high_effort_examples = ensureArr(out.practical_advice.high_effort_examples, defaults.practical_advice.high_effort_examples)
+
   out.charts ||= defaults.charts
   out.charts.platform_focus = ensureArr(out.charts.platform_focus, defaults.charts.platform_focus)
   out.charts.posting_cadence = ensureArr(out.charts.posting_cadence, defaults.charts.posting_cadence)
   out.charts.content_type_mix = ensureArr(out.charts.content_type_mix, defaults.charts.content_type_mix)
   out.charts.pillar_allocation = ensureArr(out.charts.pillar_allocation, defaults.charts.pillar_allocation)
+
+  // Backward compat: if an older model filled "roadblocks", mirror into your_roadblocks_and_fix on empty
+  if (!out.your_roadblocks_and_fix?.length && Array.isArray(out.roadblocks)) {
+    out.your_roadblocks_and_fix = out.roadblocks
+  }
+
   return out
 }
 

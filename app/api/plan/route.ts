@@ -4,7 +4,7 @@ import { searchKBServer } from "@/lib/rag";
 import { geminiTextModel, GEMINI_SAFETY } from "@/lib/gemini";
 import { supabaseServer } from "@/lib/supabaseServer";
 
-// Optional shallow public-profile summarizer
+// Optional: if you have link snapshots wired
 let collectSnapshots: undefined | ((urls: string[]) => Promise<any[]>);
 let summarizeSnapshots: undefined | ((snaps: any[]) => string);
 try {
@@ -19,59 +19,54 @@ type Persona = Record<string, any>;
 /* -------------------- helpers -------------------- */
 const asArray = (v: any): string[] => (Array.isArray(v) ? v : v ? [v] : []);
 
-function isOnboardingComplete(answers: Record<string, any> | null | undefined): boolean {
-  if (!answers || typeof answers !== "object") return false;
-  // minimum set you consider “complete” — tweak if needed
-  const required = ["creatingAs", "identity", "goal", "platforms", "topics", "reach", "timeAvailable"];
-  return required.every((k) => {
-    const v = (answers as any)[k];
-    return Array.isArray(v) ? v.length > 0 : typeof v === "string" ? v.trim().length > 0 : !!v;
-  });
-}
-
-/** ---------- Normalization & de-dup helpers ---------- */
 const PLATFORM_CANON: Record<string, string> = {
-  yt: "YouTube", youtube: "YouTube",
-  ig: "Instagram", instagram: "Instagram",
-  tiktok: "TikTok", "tik tok": "TikTok",
-  twitter: "Twitter/X", x: "Twitter/X", "twitter/x": "Twitter/X", tw: "Twitter/X",
-  linkedin: "LinkedIn", li: "LinkedIn",
-  fb: "Facebook", facebook: "Facebook",
+  yt: "YouTube",
+  youtube: "YouTube",
+  ig: "Instagram",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  "tik tok": "TikTok",
+  twitter: "Twitter/X",
+  x: "Twitter/X",
+  "twitter/x": "Twitter/X",
+  tw: "Twitter/X",
+  linkedin: "LinkedIn",
+  li: "LinkedIn",
+  fb: "Facebook",
+  facebook: "Facebook",
   pinterest: "Pinterest",
   twitch: "Twitch",
 };
+const canonPlatform = (label = "") =>
+  PLATFORM_CANON[label.trim().toLowerCase()] ||
+  PLATFORM_CANON[label.trim().toLowerCase().replace(/[^\w]/g, "")] ||
+  label.trim().replace(/\b\w/g, (c) => c.toUpperCase());
 
-function canonPlatform(label: string = ""): string {
-  const key = label.trim().toLowerCase();
-  return PLATFORM_CANON[key] || PLATFORM_CANON[key.replace(/[^\w]/g, "")] || label.trim().replace(/\b\w/g, (c) => c.toUpperCase());
-}
+const splitBullets = (s: string) =>
+  (s || "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((l) => l.replace(/^\s*[-•]\s?/, "").trim())
+    .filter(Boolean);
 
-function splitBullets(s: string): string[] {
-  if (!s) return [];
-  const raw = s.replace(/\r/g, "").split("\n");
-  const lines = raw.map((l) => l.replace(/^\s*[-•]\s?/, "").trim()).filter(Boolean);
-  return Array.from(new Set(lines));
-}
-
-function joinBullets(lines: string[]): string {
+const joinBullets = (lines: string[]) => {
   const uniq = Array.from(new Set(lines.map((l) => l.trim()).filter(Boolean)));
   return uniq.length ? "- " + uniq.join("\n- ") : "";
-}
+};
 
-function uniqStrings(arr?: string[]): string[] {
+const uniqStrings = (arr?: string[]) => {
   if (!Array.isArray(arr)) return [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const v of arr) {
-    const key = (v || "").trim().toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
+    const k = (v || "").trim().toLowerCase();
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
     out.push(v);
   }
   return out;
-}
-
-function uniqObjectsBy<T>(arr: T[] | undefined, keyFn: (t: T) => string): T[] {
+};
+const uniqObjectsBy = <T,>(arr: T[] | undefined, keyFn: (t: T) => string) => {
   if (!Array.isArray(arr)) return [];
   const seen = new Set<string>();
   const out: T[] = [];
@@ -82,9 +77,11 @@ function uniqObjectsBy<T>(arr: T[] | undefined, keyFn: (t: T) => string): T[] {
     out.push(it);
   }
   return out;
-}
+};
 
-function normalizePlatformStrategies(list: { platform: string; strategy: string }[] | undefined) {
+function normalizePlatformStrategies(
+  list: { platform: string; strategy: string }[] | undefined
+) {
   if (!Array.isArray(list) || list.length === 0) return [];
   const map = new Map<string, string[]>();
   for (const item of list) {
@@ -93,32 +90,10 @@ function normalizePlatformStrategies(list: { platform: string; strategy: string 
     const prev = map.get(plat) || [];
     map.set(plat, Array.from(new Set([...prev, ...bullets])));
   }
-  return Array.from(map.entries()).map(([platform, bullets]) => ({ platform, strategy: joinBullets(bullets) }));
-}
-
-function normalizeIssueAlias(raw: string): string {
-  if (
-    /not sure (what|which).*(post|content)/i.test(raw) ||
-    /what to post/i.test(raw) ||
-    /content to make next/i.test(raw) ||
-    /idea(s)?\b.*(stuck|unsure|don.?t know)/i.test(raw)
-  ) return "Not sure what content to make next";
-  if (/inconsisten|consisten|schedule|routine/i.test(raw)) return "Inconsistent posting";
-  if (/hook|intro|open/i.test(raw)) return "Weak hooks";
-  if (/camera|on-?camera|awkward|shy/i.test(raw)) return "On-camera discomfort";
-  return raw.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function normalizeRoadblocks(list: { issue: string; solution: string }[] | undefined) {
-  if (!Array.isArray(list)) return [];
-  const byIssue = new Map<string, string[]>();
-  for (const rb of list) {
-    const canon = normalizeIssueAlias(rb.issue || "");
-    const bullets = splitBullets(rb.solution || (rb as any).solution || "");
-    const prev = byIssue.get(canon) || [];
-    byIssue.set(canon, Array.from(new Set([...prev, ...bullets])));
-  }
-  return Array.from(byIssue.entries()).map(([issue, bullets]) => ({ issue, solution: joinBullets(bullets) }));
+  return Array.from(map.entries()).map(([platform, bullets]) => ({
+    platform,
+    strategy: joinBullets(bullets),
+  }));
 }
 
 function normalizeAnswers(p: Persona) {
@@ -126,50 +101,123 @@ function normalizeAnswers(p: Persona) {
     creatingAs: asArray(p.creatingAs).join(", "),
     identity: asArray(p.identity).join(", "),
     goals: asArray(p.goal),
-    platforms: asArray(p.platforms || p.platformFocus || p.focusPlatforms),
+    platforms: asArray(p.platforms || p.platformFocus || p.focusPlatforms)
+      .map(canonPlatform)
+      .filter(Boolean),
     topics: asArray(p.topics),
     trends: asArray(p.trends),
     creativity: asArray(p.creativity),
+
     reach: asArray(p.reach),
+
     face: Array.isArray(p.face) ? p.face.join(", ") : p.face || "",
     camera: Array.isArray(p.camera) ? p.camera.join(", ") : p.camera || "",
+
+    // ---- these were missing; the prompt expected them
     stuckReason: asArray(p.stuckReason),
+    holdingBack: asArray(p.holdingBack),
+    triedButDidntWork: asArray(p.triedButDidntWork),
+    techComfort: (Array.isArray(p.techComfort) ? p.techComfort[0] : p.techComfort) || "",
+    techGaps: asArray(p.techGaps),
+
     monetizationMethods: asArray(p.monetizationMethods),
-    timeAvailable: Array.isArray(p.timeAvailable) ? p.timeAvailable.join(", ") : p.timeAvailable || "",
+    planVsWing: Array.isArray(p.planVsWing) ? p.planVsWing[0] : p.planVsWing,
   };
 }
 
 function deriveSignals(a: ReturnType<typeof normalizeAnswers>) {
   const wantsFace = a.face.toLowerCase().includes("yes");
   const cam = a.camera.toLowerCase();
-  const cameraComfort =
-    cam.includes("love") ? "high" :
-    cam.includes("okay") ? "medium" :
-    cam.includes("awk") || cam.includes("no") ? "low" : "unknown";
+  const cameraComfort = cam.includes("love")
+    ? "high"
+    : cam.includes("okay")
+    ? "medium"
+    : cam.includes("awk") || cam.includes("no")
+    ? "low"
+    : "unknown";
 
   const id = a.identity.toLowerCase();
-  const stage =
-    id.includes("zero") ? "new" :
-    id.includes("small") ? "early" :
-    id.includes("stuck") ? "stalled" :
-    id.includes("large") ? "scaled" :
-    id.includes("pivot") ? "pivot" : "unknown";
+  const stage = id.includes("zero")
+    ? "new"
+    : id.includes("small")
+    ? "early"
+    : id.includes("stuck")
+    ? "stalled"
+    : id.includes("large")
+    ? "scaled"
+    : id.includes("pivot")
+    ? "pivot"
+    : "unknown";
 
-  const platforms = a.platforms.length > 0 ? a.platforms : ["TikTok", "Instagram", "YouTube", "Pinterest"];
+  const platforms = Array.isArray(a.platforms) && a.platforms.length > 0
+    ? a.platforms
+    : []; // no defaults, only what user picked
 
   return {
-    stage, wantsFace, cameraComfort, platforms,
+    stage,
+    wantsFace,
+    cameraComfort,
+    platforms,
     goals: a.goals,
     audienceHints: a.reach,
     contentInterests: [...a.topics, ...a.trends, ...a.creativity],
     userPainPoints: a.stuckReason,
+    planVsWing: a.planVsWing || "",
   };
+}
+
+function buildStageNote(sig: ReturnType<typeof deriveSignals>, persona: Record<string, any>) {
+  const hours = (persona.timeAvailable || "").toString().toLowerCase();
+  const lowTime = /less than 2|2-5/.test(hours);
+  const camera = (persona.camera || "").toString().toLowerCase();
+
+  const base =
+    sig.stage === "new"
+      ? "You’re in the early momentum phase. The goal is quick learning loops: ship simple posts, measure the first two seconds, and repeat what sticks."
+      : sig.stage === "early"
+      ? "You have a small base. Tighten repeatable formats and build a weekly cadence that compounds. Protect consistency over polish."
+      : sig.stage === "stalled"
+      ? "You’ve posted before but results flattened. Audit your top 10% posts, double down on hook patterns, and remove low-ROI work for two weeks."
+      : sig.stage === "scaled"
+      ? "You’re scaling. Standardize your formats, build a content calendar, and delegate editing to push frequency without losing quality."
+      : sig.stage === "pivot"
+      ? "You’re pivoting. Keep one proven format while you test the new angle. Announce the change and bring the audience along."
+      : "We’ll run fast experiments to learn what resonates and then standardize the best patterns.";
+
+  const timeNote = lowTime
+    ? " With limited weekly time, run one batching block and one daily publish window. Templates beat perfection."
+    : "";
+
+  const style =
+    camera.includes("no") || camera.includes("awk")
+      ? " Use voiceover, screen demos, or animation as a style choice—not a limitation."
+      : "";
+
+  return (base + timeNote + style).trim();
+}
+
+function buildStrategyTypeNote(strategyType: string, sig: ReturnType<typeof deriveSignals>) {
+  const cadence =
+    sig.stage === "new" ? "Daily tiny posts + weekly review." :
+    sig.stage === "stalled" ? "Post daily for 14 days and audit winners." :
+    "Keep a steady weekly rhythm and iterate.";
+
+  if (strategyType === "plan-first") {
+    return `Plan-first works best when you can batch. Outline pillars, write 10 hooks per idea, and schedule posts. ${cadence}`;
+  }
+  if (strategyType === "wing-it") {
+    return `Wing-it favors quick recording. Capture ideas immediately, trim fast, and publish within the hour. Still keep a weekly review so chaos compounds into learning. ${cadence}`;
+  }
+  return `Hybrid = plan the pillars, improvise the execution. Keep a light ideas doc, then record in short bursts. Use saved templates for captions and end-cards. ${cadence}`;
 }
 
 function chartSeeds(sig: ReturnType<typeof deriveSignals>) {
   const base = sig.platforms;
   const slice = base.length ? Math.round(100 / base.length) : 25;
-  const platform_focus = base.map((name, i) => ({ name, value: i === 0 ? 100 - slice * (base.length - 1) : slice }));
+  const platform_focus = base.map((name, i) => ({
+    name,
+    value: i === 0 ? 100 - slice * (base.length - 1) : slice,
+  }));
   const posting_cadence = [
     { name: "Mon", posts: sig.stage === "new" ? 2 : 1 },
     { name: "Tue", posts: sig.stage === "new" ? 2 : 1 },
@@ -180,8 +228,8 @@ function chartSeeds(sig: ReturnType<typeof deriveSignals>) {
     { name: "Sun", posts: 1 },
   ];
   const content_type_mix = [
-    { name: "Educational", value: sig.contentInterests.some((s) => /education|tips|how|coaching/i.test(s)) ? 45 : 30 },
-    { name: "Entertainment", value: 30 },
+    { name: "Educational", value: 40 },
+    { name: "Entertainment", value: 35 },
     { name: "Personal", value: 25 },
   ];
   const pillar_allocation = [
@@ -192,120 +240,131 @@ function chartSeeds(sig: ReturnType<typeof deriveSignals>) {
   return { platform_focus, posting_cadence, content_type_mix, pillar_allocation };
 }
 
-function coercePlanShape(input: any) {
-  const defaults = {
-    profile_summary: "Unable to generate right now.",
-    overall_strategy: "- Post daily short-form.\n- Optimize hooks.\n- Review weekly.",
-    platform_strategies: [] as { platform: string; strategy: string }[],
-    roadblocks: [] as { issue: string; solution: string }[],
-    next_steps: ["Day 1–3: Define 3 pillars", "Day 4–7: Batch 5 posts", "Day 8–14: Post daily, review"],
-    charts: {
-      platform_focus: [{ name: "TikTok", value: 50 }, { name: "Instagram", value: 30 }, { name: "YouTube", value: 20 }],
-      posting_cadence: [
-        { name: "Mon", posts: 2 }, { name: "Tue", posts: 2 }, { name: "Wed", posts: 2 },
-        { name: "Thu", posts: 2 }, { name: "Fri", posts: 3 }, { name: "Sat", posts: 1 }, { name: "Sun", posts: 1 },
-      ],
-      content_type_mix: [{ name: "Educational", value: 50 }, { name: "Entertainment", value: 30 }, { name: "Personal", value: 20 }],
-      pillar_allocation: [{ name: "Pillar A", value: 40 }, { name: "Pillar B", value: 35 }, { name: "Pillar C", value: 25 }],
-    },
-  };
-  if (!input || typeof input !== "object") return defaults;
-  const out: any = { ...defaults, ...input };
-  const ensureArr = (v: any, fb: any[]) => (Array.isArray(v) ? v : fb);
-  out.platform_strategies = ensureArr(out.platform_strategies, defaults.platform_strategies);
-  out.roadblocks = ensureArr(out.roadblocks, defaults.roadblocks);
-  out.next_steps = ensureArr(out.next_steps, defaults.next_steps);
-  out.charts ||= defaults.charts;
-  out.charts.platform_focus   = ensureArr(out.charts.platform_focus,   defaults.charts.platform_focus);
-  out.charts.posting_cadence  = ensureArr(out.charts.posting_cadence,  defaults.charts.posting_cadence);
-  out.charts.content_type_mix = ensureArr(out.charts.content_type_mix, defaults.charts.content_type_mix);
-  out.charts.pillar_allocation= ensureArr(out.charts.pillar_allocation,defaults.charts.pillar_allocation);
+/* -------------------- fallbacks if model is sparse -------------------- */
+function buildFallbackIdeas(persona: Record<string, any>, signals: ReturnType<typeof deriveSignals>) {
+  const topics = (Array.isArray(persona.topics) ? persona.topics : []).slice(0, 3);
+  const goals  = (Array.isArray(persona.goal) ? persona.goal : []);
+  const stage  = signals.stage;
+
+  const tilt = goals.includes('sell a service | product') ? 'conversion'
+             : goals.includes('build community and express creativity') ? 'community'
+             : 'growth';
+
+  const mk = (title: string, outline: string) => ({ title, outline });
+
+  const ideas: Array<{title: string; outline: string}> = [];
+
+  if (topics.length) {
+    ideas.push(
+      mk(`“What I’d do if I started from 0” in ${topics[0]}`,
+         `Hook: one step most people skip.\nSteps 1–3 you’d take this week.\nShow a quick demo.\nCTA: try one today and comment the result.`)
+    );
+  }
+
+  ideas.push(
+    mk(`3 beginner mistakes in ${topics[1] || 'your niche'} (and quick fixes)`,
+       `List the mistakes.\nShow a 10-second fix for each.\nOverlay text for clarity.\nCTA: save and share with a friend.`)
+  );
+
+  ideas.push(
+    mk(`${topics[2] || 'your topic'} in 60 seconds (series #1)`,
+       `Promise the outcome in the first 2 seconds.\nExplain with one analogy + one visual.\nEnd with “part 2 tomorrow”.`)
+  );
+
+  if (tilt === 'conversion') {
+    ideas.push(
+      mk(`Before/After: client mini-case`,
+         `Show the problem.\nShow the new workflow or tactic.\nResult in one metric.\nSoft CTA to your offer link.`)
+    );
+  }
+
+  if (stage === 'new') {
+    ideas.push(
+      mk(`Remix: 1 idea → 3 posts`,
+         `Version A: fast tip.\nVersion B: story example.\nVersion C: screen demo.\nAsk viewers which style they prefer.`)
+    );
+  }
+
+  return ideas;
+}
+
+function buildFallbackRisks(signals: ReturnType<typeof deriveSignals>, persona: Record<string, any>) {
+  const lowTime = /less than 2|2-5/i.test(String(persona.timeAvailable || ''));
+  const risks = [
+    'Over-editing instead of publishing experiments',
+    'Switching themes too often before patterns emerge',
+    'Ignoring what top-performing posts have in common'
+  ];
+  if (signals.stage === 'stalled') risks.unshift('Repeating formats without changing the hook');
+  if (lowTime) risks.push('Planning formats that exceed your weekly time budget');
+  return risks;
+}
+
+function buildFallbackMonetization(persona: Record<string, any>) {
+  const goals  = (Array.isArray(persona.goal) ? persona.goal : []);
+  const wantsDeals   = goals.some((g: string) => /brand deals|sponsorship/i.test(g));
+  const wantsProduct = goals.some((g: string) => /sell .*product/i.test(g));
+  const wantsService = goals.some((g: string) => /service/i.test(g));
+
+  const out: string[] = [];
+  if (wantsDeals) out.push('Pick one sponsor category and make 3 “spec” posts; add a media kit link in bio');
+  if (wantsProduct) out.push('Draft a 1-page offer (problem → promise → proof → price); soft CTA in 1 of 5 posts');
+  if (wantsService) out.push('Create a 2-step DM funnel: value post → “comment keyword”; send booking link');
+  out.push('Track weekly: clicks, replies, DMs, and conversion notes in a simple sheet');
   return out;
 }
 
-function inferPlatforms(persona: Persona): string[] {
-  const blob = [persona.platforms, persona.goal, persona.topics, persona.creatingAs].flat().filter(Boolean).join(" ").toLowerCase();
-  const list: string[] = [];
-  if (blob.includes("youtube")) list.push("YouTube");
-  if (blob.includes("instagram")) list.push("Instagram");
-  if (blob.includes("tiktok")) list.push("TikTok");
-  if (blob.includes("pinterest")) list.push("Pinterest");
-  if (blob.includes("twitter") || blob.includes("x")) list.push("Twitter/X");
-  if (blob.includes("linkedin")) list.push("LinkedIn");
-  if (list.length === 0) list.push("TikTok", "Instagram");
-  return Array.from(new Set(list)).slice(0, 4);
-}
-
-function fillFromPersonaIfMissing(plan: any, persona: Persona) {
-  const platforms = inferPlatforms(persona);
-  if (!Array.isArray(plan.platform_strategies) || plan.platform_strategies.length === 0) {
-    plan.platform_strategies = platforms.map((p) => ({
-      platform: p,
-      strategy: p.toLowerCase().includes("youtube")
-        ? "- 1 long-form/week + 2 Shorts.\n- Title = outcome + timeframe.\n- First 2s show the result."
-        : "- 1–2 posts/day.\n- Hook in 2s.\n- 3 pillars. Weekly review.",
-    }));
-  } else {
-    const have = new Set(plan.platform_strategies.map((s: any) => s.platform));
-    platforms.forEach((p) => {
-      if (!have.has(p)) {
-        plan.platform_strategies.push({
-          platform: p,
-          strategy: "- 1–2 posts/day.\n- Tight hooks.\n- Batch record.\n- Analyze weekly.",
-        });
-      }
-    });
-  }
-  if (!Array.isArray(plan.roadblocks) || plan.roadblocks.length === 0) {
-    plan.roadblocks = [
-      { issue: "Inconsistent posting", solution: "- Schedule 14-day cadence.\n- Batch 5 videos today.\n- Post at the same hour." },
-      { issue: "Weak hooks",          solution: "- 10 hook variations per idea.\n- Lead with outcome or tension.\n- Cut first 2 seconds if slow." },
-    ];
-  }
-  return plan;
-}
-
-function mergeRoadblocksFromPersona(plan: any, sig: ReturnType<typeof deriveSignals>) {
-  const mapped = (issue: string) => {
-    if (/hook|intro|open/i.test(issue)) return { issue: "Weak hooks", solution: "- Write 10 hook variants per idea\n- Lead with outcome/tension in 2s\n- Cut first 2s if no action\n- Test 3 thumbnails/titles weekly" };
-    if (/inconsistent|consisten|schedule|routine/i.test(issue)) return { issue: "Inconsistent posting", solution: "- Batch 5–10 clips every Sun (90 min)\n- Set daily 20-min publish window\n- Track streak; reset weekly targets" };
-    if (/idea|what to post|uninspired/i.test(issue)) return { issue: "Not sure what to post", solution: "- Define 3 pillars from interests\n- Save 20 reference videos this week\n- Turn each into 3 remixes (A/B hooks)\n- Keep an ideas doc; add 5/day" };
-    if (/camera|on-camera|awkward|shy/i.test(issue)) return { issue: "On-camera discomfort", solution: "- Start with VO + b-roll for 2 weeks\n- Record 3 selfie drafts/day, publish 1\n- Script beats: Hook → 3 points → CTA\n- Eye-level framing + natural light" };
-    return { issue: issue || "Execution gaps", solution: "- Set weekly targets (posts, watch time)\n- Duplicate top 10% patterns\n- Remove low-ROI tasks for 14 days\n- End each session with next 3 actions" };
-  };
-  const userRB = sig.userPainPoints?.map(mapped) || [];
-  const aiRB = Array.isArray(plan.roadblocks) ? plan.roadblocks : [];
-  const merged = [...userRB, ...aiRB];
-  plan.roadblocks = merged.length ? merged : [{ issue: "Inconsistent posting", solution: "- Batch on Sundays\n- Daily publish window\n- Track streak" }];
-  return plan;
-}
-
+/* -------------------- prompt -------------------- */
 /* -------------------- prompt -------------------- */
 const DASHBOARD_PROMPT = `
-You are an expert social growth strategist and dashboard designer.
-Use ALL relevant answers explicitly. If a field is missing, state one assumption once in the Profile Summary.
+You’re a friendly, plain-spoken social media growth coach. Be direct, useful, and human. Avoid corporate tone.
+Use the user’s answers. If something is missing, make ONE reasonable assumption once (but never label it in brackets).
 
-PLATFORM LABELS (use EXACTLY these; each at most once if relevant):
+PLATFORM LABELS (use EXACTLY these):
 YouTube, Instagram, TikTok, Twitter/X, LinkedIn, Facebook, Pinterest, Twitch
 
-OUTPUT (JSON ONLY; no markdown fences):
+HARD CONSTRAINTS:
+- Only include platforms that are explicitly allowed in ALLOWED_PLATFORMS (provided below).
+- Do not mention or imply any platform not in ALLOWED_PLATFORMS anywhere (platform_strategies or charts).
+- Roadblocks & Fixes must be synthesized ONLY from these onboarding fields:
+  identity, stuckReason, goal, reach, holdingBack, triedButDidntWork, techComfort, techGaps.
+- Treat on-camera preference as a creative style, not a flaw. Offer positive alternatives (voiceover, animations, screen demos).
+
+OUTPUT (JSON ONLY; no markdown fences)
 {
-  "profile_summary": "1 concise paragraph citing brand type, stage, goals, camera comfort, platform focus.",
-  "overall_strategy": "- 4–8 concrete bullets tied to answers.",
-  "platform_strategies": [{ "platform": "TikTok", "strategy": "- 3–6 bullets customized to persona" }],
-  "roadblocks": [{ "issue": "string", "solution": "- step1\\n- step2\\n- step3" }],
+  "your_niche": "A thorough paragraph on the niche angle, no less than 5 sentences, where the user shines, and who they resonate with.",
+  "platform_strategies": [{ "platform": "TikTok", "strategy": "- 3–6 short bullets" }],
+
+  "your_roadblocks_and_fix": [
+    { "issue": "string", "solution": "- step1\\n- step2\\n- step3" }
+  ],
+
+  "engagement_stage": "one of: new, early, stalled, scaled, pivot, unknown",
+  "engagement_stage_note": "2–4 sentences: why this stage fits and the next few weeks’ focus.",
+
+  "strategy_type": "one of: plan-first, wing-it, hybrid",
+  "strategy_type_note": "2–4 sentences: how to run this approach day-to-day (tools, cadence, templates).",
+
+  "theory": ["Folder idea 1","Folder idea 2","Folder idea 3"],
+  "practical_advice": {
+    "low_effort_examples": ["Example 1","Example 2","Example 3"],
+    "high_effort_examples": ["Example 1","Example 2"]
+  },
+
   "next_steps": ["Day 1–3 ...", "Day 4–7 ...", "Week 2 ..."],
-  "audience_blueprint": "Target segments and why, in 4–8 lines.",
-  "content_pillars": ["Pillar A","Pillar B","Pillar C"],
-  "hook_swipefile": ["Hook 1","Hook 2","Hook 3"],
-  "cadence_plan": "Specific weekly schedule counts, aligned to camera comfort and stage.",
-  "hashtag_seo": ["keyword 1","keyword 2"],
-  "collaboration_ideas": ["idea 1","idea 2"],
-  "distribution_playbook": ["cross-posting, repost cadence, newsletter, community drops"],
-  "experiments": ["A/B idea 1","A/B idea 2"],
-  "timeline_30_60_90": { "day_0_30": ["..."], "day_31_60": ["..."], "day_61_90": ["..."] },
-  "weekly_routine": ["Mon: ...","Tue: ...","Fri: Review ..."],
+
+  "content_ideas": [
+    { "title": "Tailored idea title", "outline": "3–6 short lines tied to their niche, goals, and style" }
+  ],
+  "risk_watchouts": ["Risks specific to their stage/goals/time/tech comfort"],
+  "monetization_plan": ["Monetization paths mapped to their goals and time budget"],
+
+  "time_budget_note": "1–3 lines about a realistic weekly plan from their timeAvailable",
+  "skill_upgrades": ["Hook reps","Editing drill","Analytics cadence"],
+  "feedback_approach": "short paragraph with a weekly reflection habit.",
+
   "kpis": { "weekly_posts": number, "target_view_rate_pct": number, "target_followers_30d": number },
+
   "charts": {
     "platform_focus": [{ "name": "TikTok", "value": 40 }],
     "posting_cadence": [{ "name": "Mon", "posts": 2 }],
@@ -313,44 +372,28 @@ OUTPUT (JSON ONLY; no markdown fences):
     "pillar_allocation": [{ "name": "Pillar A", "value": 40 }]
   }
 }
+
 STRICT RULES:
-- Use platform labels exactly as listed; do not invent variants.
-- Output each platform at most once in platform_strategies.
-- Roadblocks must be unique by issue; do not repeat with casing variations.
-- Tone: direct, no fluff.
+- Use platform labels exactly as listed (e.g., "Twitter/X").
+- Do NOT output any platform not present in ALLOWED_PLATFORMS.
+- Do NOT duplicate a platform in platform_strategies.
+- Roadblocks must be unique, concise, and only derived from the allowed fields above.
+- Keep sentences concise and clear. No fluff.
 `;
 
 /* -------------------- route -------------------- */
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    // Require signed-in user
-    const sb = await supabaseServer();
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const body = await req.json().catch(() => ({}));
+    const persona: Persona = body.persona || {};
+    const links: string[] = Array.isArray(body.links) ? body.links.filter(Boolean) : [];
 
-    // Find latest onboarding session for this user
-    const { data: sessions, error: sErr } = await sb
-      .from("onboarding_sessions")
-      .select("answers, links")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(1);
-
-    if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
-
-    const answersRaw = sessions?.[0]?.answers || null;
-    const linksArr: string[] = Array.isArray(sessions?.[0]?.links) ? sessions![0].links : [];
-
-    if (!isOnboardingComplete(answersRaw)) {
-      return NextResponse.json({ error: "Onboarding incomplete" }, { status: 400 });
-    }
-
-    // RAG text
-    const persona: Persona = answersRaw || {};
-    const forQuery = [persona.goal, persona.creatingAs, persona.identity, persona.topics, persona.reach]
-      .flat()
-      .filter(Boolean)
-      .join(" | ") || "social growth strategy basics";
+    // RAG (optional)
+    const forQuery =
+      [persona.goal, persona.creatingAs, persona.identity, persona.topics, persona.reach]
+        .flat()
+        .filter(Boolean)
+        .join(" | ") || "social growth strategy basics";
 
     let kbText = "";
     try {
@@ -360,23 +403,26 @@ export async function POST() {
       console.warn("[api/plan] RAG lookup failed:", (e as any)?.message);
     }
 
-    // Links snapshot (optional)
+    // Links (optional)
     let linkSummary = "";
-    if (linksArr.length && collectSnapshots && summarizeSnapshots) {
+    if (links.length && collectSnapshots && summarizeSnapshots) {
       try {
-        const snaps = await collectSnapshots(linksArr);
+        const snaps = await collectSnapshots(links);
         linkSummary = summarizeSnapshots(snaps);
       } catch (e) {
         console.warn("[api/plan] links snapshot failed:", (e as any)?.message);
       }
     }
 
-    // Prep prompt
+    // Signals + seeds
     const answers = normalizeAnswers(persona);
     const signals = deriveSignals(answers);
     const seeds = chartSeeds(signals);
-
+    const allowedPlatforms = signals.platforms; // already normalized to canonical names
     const prompt = `${DASHBOARD_PROMPT}
+
+### ALLOWED_PLATFORMS
+${JSON.stringify(allowedPlatforms)}
 
 ### RAW_ANSWERS
 ${JSON.stringify(answers, null, 2)}
@@ -384,14 +430,11 @@ ${JSON.stringify(answers, null, 2)}
 ### DERIVED_SIGNALS
 ${JSON.stringify(signals, null, 2)}
 
-### CHART_SEEDS
-${JSON.stringify(seeds, null, 2)}
-
 ### OPTIONAL_KB
 ${kbText || "(none)"}
 
 ### PUBLIC_LINKS_INSIGHTS
-${linksArr.length ? linkSummary : "(no links provided)"}
+${links.length ? linkSummary : "(no links provided)"}
 `;
 
     // ---------- CALL GEMINI ----------
@@ -404,7 +447,7 @@ ${linksArr.length ? linkSummary : "(no links provided)"}
         generationConfig: {
           temperature: 0.2,
           topP: 0.9,
-          maxOutputTokens: 1400,
+          maxOutputTokens: 1800,
           responseMimeType: "application/json",
         },
       });
@@ -414,111 +457,134 @@ ${linksArr.length ? linkSummary : "(no links provided)"}
       raw = "";
     }
 
-    // ---------- CLEAN + PARSE (with repair) ----------
-    const cleaned = (raw || "")
+    // ---------- PARSE ----------
+    const cleaned = raw
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
       .replace(/```$/i, "")
       .trim();
-
-    const sliceToLargestJson = (t: string) => {
-      const s = t.indexOf("{");
-      const e = t.lastIndexOf("}");
+    const largestJson = (t: string) => {
+      const s = t.indexOf("{"), e = t.lastIndexOf("}");
       return s >= 0 && e > s ? t.slice(s, e + 1) : t;
     };
 
-    function braceRepair(t: string): string {
-      const s = sliceToLargestJson(t);
-      let openCurly = 0, openSquare = 0;
-      let out = "";
-      for (const ch of s) {
-        if (ch === "{") openCurly++;
-        if (ch === "}") openCurly = Math.max(0, openCurly - 1);
-        if (ch === "[") openSquare++;
-        if (ch === "]") openSquare = Math.max(0, openSquare - 1);
-        out += ch;
-      }
-      out += "]".repeat(openSquare);
-      out += "}".repeat(openCurly);
-      return out;
-    }
-
-    const tryParse = (t: string) => { try { return JSON.parse(t); } catch { return null; } };
-
     let parsed: any = null;
-
-    if (!cleaned) {
-      console.warn("[api/plan] empty model output; using defaults");
-    } else {
-      parsed = tryParse(sliceToLargestJson(cleaned));
-      if (!parsed) parsed = tryParse(braceRepair(cleaned));
-      if (!parsed) {
-        try {
-          const repairPrompt = `
-Return a VALID JSON OBJECT ONLY that matches this shape. Fix any truncation.
-
-<<<JSON_CANDIDATE
-${cleaned.slice(0, 12000)}
-JSON_CANDIDATE>>>
-          `.trim();
-
-          const repairResult = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: repairPrompt }] }],
-            safetySettings: GEMINI_SAFETY,
-            generationConfig: { temperature: 0.0, maxOutputTokens: 900, responseMimeType: "application/json" },
-          });
-
-          const repairedRaw = (repairResult.response?.text?.() || "").trim();
-          const repairedClean = repairedRaw
-            .replace(/^```json\s*/i, "")
-            .replace(/^```\s*/i, "")
-            .replace(/```$/i, "")
-            .trim();
-
-          parsed = tryParse(sliceToLargestJson(repairedClean));
-        } catch (e: any) {
-          console.warn("[api/plan] repair call failed:", e?.message || e);
-        }
+    if (cleaned) {
+      try {
+        parsed = JSON.parse(largestJson(cleaned));
+      } catch (e) {
+        console.warn("[api/plan] JSON parse failed; using defaults. head:", cleaned.slice(0, 160));
+        parsed = null;
       }
-      if (!parsed) console.warn("[api/plan] JSON parse failed; continuing with defaults. head:", cleaned.slice(0, 180));
     }
 
-    // ---------- COERCE + NORMALIZE ----------
-    let plan = coercePlanShape(parsed);
-    plan = fillFromPersonaIfMissing(plan, persona);
-    plan = mergeRoadblocksFromPersona(plan, signals);
+    // ---------- COERCE / BACKFILL ----------
+    const defaults: any = {
+      your_niche: "You have a clear voice. Focus on the overlap between what you enjoy and what your people search for.",
+      platform_strategies: [],
+      your_roadblocks_and_fix: [],
+      engagement_stage: signals.stage,
+      strategy_type: "hybrid",
+      theory: ["Create a folder of repeatable ideas", "Lead with outcomes", "Ship daily, review weekly"],
+      practical_advice: {
+        low_effort_examples: ["Quick reactions to trends", "Behind-the-scenes snippets", "Share work-in-progress"],
+        high_effort_examples: ["In-depth tutorials", "High-quality showcase pieces"],
+      },
+      next_steps: ["Day 1–3: define 3 pillars", "Day 4–7: batch 5 posts", "Week 2: post daily and review"],
+      content_ideas: [],
+      risk_watchouts: [],
+      monetization_plan: [],
+      time_budget_note: "Plan for 2–5 hours/week: one batch session + a brief daily publish window.",
+      skill_upgrades: ["Hooks: write 10/day for 7 days", "Editing: learn 1 zoom/cut pattern", "Analytics: review top 5 posts weekly"],
+      feedback_approach: "Every Friday: list 3 that worked (duplicate), remove 1 thing, set 1 new test.",
+      kpis: { weekly_posts: 10, target_view_rate_pct: 25, target_followers_30d: 1000 },
+      charts: seeds,
+    };
 
+    let plan: any = { ...defaults, ...(parsed || {}) };
+    // Backfill engagement_stage & strategy_type from signals/persona if missing
+    plan.engagement_stage ||= signals.stage;
+
+    const pv = (answers.planVsWing || "").toString().toLowerCase();
+    if (!plan.strategy_type) {
+      plan.strategy_type =
+        pv.includes("plan") ? "plan-first" :
+        pv.includes("mix")  ? "hybrid" :
+        pv                  ? "wing-it" : "hybrid";
+    }
+
+    // --- Cleanup & always-provide long notes ---
+
+    // Remove any stray "[ASSUMPTION: ...]" from the niche
+    if (typeof plan.your_niche === "string") {
+      plan.your_niche = plan.your_niche
+        .replace(/\[ASSUMPTION:[^\]]*\]/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    // Tailored fallbacks if the model omitted sections
+    if (!Array.isArray(plan.content_ideas) || plan.content_ideas.length === 0) {
+      plan.content_ideas = buildFallbackIdeas(persona, signals);
+    }
+    if (!Array.isArray(plan.risk_watchouts) || plan.risk_watchouts.length === 0) {
+      plan.risk_watchouts = buildFallbackRisks(signals, persona);
+    }
+    if (!Array.isArray(plan.monetization_plan) || plan.monetization_plan.length === 0) {
+      plan.monetization_plan = buildFallbackMonetization(persona);
+    }
+
+    // Ensure narrative notes exist (these are the longer texts you want)
+    plan.engagement_stage_note = plan.engagement_stage_note || buildStageNote(signals, persona);
+    plan.strategy_type_note    = plan.strategy_type_note    || buildStrategyTypeNote(plan.strategy_type, signals);
+
+    // Normalize & filter platform strategies by selected platforms (if any)
     plan.platform_strategies = normalizePlatformStrategies(plan.platform_strategies);
-    plan.roadblocks          = normalizeRoadblocks(plan.roadblocks);
-    plan.next_steps             = uniqStrings(plan.next_steps);
-    plan.experiments            = uniqStrings(plan.experiments);
-    plan.hashtag_seo            = uniqStrings(plan.hashtag_seo);
-    plan.collaboration_ideas    = uniqStrings(plan.collaboration_ideas);
-    plan.distribution_playbook  = uniqStrings(plan.distribution_playbook);
-    plan.hook_swipefile         = uniqStrings(plan.hook_swipefile);
-    plan.content_pillars        = uniqStrings(plan.content_pillars);
+    if (signals.platforms?.length) {
+      const allowed = new Set(signals.platforms.map(canonPlatform));
+      plan.platform_strategies = plan.platform_strategies.filter((p: any) => allowed.has(canonPlatform(p.platform)));
+    }
 
+    // Clean arrays
+    plan.next_steps = uniqStrings(plan.next_steps);
+    plan.risk_watchouts = uniqStrings(plan.risk_watchouts);
+    plan.monetization_plan = uniqStrings(plan.monetization_plan);
+    plan.skill_upgrades = uniqStrings(plan.skill_upgrades);
+    plan.theory = uniqStrings(plan.theory);
+    plan.practical_advice ||= defaults.practical_advice;
+
+    // Charts — ensure present
     if (plan?.charts?.platform_focus) {
       plan.charts.platform_focus = uniqObjectsBy(
         plan.charts.platform_focus.map((p: any) => ({ ...p, name: canonPlatform(p.name) })),
         (p: any) => p.name
       );
     }
-    // const seeds = chartSeeds(deriveSignals(normalizeAnswers(persona)));
     plan.charts = {
-      platform_focus:    plan.charts?.platform_focus?.length    ? plan.charts.platform_focus    : seeds.platform_focus,
-      posting_cadence:   plan.charts?.posting_cadence?.length   ? plan.charts.posting_cadence   : seeds.posting_cadence,
-      content_type_mix:  plan.charts?.content_type_mix?.length  ? plan.charts.content_type_mix  : seeds.content_type_mix,
+      platform_focus: plan.charts?.platform_focus?.length ? plan.charts.platform_focus : seeds.platform_focus,
+      posting_cadence: plan.charts?.posting_cadence?.length ? plan.charts.posting_cadence : seeds.posting_cadence,
+      content_type_mix: plan.charts?.content_type_mix?.length ? plan.charts.content_type_mix : seeds.content_type_mix,
       pillar_allocation: plan.charts?.pillar_allocation?.length ? plan.charts.pillar_allocation : seeds.pillar_allocation,
     };
 
-    // ---------- Save plan ----------
+    /* 🔽🔽 ADD THIS BLOCK: keep only the selected platforms in the chart */
+    if (signals.platforms?.length && Array.isArray(plan.charts.platform_focus)) {
+      const allowed = new Set(signals.platforms.map(canonPlatform));
+      plan.charts.platform_focus = plan.charts.platform_focus.filter(
+        (p: any) => allowed.has(canonPlatform(p.name))
+      );
+    }
+    // Save report for signed-in user (idempotent)
     try {
-      await sb.from("reports").upsert({
-        user_id: user.id,
-        plan,
-        updated_at: new Date().toISOString(),
-      });
+      const supa = await supabaseServer();
+      const { data: { user } } = await supa.auth.getUser();
+      if (user) {
+        await supa.from("reports").upsert({
+          user_id: user.id,
+          plan,
+          updated_at: new Date().toISOString(),
+        });
+      }
     } catch (e) {
       console.warn("[api/plan] save failed:", (e as any)?.message);
     }

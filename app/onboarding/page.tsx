@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession'
 import { supabaseBrowser } from '@/lib/supabaseClient'
+import AdviceModal from '@/components/AdviceModal'
 
 /** ---------- Types ---------- */
 type BaseQ = {
@@ -343,9 +344,15 @@ export default function Onboarding() {
   const [tipOpen, setTipOpen] = useState(false);
   const [tipText, setTipText] = useState('');
 
+  // NEW: "holding back" modal state
+  const [holdOpen, setHoldOpen] = useState(false);
+  const [holdTitle, setHoldTitle] = useState('clarity is kindness');
+  const [holdText, setHoldText] = useState('');
+
   // Reset the "shown" flag for each fresh visit to the page
   useEffect(() => {
     try { sessionStorage.removeItem('stuck_tip_shown'); } catch {}
+    try { sessionStorage.removeItem('holding_tip_shown'); } catch {}
   }, []);
   // NEW — show once per session
   const ADVICE_FLAG_KEY = 'advice_stuck_seen'
@@ -460,6 +467,66 @@ export default function Onboarding() {
       sessionStorage.setItem(FLAG, '1');
     } catch {}
   };
+
+  const maybeShowHoldingTip = async (nextAnswers: Record<string, any>) => {
+    const FLAG = 'holding_tip_shown';
+    try {
+      if (sessionStorage.getItem(FLAG)) return;
+
+      const hb = Array.isArray(nextAnswers.holdingBack) ? nextAnswers.holdingBack : [];
+      if (!hb.length) return;
+
+      const payload = {
+        kind: 'holding',
+        identity: nextAnswers.identity,
+        holdingBack: hb,
+        goal: nextAnswers.goal,
+        reach: nextAnswers.reach,
+        techComfort: nextAnswers.techComfort,
+        techGaps: nextAnswers.techGaps,
+      };
+
+      let title = 'clarity is kindness';
+      let tip = '';
+
+      try {
+        const res = await fetch('/api/onboarding/mini-advice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const json = await res.json().catch(() => ({}));
+          title = (json?.title || title).toString();
+          tip = (json?.tip || '').toString().trim();
+        }
+      } catch {}
+
+      // Fallback if API gave nothing
+      if (!tip) {
+        const choice = (hb[0] || '').toLowerCase();
+        if (choice.includes('time')) {
+          title = 'start smaller, win sooner';
+          tip = "short on time? record 3 quick 15-second drafts this week.\nship one. save the rest for remixing tomorrow.";
+        } else if (choice.includes('judgment') || choice.includes('feedback')) {
+          title = 'post for one person';
+          tip = "pick a single friend who’d love your post and make it for them.\none audience member > the whole internet.";
+        } else if (choice.includes('monetize')) {
+          title = 'one path, two weeks';
+          tip = "choose one offer (brand deal / product / service).\ncreate 4 posts that all point to it.\nclarity converts better than variety.";
+        } else {
+          title = 'focus beats friction';
+          tip = "circle one priority for the next 7 days.\nship tiny posts that serve only that.\nprogress > perfection.";
+        }
+      }
+
+      setHoldTitle(title);
+      setHoldText(tip);
+      setHoldOpen(true);
+      sessionStorage.setItem(FLAG, '1');
+    } catch {}
+  };
   // restore any previous progress for this session (answers + links)
   useEffect(() => {
     (async () => {
@@ -531,6 +598,10 @@ export default function Onboarding() {
       // 🎯 only trigger mini-advice when answering the "stuckReason" sub-question
       if (key === 'stuckReason') {
         void maybeShowStuckTip(merged);
+      }
+
+      if (key === 'holdingBack') {
+        void maybeShowHoldingTip(merged);
       }
 
       return merged;
@@ -687,50 +758,24 @@ export default function Onboarding() {
           {isLinksStep ? (authed ? 'finish & go to my account' : 'sign in to see my plan') : 'continue'}
         </button>
 
-        {/* ⬇️ ADD MODAL HERE, before the closing two </div>s */}
-      {tipOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4"
-          onClick={() => setTipOpen(false)}
-          aria-modal="true"
-          role="dialog"
-        >
-          <div
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* light bulb badge */}
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
-              <svg viewBox="0 0 24 24" className="h-6 w-6 text-yellow-500">
-                <path
-                  fill="currentColor"
-                  d="M12 3a7 7 0 0 0-4 12.9V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1.1A7 7 0 0 0 12 3Zm-3 16h6v1a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1v-1Z"
-                />
-              </svg>
-            </div>
+        {/* Mini advice: STUCK (yellow bulb) */}
+        <AdviceModal
+          open={tipOpen}
+          onClose={() => setTipOpen(false)}
+          title="the authenticity advantage"
+          text={tipText}
+          variant="idea"
+        />
 
-            {/* lowercase headline */}
-            <h3 className="mb-2 text-center text-2xl font-semibold tracking-tight text-gray-900">
-              the authenticity advantage
-            </h3>
-
-            {/* friendly body (your AI tip) */}
-            <p className="mx-auto mb-6 max-w-md text-center text-[15px] leading-relaxed text-gray-700">
-              {tipText}
-            </p>
-
-            {/* actions */}
-            <div className="flex justify-center">
-              <button
-                onClick={() => setTipOpen(false)}
-                className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white hover:bg-gray-800"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+        {/* Mini advice: HOLDING BACK (pink target) */}
+        <AdviceModal
+          open={holdOpen}
+          onClose={() => setHoldOpen(false)}
+          title={holdTitle}
+          text={holdText}
+          variant="focus"
+          buttonLabel="Got it"
+        />
       </div>
 
     </div>

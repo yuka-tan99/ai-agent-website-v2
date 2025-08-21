@@ -91,7 +91,7 @@ export default function AccountPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-4">
-      <h1 className="text-2xl font-semibold">{email ? `Welcome — ${email}` : 'Welcome'}</h1>
+      <h1 className="text-2xl font-semibold">{email ? `Welcome, ${email}` : 'Welcome'}</h1>
 
       {hasReport ? (
         <button onClick={() => router.push('/dashboard')} className="px-6 py-3 rounded-xl bg-black text-white">

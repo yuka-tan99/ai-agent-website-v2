@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { searchKBServer } from "@/lib/rag";
 import { geminiTextModel, GEMINI_SAFETY } from "@/lib/gemini";
 import { supabaseServer } from "@/lib/supabaseServer";
+import { claudeClient, claudeJSON } from '@/lib/claude'; // <- add at top
+
 
 // Optional: if you have link snapshots wired
 let collectSnapshots: undefined | ((urls: string[]) => Promise<any[]>);
@@ -438,22 +440,50 @@ ${links.length ? linkSummary : "(no links provided)"}
 `;
 
     // ---------- CALL GEMINI ----------
-    const model = geminiTextModel();
-    let raw = "";
+    // const model = geminiTextModel();
+    // let raw = "";
+    // try {
+    //   const result = await model.generateContent({
+    //     contents: [{ role: "user", parts: [{ text: prompt }] }],
+    //     safetySettings: GEMINI_SAFETY,
+    //     generationConfig: {
+    //       temperature: 0.2,
+    //       topP: 0.9,
+    //       maxOutputTokens: 1800,
+    //       responseMimeType: "application/json",
+    //     },
+    //   });
+    //   raw = (result.response?.text?.() || "").trim();
+    // } catch (e: any) {
+    //   console.warn("[api/plan] gemini error:", e?.message || e);
+    //   raw = "";
+    // }
+
+
+    const provider = process.env.LLM_PROVIDER || 'gemini';
+    let raw = '';
+
     try {
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        safetySettings: GEMINI_SAFETY,
-        generationConfig: {
-          temperature: 0.2,
-          topP: 0.9,
-          maxOutputTokens: 1800,
-          responseMimeType: "application/json",
-        },
-      });
-      raw = (result.response?.text?.() || "").trim();
+      if (provider === 'anthropic') {
+        const anthropic = claudeClient();
+        raw = await claudeJSON(anthropic, prompt);
+      } else {
+        // existing Gemini path
+        const model = geminiTextModel();
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          safetySettings: GEMINI_SAFETY,
+          generationConfig: {
+            temperature: 0.2,
+            topP: 0.9,
+            maxOutputTokens: 1800,
+            responseMimeType: "application/json",
+          },
+        });
+        raw = (result.response?.text?.() || "").trim();
+      }
     } catch (e: any) {
-      console.warn("[api/plan] gemini error:", e?.message || e);
+      console.warn("[api/plan] llm error:", e?.message || e);
       raw = "";
     }
 

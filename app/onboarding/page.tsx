@@ -323,6 +323,7 @@ export default function Onboarding() {
   // session id per browser
   const [sessionId] = useState(() => getOrCreateOnboardingSessionId())
 
+
   const [step, setStep] = useState(0)
   const [showSub, setShowSub] = useState(false)
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
@@ -332,6 +333,45 @@ export default function Onboarding() {
     facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
   })
   const [authed, setAuthed] = useState<boolean | null>(null)
+
+  // NEW — mini advice modal state
+  const [adviceOpen, setAdviceOpen] = useState(false)
+  const [adviceText, setAdviceText] = useState<string>("")
+  const [adviceLoading, setAdviceLoading] = useState(false)
+
+  // 👇 ADD just after your last useState (e.g., after linksDraft)
+  const [tipOpen, setTipOpen] = useState(false);
+  const [tipText, setTipText] = useState('');
+
+  // Reset the "shown" flag for each fresh visit to the page
+  useEffect(() => {
+    try { sessionStorage.removeItem('stuck_tip_shown'); } catch {}
+  }, []);
+  // NEW — show once per session
+  const ADVICE_FLAG_KEY = 'advice_stuck_seen'
+
+  // NEW — fetch advice from API
+  const triggerAdvice = async (topic: string | string[], currentAnswers: Record<string, any>) => {
+    try {
+      // Don’t spam: show only once per session
+      if (localStorage.getItem(ADVICE_FLAG_KEY) === '1') return
+      setAdviceLoading(true)
+      const res = await fetch('/api/advice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, answers: currentAnswers }),
+        cache: 'no-store',
+      })
+      const json = await res.json().catch(() => ({}))
+      const tip = (json?.advice || '').toString().trim()
+      if (tip) {
+        setAdviceText(tip)
+        setAdviceOpen(true)
+        localStorage.setItem(ADVICE_FLAG_KEY, '1')
+      }
+    } catch {}
+    finally { setAdviceLoading(false) }
+  }
 
   // 🔐 track auth state
   useEffect(() => {
@@ -368,6 +408,58 @@ export default function Onboarding() {
     } catch { /* ignore */ }
   }
 
+  // 👇 ADD below persistDraft, above the restore useEffect
+  const maybeShowStuckTip = async (nextAnswers: Record<string, any>) => {
+    const FLAG = 'stuck_tip_shown';
+    try {
+      if (sessionStorage.getItem(FLAG)) return;
+
+      const stuck = Array.isArray(nextAnswers.stuckReason) ? nextAnswers.stuckReason : [];
+      if (!stuck.length) return;
+
+      const payload = {
+        identity: nextAnswers.identity,
+        stuckReason: stuck,
+        goal: nextAnswers.goal,
+        reach: nextAnswers.reach,
+        techComfort: nextAnswers.techComfort,
+        techGaps: nextAnswers.techGaps,
+      };
+
+      let tip = '';
+      try {
+        const res = await fetch('/api/onboarding/mini-advice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const json = await res.json().catch(() => ({}));
+          tip = (json?.tip || '').toString().trim();
+        }
+      } catch {}
+
+      if (!tip) {
+        const choice = (stuck[0] || '').toLowerCase();
+        if (choice.includes('plateau')) {
+          tip = "You’re not broken — your format just needs a tune-up. This week, audit your last 10 posts, keep the top 2 hook patterns, and remix them 3 ways. Small repeats beat big resets.";
+        } else if (choice.includes('not sure what content')) {
+          tip = "Pick 3 topics you could talk about for a month. Save 10 example posts you like, then make 1 fast remix of each. Momentum > perfection.";
+        } else if (choice.includes('engagement')) {
+          tip = "Make comments a content source: ask one specific prompt per post, reply with a short video to the best answer, and pin it. It compounds fast.";
+        } else if (choice.includes('confidence') || choice.includes('stuck')) {
+          tip = "Shrink the task: record 3 x 20-second drafts today. No publishing yet. Tomorrow, trim one to 12 seconds and ship it. Done is data.";
+        } else {
+          tip = "Run tiny loops: 1 idea → 1 draft → publish → note the first 2 seconds’ retention. Repeat tomorrow. The path out of stuck is short cycles.";
+        }
+      }
+
+      setTipText(tip);
+      setTipOpen(true);
+      sessionStorage.setItem(FLAG, '1');
+    } catch {}
+  };
   // restore any previous progress for this session (answers + links)
   useEffect(() => {
     (async () => {
@@ -423,16 +515,27 @@ export default function Onboarding() {
     return existing.includes(value) ? existing.filter((v) => v !== value) : [...existing, value]
   }
 
-  // ✅ Save after each selection
+  // Save after each selection
   const handleSelect = (key: string, value: string, multi?: boolean) => {
     setAnswers((prev) => {
-      const cur = prev[key]
-      const next = multi ? toggleSelect(cur, value) : value
-      const merged = { ...prev, [key]: next }
-      persistDraft({ answers: merged })
-      return merged
-    })
-  }
+      const cur = prev[key];
+      const next = multi
+        ? (Array.isArray(cur) ? (cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]) : [value])
+        : value;
+
+      const merged = { ...prev, [key]: next };
+
+      // persist incrementally (your existing saver)
+      persistDraft({ answers: merged });
+
+      // 🎯 only trigger mini-advice when answering the "stuckReason" sub-question
+      if (key === 'stuckReason') {
+        void maybeShowStuckTip(merged);
+      }
+
+      return merged;
+    });
+  };
 
   const isActive = (q: BaseQ, val: string) =>
     q.multiple ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(val) : answers[q.id] === val
@@ -583,7 +686,53 @@ export default function Onboarding() {
         >
           {isLinksStep ? (authed ? 'finish & go to my account' : 'sign in to see my plan') : 'continue'}
         </button>
+
+        {/* ⬇️ ADD MODAL HERE, before the closing two </div>s */}
+      {tipOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4"
+          onClick={() => setTipOpen(false)}
+          aria-modal="true"
+          role="dialog"
+        >
+          <div
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* light bulb badge */}
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">
+              <svg viewBox="0 0 24 24" className="h-6 w-6 text-yellow-500">
+                <path
+                  fill="currentColor"
+                  d="M12 3a7 7 0 0 0-4 12.9V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1.1A7 7 0 0 0 12 3Zm-3 16h6v1a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1v-1Z"
+                />
+              </svg>
+            </div>
+
+            {/* lowercase headline */}
+            <h3 className="mb-2 text-center text-2xl font-semibold tracking-tight text-gray-900">
+              the authenticity advantage
+            </h3>
+
+            {/* friendly body (your AI tip) */}
+            <p className="mx-auto mb-6 max-w-md text-center text-[15px] leading-relaxed text-gray-700">
+              {tipText}
+            </p>
+
+            {/* actions */}
+            <div className="flex justify-center">
+              <button
+                onClick={() => setTipOpen(false)}
+                className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white hover:bg-gray-800"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
+
     </div>
   )
 }

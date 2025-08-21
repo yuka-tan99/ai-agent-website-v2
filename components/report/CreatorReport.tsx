@@ -107,8 +107,8 @@ export default function CreatorReport() {
           ['monetization', 'Monetization Plan'],
           ['capacity', 'Time & Capacity'],
           ['skills', 'Skill Upgrades'],
-          ['feedback', 'Feedback Approach'],
-          ['charts', 'Analytics View'],
+          ['feedback', 'Feedback Approach']
+          // ['charts', 'Analytics View'],
         ]}
       />
     ),

@@ -11,7 +11,7 @@ export function claudeClient() {
 export async function claudeJSON(client: Anthropic, prompt: string) {
   const msg = await client.messages.create({
     model: 'claude-sonnet-4-20250514', // claude-sonnet-4-20250514
-    max_tokens: 1800,
+    max_tokens: 2000,
     temperature: 0.2,
     messages: [
       {

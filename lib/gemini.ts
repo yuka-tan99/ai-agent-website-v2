@@ -9,7 +9,7 @@ export function getGemini() {
 
 /** Text model (Gemini 1.5 Pro) */
 export function geminiTextModel() {
-  return getGemini().getGenerativeModel({ model: "gemini-1.5-pro" });
+  return getGemini().getGenerativeModel({ model: "gemini-2.0-flash-lite" });
 }
 
 /** Embedding “model” – returned as a GenerativeModel in current SDKs */

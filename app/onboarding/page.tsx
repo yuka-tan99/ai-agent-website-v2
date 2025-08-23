@@ -596,13 +596,13 @@ export default function Onboarding() {
       persistDraft({ answers: merged });
 
       // 🎯 only trigger mini-advice when answering the "stuckReason" sub-question
-      if (key === 'stuckReason') {
-        void maybeShowStuckTip(merged);
-      }
+      // if (key === 'stuckReason') {
+      //   void maybeShowStuckTip(merged);
+      // }
 
-      if (key === 'holdingBack') {
-        void maybeShowHoldingTip(merged);
-      }
+      // if (key === 'holdingBack') {
+      //   void maybeShowHoldingTip(merged);
+      // }
 
       return merged;
     });
@@ -632,14 +632,32 @@ export default function Onboarding() {
   }
 
   const handleContinue = async () => {
-    // Links step: save links + local storage + go
+    // --- Decide which advice (if any) to show for THIS Continue press ---
+    const stuckShown = !!sessionStorage.getItem('stuck_tip_shown')
+    const holdShown  = !!sessionStorage.getItem('holding_tip_shown')
+
+    // Make sure we’re checking the actual visible prompt:
+    // - stuckReason is a SUB question under `identity`
+    const willShowStuck =
+      !isLinksStep &&
+      !stuckShown &&
+      subQuestion?.id === 'stuckReason' &&
+      hasAnswer(subQuestion, subSelected || undefined)
+
+    // holdingBack is a MAIN question
+    const willShowHold =
+      !isLinksStep &&
+      !holdShown &&
+      (current as any)?.id === 'holdingBack' &&
+      hasAnswer(current as BaseQ, mainSelected || undefined)
+
+    // --- Links step (unchanged) ---
     if (isLinksStep) {
       const links = Object.values(linksDraft).map(s => s.trim()).filter(Boolean)
       localStorage.setItem('social_links', JSON.stringify(links))
       localStorage.setItem('onboarding', JSON.stringify(answers))
       await persistDraft({ links })
 
-      // 👇 If signed in: attach session to user and go straight to account
       if (authed) {
         try {
           await fetch('/api/onboarding/attach', {
@@ -651,12 +669,10 @@ export default function Onboarding() {
         } catch {}
         return router.push('/account')
       }
-
-      // Not signed in: send to sign-in as before
       return router.push('/signin')
     }
 
-    // Normal steps
+    // --- Normal steps: validate & merge "other" if needed ---
     mergeOtherIfNeeded(current as BaseQ)
     if (subQuestion) mergeOtherIfNeeded(subQuestion)
 
@@ -664,13 +680,20 @@ export default function Onboarding() {
     if (subQuestion && !showSub) { setShowSub(true); return }
     if (subQuestion && !hasAnswer(subQuestion, subSelected || undefined)) return
 
+    // --- Advance FIRST so the next question is already on screen ---
     const nextIdx = step + 1
     if (nextIdx < totalSteps) {
       setStep(nextIdx)
       setShowSub(false)
     }
-  }
 
+    // --- Then open the advice modal WITHOUT await (no blocking, no “cleared answers” feel) ---
+    if (willShowStuck) {
+      void maybeShowStuckTip(answers)
+    } else if (willShowHold) {
+      void maybeShowHoldingTip(answers)
+    }
+  }
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">
       <div className="w-full max-w-2xl">

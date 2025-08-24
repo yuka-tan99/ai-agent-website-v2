@@ -115,7 +115,17 @@ export default function CreatorReport() {
     []
   )
 
-  if (loading && !data) return <div className="py-16 text-center text-gray-500">Generating your plan…</div>
+  if (loading && !data) {
+    return (
+      <div className="py-16 text-center">
+        {/* loader above the text */}
+        <div className="loader mx-auto mb-3" aria-hidden="true" />
+        <p className="text-gray-500 text-sm" aria-live="polite" aria-busy="true">
+          Generating your plan…
+        </p>
+      </div>
+    )
+  }
   if (error && !data) return <div className="py-16 text-center text-red-600">{error}</div>
   if (!data) return null
 

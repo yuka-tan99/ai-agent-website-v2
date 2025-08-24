@@ -314,6 +314,53 @@ const questions: Question[] = [
   },
 ]
 
+// ---- Progress helpers (count only applicable questions, incl. subs) ----
+type QLite = { id: string; multiple?: boolean }
+
+function listApplicableQuestions(answers: Record<string, any>) {
+  const out: QLite[] = []
+
+  for (const q of questions) {
+    // respect conditional "when"
+    if (q.when && !q.when(answers)) continue
+
+    // main
+    out.push({ id: q.id, multiple: q.multiple })
+
+    // sub (could be static or dynamic map)
+    if (q.sub) {
+      if ('id' in q.sub) {
+        // static
+        const s = q.sub as any
+        out.push({ id: s.id, multiple: s.multiple })
+      } else {
+        // dynamic: only the active one for the current main selection
+        const selected = answers[q.id]
+        const dyn = (q.sub as Record<string, any>)[String(selected)]
+        if (dyn && dyn.id) out.push({ id: dyn.id, multiple: dyn.multiple })
+      }
+    }
+
+    // sub2 (optional)
+    if (q.sub2) out.push({ id: q.sub2.id, multiple: q.sub2.multiple })
+  }
+
+  return out
+}
+
+function isAnswered(q: QLite, answers: Record<string, any>) {
+  const v = answers[q.id]
+  return q.multiple ? Array.isArray(v) && v.length > 0 : typeof v === 'string' && v.length > 0
+}
+
+function computeProgress(answers: Record<string, any>) {
+  const all = listApplicableQuestions(answers)
+  const total = all.length
+  const done = all.reduce((n, q) => n + (isAnswered(q, answers) ? 1 : 0), 0)
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0
+  return { done, total, percent }
+}
+
 /** ------------------- Links step (appended) ------------------- */
 const LINKS_STEP_ID = '___links___'
 
@@ -559,6 +606,8 @@ export default function Onboarding() {
   const totalSteps = questions.length + 1
   const isLinksStep = step === questions.length
 
+  const { done, total, percent } = useMemo(() => computeProgress(answers), [answers])
+
   const current = useMemo(() => {
     if (isLinksStep) return { id: LINKS_STEP_ID, text: 'drop links to your public profiles (optional)' } as any
     // Skip conditional questions
@@ -697,6 +746,7 @@ export default function Onboarding() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">
       <div className="w-full max-w-2xl">
+
         <h2 className="text-2xl font-bold mb-6 text-gray-900">{(current as any).text}</h2>
 
         {!isLinksStep ? (

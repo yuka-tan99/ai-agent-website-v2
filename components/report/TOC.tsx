@@ -27,12 +27,12 @@ type Item = [id: string, label: string]
 
 export default function TOC({ items = [] as Item[] }) {
   return (
-    <nav className="sticky top-8 space-y-2 text-sm">
+    <nav className="sticky top-8 dashboard-card rounded-2xl p-4 text-sm space-y-2">
       {items.map(([id, label]) => (
         <a
           key={id}
           href={`#${id}`}
-          className="block text-gray-600 hover:text-black"
+          className="block rounded-lg px-2 py-1.5 text-gray-700 hover:text-black transition hover:bg-gray-50"
         >
           {label}
         </a>

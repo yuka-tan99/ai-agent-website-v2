@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession'
 import { supabaseBrowser } from '@/lib/supabaseClient'
 import AdviceModal from '@/components/AdviceModal'
+import DesignStyles from '@/components/DesignStyles' // [ADD]
 
 /** ---------- Types ---------- */
 type BaseQ = {
@@ -744,14 +745,23 @@ export default function Onboarding() {
     }
   }
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center">
-      <div className="w-full max-w-2xl">
+    <div data-mentor-ui>
+      <DesignStyles /> {/* styling injector (visual only) */}
 
-        <h2 className="text-2xl font-bold mb-6 text-gray-900">{(current as any).text}</h2>
+      {/* Top progress bar (purely visual; uses your existing `percent`) */}
+      <div className="fixed top-0 left-0 w-full h-1 bg-gray-200 z-50">
+        <div className="h-full bg-[var(--soft-purple)] transition-all duration-500" style={{ width: `${percent}%` }} />
+      </div>
+
+      {/* original container, unchanged text */}
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center fade-in">
+        <div className="w-full max-w-2xl">
+
+      <h2 className="text-2xl font-bold mb-6 text-gray-900 slide-up">{(current as any).text}</h2>
 
         {!isLinksStep ? (
           <>
-            <div className="flex flex-wrap justify-center gap-3 mb-6">
+            <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
               {(current as any).options?.map((opt: string) => (
                 <Button
                   key={opt}
@@ -774,8 +784,8 @@ export default function Onboarding() {
 
             {showSub && subQuestion && (
               <>
-                <p className="text-gray-500 text-lg mt-8 mb-4">{subQuestion.text}</p>
-                <div className="flex flex-wrap justify-center gap-3 mb-6">
+                <p className="text-gray-500 text-lg mt-8 mb-4 slide-up">{subQuestion.text}</p>
+                <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
                   {subQuestion.options.map((opt: string) => (
                     <Button
                       key={opt}
@@ -826,7 +836,7 @@ export default function Onboarding() {
 
         <button
           onClick={handleContinue}
-          className="mt-6 px-8 py-2 rounded-full bg-black text-white hover:bg-gray-800 transition"
+          className="mt-6 px-8 py-2 rounded-full bg-black text-white hover:bg-gray-800 transition pulse-gentle"
         >
           {isLinksStep ? (authed ? 'finish & go to my account' : 'sign in to see my plan') : 'continue'}
         </button>
@@ -850,7 +860,7 @@ export default function Onboarding() {
           buttonLabel="Got it"
         />
       </div>
-
     </div>
+  </div>
   )
 }

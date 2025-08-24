@@ -99,12 +99,11 @@ export default function Section({
   return (
     <section
       id={id}
-      className="rounded-xl border bg-white transition-colors"
-      // (optional) subtle hover color while not transitioning
+      className="rounded-3xl dashboard-card bg-white transition-all duration-300 hover:shadow-lg"
     >
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left"
+        className="w-full flex items-center justify-between px-6 py-4 text-left"
         aria-expanded={open}
         aria-controls={id ? `${id}__panel` : undefined}
       >
@@ -132,7 +131,7 @@ export default function Section({
           transition,
           willChange: reduceMotion ? undefined : ('max-height, opacity' as any),
         }}
-        className="px-4 pb-4"
+        className="px-6 pb-6"
         aria-hidden={!open && !isTransitioning}
       >
         {children}

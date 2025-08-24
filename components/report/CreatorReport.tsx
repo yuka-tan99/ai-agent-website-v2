@@ -7,6 +7,7 @@ import CopyButton from './CopyButton'
 import { PlatformPie, CadenceBar } from '@/components/Charts'
 import { useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabaseClient'
+import DesignStyles from '@/components/DesignStyles' // [ADD]
 
 type Plan = {
   your_niche: string
@@ -133,7 +134,8 @@ export default function CreatorReport() {
   const cadence = data.charts?.posting_cadence || []
 
   return (
-    <>
+  <div data-mentor-ui>
+    <DesignStyles /> {/* visual styles only */}
       {authed ? (
         <div className="sticky top-0 left-0 z-20 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/50">
           <div className="max-w-5xl mx-auto px-4 py-3">
@@ -149,7 +151,7 @@ export default function CreatorReport() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-8">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-8 fade-in">
         <div className="space-y-8">
           {/* Header */}
           <header className="space-y-2">
@@ -192,7 +194,7 @@ export default function CreatorReport() {
             </div>
 
             {pf.length > 0 && (
-            <aside className="rounded-xl border p-4 bg-white">
+            <aside className="dashboard-card rounded-3xl p-6">
                 <div className="font-semibold mb-2">Platform Focus</div>
                 <PlatformPie data={pf} />
                 <p className="mt-2 text-xs text-gray-500">Prioritize where to post and test first.</p>
@@ -273,15 +275,15 @@ export default function CreatorReport() {
         {data.kpis && (
         <Section id="kpis" title="KPI Targets (Next 30 Days)" defaultOpen={false}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-xl border p-4">
+            <div className="dashboard-card rounded-2xl p-5 text-center">
                 <div className="text-xs text-gray-500">Weekly Posts</div>
                 <div className="text-2xl font-semibold">{data.kpis.weekly_posts ?? 10}</div>
             </div>
-            <div className="rounded-xl border p-4">
+            <div className="dashboard-card rounded-2xl p-5 text-center">
                 <div className="text-xs text-gray-500">View-through Rate</div>
                 <div className="text-2xl font-semibold">{data.kpis.target_view_rate_pct ?? 25}%</div>
             </div>
-            <div className="rounded-xl border p-4">
+            <div className="dashboard-card rounded-2xl p-5 text-center">
                 <div className="text-xs text-gray-500">New Followers (30d)</div>
                 <div className="text-2xl font-semibold">{data.kpis.target_followers_30d ?? 1000}</div>
             </div>
@@ -354,6 +356,6 @@ export default function CreatorReport() {
         {/* Right rail */}
         <aside>{rightRail}</aside>
       </div>
-    </>
+     </div>
   )
 }

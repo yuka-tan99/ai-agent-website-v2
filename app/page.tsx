@@ -4,6 +4,8 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import { supabaseBrowser } from '@/lib/supabaseClient'
 import Link from 'next/link'
+import LandingHero from '@/components/LandingHero'
+import DesignStyles from '@/components/DesignStyles'
 
 export default function Home() {
   const [authed, setAuthed] = useState(false)
@@ -30,29 +32,29 @@ export default function Home() {
   }, [])
 
   return (
-    <main className="flex items-center justify-center min-h-screen bg-white text-center px-4">
-      <div>
-        <h1 className="text-5xl font-extrabold tracking-tight mb-4 text-gray-900">
-          marketing mentor ai
-        </h1>
-        <p className="mb-8 max-w-xl mx-auto text-lg text-gray-600">
-          let’s build your path to fame | are you ready to be popular?
-        </p>
-        <div className="flex gap-4 justify-center">
+    <div data-mentor-ui>
+      <DesignStyles />
+
+      <main className="min-h-screen flex flex-col items-center bg-white pt-12">
+        {/* Top-left brand, headline, animated subline (matches your video) */}
+        <LandingHero />
+
+        {/* Buttons only (lifted up, wording unchanged) */}
+        <div className="flex items-center gap-4 mt-6">
           <Link
             href="/signin"
-            className="px-6 py-3 rounded-xl border border-gray-300 text-gray-800 hover:bg-gray-100 transition"
+            className="px-6 py-4 rounded-xl border border-gray-300 text-gray-800 hover:bg-gray-100 transition transform hover:scale-[1.03]"
           >
-            Sign in
+            sign in
           </Link>
           <Link
             href="/onboarding"
-            className="px-6 py-3 rounded-xl bg-black text-white hover:bg-gray-800 transition"
+            className="px-6 py-4 rounded-xl bg-black text-white hover:bg-gray-800 transition transform hover:scale-[1.03] pulse-gentle"
           >
-            Get Started
+            let's start
           </Link>
         </div>
-      </div>
-    </main>
+      </main>
+    </div>
   )
 }

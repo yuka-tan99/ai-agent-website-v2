@@ -632,7 +632,7 @@ export default function Onboarding() {
     return existing.includes(value) ? existing.filter((v) => v !== value) : [...existing, value]
   }
 
-  // Save after each selection
+  // Save after each selection (and auto-reveal sub for single-choice)
   const handleSelect = (key: string, value: string, multi?: boolean) => {
     setAnswers((prev) => {
       const cur = prev[key];
@@ -640,20 +640,36 @@ export default function Onboarding() {
         ? (Array.isArray(cur) ? (cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]) : [value])
         : value;
 
-      const merged = { ...prev, [key]: next };
+      let merged = { ...prev, [key]: next };
 
-      // persist incrementally (your existing saver)
+      // If selecting the MAIN question (current) AND it's NOT multiple-choice
+      // and it has a sub-question, auto-show the sub panel immediately.
+      try {
+        const curr: any = current as any; // uses current from outer scope
+        const isMain = key === curr?.id;
+        const isSingle = !!isMain && !curr?.multiple;
+        const hasSub = !!curr?.sub;
+
+        if (isMain && isSingle && hasSub) {
+          // Clear any previous sub answers (static or dynamic) to avoid stale state
+          if (curr.sub && typeof curr.sub === 'object' && !('id' in curr.sub)) {
+            // dynamic map: clear all possible sub-ids
+            Object.values(curr.sub as Record<string, any>).forEach((s: any) => {
+              if (s?.id && merged[s.id] !== undefined) delete (merged as any)[s.id];
+            });
+          } else if (curr.sub && 'id' in curr.sub) {
+            const sid = (curr.sub as any).id;
+            if (sid && merged[sid] !== undefined) delete (merged as any)[sid];
+          }
+
+          setShowSub(true);
+        }
+      } catch {}
+
+      // persist incrementally
       persistDraft({ answers: merged });
 
-      // 🎯 only trigger mini-advice when answering the "stuckReason" sub-question
-      // if (key === 'stuckReason') {
-      //   void maybeShowStuckTip(merged);
-      // }
-
-      // if (key === 'holdingBack') {
-      //   void maybeShowHoldingTip(merged);
-      // }
-
+      // (advice triggers remain commented in your code)
       return merged;
     });
   };

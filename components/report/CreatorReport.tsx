@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Section from './Section'
-import TOC from './TOC'
+// import TOC from './TOC'
 import CopyButton from './CopyButton'
 import { PlatformPie, CadenceBar } from '@/components/Charts'
 import { useRouter } from 'next/navigation'
@@ -90,31 +90,31 @@ export default function CreatorReport() {
     })()
   }, [])
 
-  const rightRail = useMemo(
-    () => (
-      <TOC
-        items={[
-          ['niche', 'Your Niche'],
-          ['roadblocks', 'Roadblocks & Fixes'],
-          ['platforms', 'Platform Strategies'],
-          ['engagement', 'Engagement Stage'],
-          ['strategy', 'Strategy Type'],
-          ['theory', 'Theory'],
-          ['advice', 'Practical Advice'],
-          ['plan-90', '30/60/90 Plan'],
-          ['kpis', 'KPI Targets'],
-          ['ideas', 'Content Ideas'],
-          ['risks', 'Risks & Watch-outs'],
-          ['monetization', 'Monetization Plan'],
-          ['capacity', 'Time & Capacity'],
-          ['skills', 'Skill Upgrades'],
-          ['feedback', 'Feedback Approach']
-          // ['charts', 'Analytics View'],
-        ]}
-      />
-    ),
-    []
-  )
+  // const rightRail = useMemo(
+  //   () => (
+  //     <TOC
+  //       items={[
+  //         ['niche', 'Your Niche'],
+  //         ['roadblocks', 'Roadblocks & Fixes'],
+  //         ['platforms', 'Platform Strategies'],
+  //         ['engagement', 'Engagement Stage'],
+  //         ['strategy', 'Strategy Type'],
+  //         ['theory', 'Theory'],
+  //         ['advice', 'Practical Advice'],
+  //         ['plan-90', '30/60/90 Plan'],
+  //         ['kpis', 'KPI Targets'],
+  //         ['ideas', 'Content Ideas'],
+  //         ['risks', 'Risks & Watch-outs'],
+  //         ['monetization', 'Monetization Plan'],
+  //         ['capacity', 'Time & Capacity'],
+  //         ['skills', 'Skill Upgrades'],
+  //         ['feedback', 'Feedback Approach']
+  //         // ['charts', 'Analytics View'],
+  //       ]}
+  //     />
+  //   ),
+  //   []
+  // )
 
   if (loading && !data) {
     return (
@@ -133,8 +133,95 @@ export default function CreatorReport() {
   const pf = data.charts?.platform_focus || []
   const cadence = data.charts?.posting_cadence || []
 
+
+  function downloadFullReport() {
+  try {
+    // programmatically open all collapsibles for the snapshot
+    document.querySelectorAll<HTMLButtonElement>('button[aria-expanded="false"]').forEach((btn) => btn.click())
+
+    const html = `
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>report</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#111827; }
+  .container { max-width: 1000px; margin: 40px auto; padding: 0 16px; }
+  h1 { font-weight: 300; margin: 0 0 6px; color: #374151; text-align:center; }
+  .subtitle { color: #9ca3af; margin: 0 0 24px; text-align:center; }
+  .card { border: 1px solid #eee; border-radius: 20px; padding: 16px; margin: 12px 0; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>your personalized report</h1>
+    <div class="subtitle">full expanded export</div>
+    ${document.querySelector('[data-mentor-ui]')?.querySelector('.grid')?.innerHTML || ''}
+  </div>
+</body>
+</html>`
+
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "marketing-mentor-report.html"
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (e) {
+    console.error(e)
+    alert("Could not export right now. Please try again.")
+  }
+}
+
+async function downloadFullReportPdf() {
+  // Open all collapsibles so the snapshot captures everything
+  document
+    .querySelectorAll<HTMLButtonElement>('button[aria-expanded="false"]')
+    .forEach((btn) => btn.click())
+
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import('html2canvas'),
+    import('jspdf')
+  ])
+
+  const container =
+    (document.querySelector('[data-mentor-ui] main') as HTMLElement) ||
+    (document.querySelector('[data-mentor-ui]') as HTMLElement)
+
+  if (!container) return alert('Could not find report to export.')
+
+  // render to canvas
+  const canvas = await html2canvas(container, {
+    scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: document.documentElement.scrollWidth
+  })
+  const imgData = canvas.toDataURL('image/png')
+
+  // fit onto PDF pages
+  const pdf = new jsPDF('p', 'mm', 'a4')
+  const pageW = pdf.internal.pageSize.getWidth()
+  const pageH = pdf.internal.pageSize.getHeight()
+
+  const imgW = pageW
+  const imgH = (canvas.height * pageW) / canvas.width
+
+  let y = 0
+  let remaining = imgH
+
+  // Add slices if taller than one page
+  while (remaining > 0) {
+    if (y > 0) pdf.addPage()
+    pdf.addImage(imgData, 'PNG', 0, -y, imgW, imgH)
+    y += pageH
+    remaining -= pageH
+  }
+
+  pdf.save('marketing-mentor-report.pdf')
+}
+
   return (
-  <div data-mentor-ui>
+  <div data-mentor-ui className="report-page">
     <DesignStyles /> {/* visual styles only */}
       {authed ? (
         <div className="sticky top-0 left-0 z-20 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/50">
@@ -151,32 +238,33 @@ export default function CreatorReport() {
         </div>
       ) : null}
 
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-8 fade-in">
+        <div className="grid grid-cols-1 gap-6 fade-in">
         <div className="space-y-8">
           {/* Header */}
-          <header className="space-y-2">
-            <h1 className="text-3xl font-semibold">Your Growth Strategy</h1>
-            <p className="text-gray-600">we only give straightforward answers. no fluff.</p>
-          </header>
+          <div className="mt-6 mb-6">
+            <h1 className="report-title">your personalized report</h1>
+            <p className="report-subtitle">your path to social media fame</p>
+          </div>
 
           {/* Your Niche */}
-        <Section id="niche" title="Your Niche" defaultOpen>
-        <p className="text-sm leading-relaxed whitespace-pre-wrap">{data.your_niche}</p>
-        </Section>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Section id="niche" title="Your Niche" defaultOpen>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{data.your_niche}</p>
+          </Section>
 
-        {/* Roadblocks & Fixes — immediately after niche */}
-        {Array.isArray(data.your_roadblocks_and_fix) && data.your_roadblocks_and_fix.length > 0 && (
-        <Section id="roadblocks" title="Roadblocks & Fixes" defaultOpen={false}>
-            <div className="grid gap-3">
-            {data.your_roadblocks_and_fix.map((r, i) => (
-                <div key={i} className="rounded-xl border p-4 bg-white">
-                <div className="font-semibold mb-1">• {r.issue}</div>
-                <div className="text-sm leading-relaxed whitespace-pre-wrap">{r.solution}</div>
-                </div>
-            ))}
-            </div>
-        </Section>
-        )}
+          {Array.isArray(data.your_roadblocks_and_fix) && data.your_roadblocks_and_fix.length > 0 && (
+            <Section id="roadblocks" title="Roadblocks & Fixes" defaultOpen={false}>
+              <div className="grid gap-3">
+                {data.your_roadblocks_and_fix.map((r, i) => (
+                  <div key={i} className="rounded-xl border p-4 bg-white">
+                    <div className="font-semibold mb-1">• {r.issue}</div>
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap">{r.solution}</div>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          )}
+        </div>
 
         {/* Platform Strategies + Platform Focus */}
         <Section id="platforms" title="Platform Strategies" defaultOpen={false}>
@@ -354,7 +442,16 @@ export default function CreatorReport() {
         </div>
 
         {/* Right rail */}
-        <aside>{rightRail}</aside>
+        {/* <aside>{rightRail}</aside> */}
+      </div>
+      {/* Download full report pill */}
+      <div className="flex justify-center my-10">
+        <button
+          onClick={downloadFullReportPdf}
+          className="report-download bg-black text-white hover:bg-gray-800 transition pulse-gentle"
+        >
+          download full report
+        </button>
       </div>
      </div>
   )

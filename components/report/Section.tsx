@@ -1,5 +1,6 @@
 // components/Section.tsx
 'use client'
+
 import {
   useEffect,
   useLayoutEffect,
@@ -27,13 +28,13 @@ export default function Section({
 }: PropsWithChildren<Props>) {
   const [open, setOpen] = useState(defaultOpen)
 
-  // refs + animation state
+  // animation refs/state
   const panelRef = useRef<HTMLDivElement | null>(null)
+  const roRef = useRef<ResizeObserver | null>(null)
   const [maxH, setMaxH] = useState<number>(defaultOpen ? 999999 : 0)
   const [opacity, setOpacity] = useState<number>(defaultOpen ? 1 : 0)
   const [isTransitioning, setIsTransitioning] = useState(false)
 
-  // respect reduced motion
   const reduceMotion = useMemo(
     () =>
       typeof window !== 'undefined' &&
@@ -41,9 +42,12 @@ export default function Section({
     []
   )
 
-  const transition = reduceMotion ? 'none' : 'max-height 280ms ease, opacity 220ms ease'
+  // compose transition (respect reduced motion)
+  const transition = reduceMotion
+    ? 'none'
+    : 'max-height 380ms cubic-bezier(.22,1,.36,1), opacity 260ms ease'
 
-  // measure full content height
+  // measure helper
   const measure = () => {
     const el = panelRef.current
     if (!el) return 0
@@ -60,8 +64,7 @@ export default function Section({
     setIsTransitioning(true)
 
     if (open) {
-      // ensure we start from collapsed height on re-open
-      // then expand to content height on next frame
+      // start collapsed then grow to measured height
       setMaxH(0)
       setOpacity(0)
       requestAnimationFrame(() => {
@@ -69,47 +72,60 @@ export default function Section({
         setOpacity(1)
       })
     } else {
-      // fade then collapse
+      // fade out then collapse
       setOpacity(0)
-      // let the opacity start first, but still collapse height within the same frame
       requestAnimationFrame(() => setMaxH(0))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // if children change while open, grow to fit smoothly
+  // grow to fit when children change while open
   useLayoutEffect(() => {
-    if (open) {
-      const h = measure()
-      if (h > 0) setMaxH(h)
+    if (!panelRef.current) return
+
+    // ResizeObserver so dynamic content is handled smoothly
+    if (!roRef.current && typeof ResizeObserver !== 'undefined') {
+      roRef.current = new ResizeObserver(() => {
+        if (open) {
+          const h = measure()
+          if (h > 0) setMaxH(h)
+        }
+      })
+    }
+    roRef.current?.observe(panelRef.current)
+
+    return () => {
+      roRef.current?.disconnect()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [children])
+  }, [open, children])
 
   const onTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
-    // ignore unrelated transitions
     if (e.propertyName !== 'max-height') return
     setIsTransitioning(false)
     if (open) {
-      // allow internal elements to expand naturally after opening
+      // allow natural growth after opening
       setMaxH(999999)
     }
   }
+
+  const panelId = id ? `${id}__panel` : undefined
 
   return (
     <section
       id={id}
       className="rounded-3xl dashboard-card bg-white transition-all duration-300 hover:shadow-lg"
     >
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-6 py-4 text-left"
-        aria-expanded={open}
-        aria-controls={id ? `${id}__panel` : undefined}
+    <button
+      onClick={() => setOpen(v => !v)}
+      className="sect-btn w-full flex items-center justify-between text-left"
+      aria-expanded={open}
+        aria-controls={panelId}
       >
         <span className="font-semibold">{title}</span>
         <div className="flex items-center gap-3">
           {action}
+          {/* chevron/plus hybrid caret */}
           <span
             className={`transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
             aria-hidden
@@ -119,9 +135,9 @@ export default function Section({
         </div>
       </button>
 
-      {/* Keep panel mounted so close animation can play */}
+      {/* Keep mounted so close animation can play */}
       <div
-        id={id ? `${id}__panel` : undefined}
+        id={panelId}
         ref={panelRef}
         onTransitionEnd={onTransitionEnd}
         style={{

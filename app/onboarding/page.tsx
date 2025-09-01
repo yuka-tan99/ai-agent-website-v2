@@ -25,7 +25,7 @@ type Question = BaseQ & {
 const Button = ({ label, active, onClick }: any) => (
   <button
     onClick={onClick}
-    className={`px-5 py-3 rounded-xl min-w-[220px] text-sm font-medium transition text-center
+    className={`px-6 py-3.5 rounded-full min-w-[240px] text-base font-medium transition text-center
       ${active ? 'bg-[#C9B8F9] text-black border border-transparent' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'}`}
   >
     {label}
@@ -41,7 +41,7 @@ const OtherInput = ({
     value={value}
     onChange={(e) => onChange(e.target.value)}
     placeholder={placeholder}
-    className="mt-3 w-full max-w-md rounded-xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black/20"
+    className="mt-3 w-full max-w-lg rounded-2xl border px-5 py-3 text-base outline-none focus:ring-2 focus:ring-black/20"
   />
 )
 
@@ -351,8 +351,7 @@ function computeProgress(answers: Record<string, any>) {
   return { done, total, percent }
 }
 
-/** ------------------- Links step (appended) ------------------- */
-const LINKS_STEP_ID = '___links___'
+/** ------------------- Onboarding flow ------------------- */
 
 export default function Onboarding() {
   const router = useRouter()
@@ -365,10 +364,7 @@ export default function Onboarding() {
   const [showSub, setShowSub] = useState(false)
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
   const [otherDrafts, setOtherDrafts] = useState<Record<string, string>>({})
-  const [linksDraft, setLinksDraft] = useState({
-    instagram: '', tiktok: '', youtube: '', twitter: '',
-    facebook: '', pinterest: '', linkedin: '', twitch: '', other: ''
-  })
+  // Links step removed — no social link collection
   const [authed, setAuthed] = useState<boolean | null>(null)
 
   // Mini advice modal state
@@ -408,7 +404,7 @@ export default function Onboarding() {
   }, [sessionId])
 
   // Persist partial changes incrementally
-  const persistDraft = async (patch: { answers?: any; links?: string[] }) => {
+  const persistDraft = async (patch: { answers?: any }) => {
     try {
       await fetch('/api/onboarding/save', {
         method: 'POST',
@@ -520,7 +516,7 @@ export default function Onboarding() {
     } catch {}
   }
 
-  // Restore any previous progress for this session (answers + links)
+  // Restore any previous progress for this session (answers only)
   useEffect(() => {
     ;(async () => {
       try {
@@ -528,34 +524,16 @@ export default function Onboarding() {
         if (!res.ok) return
         const json = await res.json()
         if (json?.answers && typeof json.answers === 'object') setAnswers(json.answers)
-        if (Array.isArray(json?.links)) {
-          const toMap: any = { instagram:'', tiktok:'', youtube:'', twitter:'', facebook:'', pinterest:'', linkedin:'', twitch:'', other:'' }
-          for (const url of json.links) {
-            const u = String(url).toLowerCase()
-            if (u.includes('instagram.com')) toMap.instagram = url
-            else if (u.includes('tiktok.com')) toMap.tiktok = url
-            else if (u.includes('youtube.com') || u.includes('youtu.be')) toMap.youtube = url
-            else if (u.includes('x.com') || u.includes('twitter.com')) toMap.twitter = url
-            else if (u.includes('facebook.com')) toMap.facebook = url
-            else if (u.includes('pinterest.com')) toMap.pinterest = url
-            else if (u.includes('linkedin.com')) toMap.linkedin = url
-            else if (u.includes('twitch.tv')) toMap.twitch = url
-            else toMap.other = url
-          }
-          setLinksDraft(toMap)
-        }
       } catch {}
     })()
   }, [sessionId])
 
   // Inject a virtual final step for links
-  const totalSteps = questions.length + 1
-  const isLinksStep = step === questions.length
+  const totalSteps = questions.length
 
   const { percent } = useMemo(() => computeProgress(answers), [answers])
 
   const current = useMemo(() => {
-    if (isLinksStep) return { id: LINKS_STEP_ID, text: 'drop links to your public profiles (optional)' } as any
     // Skip conditional questions
     let idx = step
     while (idx < questions.length && questions[idx].when && !questions[idx].when!(answers)) {
@@ -563,13 +541,13 @@ export default function Onboarding() {
     }
     if (idx !== step) setStep(idx)
     return questions[idx]
-  }, [step, answers, isLinksStep])
+  }, [step, answers])
 
-  const mainSelected = !isLinksStep ? answers[(current as any).id] : null
-  const isDynamicSub = !isLinksStep && (current as any).sub && typeof (current as any).sub === 'object' && !('id' in (current as any).sub)
+  const mainSelected = answers[(current as any).id]
+  const isDynamicSub = (current as any).sub && typeof (current as any).sub === 'object' && !('id' in (current as any).sub)
   const dynamicSub = isDynamicSub ? ((current as any).sub as Record<string, BaseQ>)[String(mainSelected)] : null
-  const staticSub = !isLinksStep && !isDynamicSub && (current as any).sub ? ((current as any).sub as BaseQ) : null
-  const subQuestion: BaseQ | null = isLinksStep ? null : (dynamicSub || staticSub || null)
+  const staticSub = !isDynamicSub && (current as any).sub ? ((current as any).sub as BaseQ) : null
+  const subQuestion: BaseQ | null = (dynamicSub || staticSub || null)
   const subSelected = subQuestion ? answers[subQuestion.id] : null
 
   // Save after each selection (and auto-reveal sub for single-choice)
@@ -613,6 +591,16 @@ export default function Onboarding() {
   const hasAnswer = (q: BaseQ, val: string | string[] | undefined) =>
     q.multiple ? Array.isArray(val) && val.length > 0 : typeof val === 'string' && val.length > 0
 
+  // Go to previous logical step or collapse sub if visible
+  const handleBack = () => {
+    if (showSub) { setShowSub(false); return }
+    let prevIdx = step - 1
+    while (prevIdx >= 0 && questions[prevIdx].when && !questions[prevIdx].when!(answers)) {
+      prevIdx--
+    }
+    if (prevIdx >= 0) setStep(prevIdx)
+  }
+
   const mergeOtherIfNeeded = (q: BaseQ) => {
     if (!q.allowOther) return
     const sel = answers[q.id]
@@ -630,41 +618,14 @@ export default function Onboarding() {
   }
 
   const handleContinue = async () => {
-    const isLinks = isLinksStep
     const mainQ = current as BaseQ
     const subQ = subQuestion as BaseQ | null
 
     const stuckShown = !!sessionStorage.getItem('stuck_tip_shown')
     const holdShown  = !!sessionStorage.getItem('holding_tip_shown')
 
-    const willShowStuck = !isLinks && !stuckShown && subQ?.id === 'stuckReason' && hasAnswer(subQ, subSelected || undefined)
-    const willShowHold  = !isLinks && !holdShown && mainQ?.id === 'holdingBack' && hasAnswer(mainQ, mainSelected || undefined)
-
-    // ---- Final step (Links) → mark complete then go to dashboard
-    if (isLinks) {
-      const links = Object.values(linksDraft).map((s) => s.trim()).filter(Boolean)
-      localStorage.setItem('social_links', JSON.stringify(links))
-      localStorage.setItem('onboarding', JSON.stringify(answers))
-      await persistDraft({ answers, links })
-
-      if (!authed) {
-        const next = encodeURIComponent('/dashboard')
-        return router.push(`/signin?next=${next}`)
-      }
-
-      try {
-        // Mark onboarding complete for this session + attach answers/links
-        await fetch('/api/onboarding/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, answers, links }),
-          cache: 'no-store',
-        })
-      } catch { /* non-blocking */ }
-
-      // Return to account; user can click "My Report" to generate on demand.
-      return router.push('/account')
-    }
+    const willShowStuck = !stuckShown && subQ?.id === 'stuckReason' && hasAnswer(subQ, subSelected || undefined)
+    const willShowHold  = !holdShown && mainQ?.id === 'holdingBack' && hasAnswer(mainQ, mainSelected || undefined)
 
     // ---- Normal steps
     mergeOtherIfNeeded(mainQ)
@@ -674,10 +635,31 @@ export default function Onboarding() {
     if (subQ && !showSub) { setShowSub(true); return }
     if (subQ && !hasAnswer(subQ, subSelected || undefined)) return
 
-    const nextIdx = step + 1
-    if (nextIdx < totalSteps) {
+    // Find next applicable question index skipping conditionals
+    let nextIdx = step + 1
+    while (nextIdx < questions.length && questions[nextIdx].when && !questions[nextIdx].when!(answers)) {
+      nextIdx++
+    }
+    const hasMore = nextIdx < questions.length
+    if (hasMore) {
       setStep(nextIdx)
       setShowSub(false)
+    } else {
+      // Finalize onboarding and generate report
+      try { localStorage.setItem('onboarding', JSON.stringify(answers)) } catch {}
+      await persistDraft({ answers })
+
+      if (!authed) {
+        const next = encodeURIComponent('/dashboard')
+        return router.push(`/signin?next=${next}`)
+      }
+      try {
+        await fetch('/api/onboarding/complete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, answers }), cache: 'no-store'
+        })
+      } catch {}
+      return router.push('/dashboard')
     }
 
     if (willShowStuck) {
@@ -692,15 +674,23 @@ export default function Onboarding() {
       <DesignStyles />
 
       {/* Top progress bar */}
-      <div className="fixed top-0 left-0 w-full h-1 bg-gray-200 z-50">
+      <div className="fixed top-0 left-0 w-full h-[6px] bg-gray-200 z-50">
         <div className="h-full bg-[var(--soft-purple)] transition-all duration-500" style={{ width: `${percent}%` }} />
       </div>
 
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in pb-24 md:pb-28">
         <div className="w-full max-w-2xl">
-          <h2 className="text-2xl font-bold mb-6 text-gray-900 slide-up">{(current as any).text}</h2>
+          {/* Back to previous */}
+          <div className="flex items-center justify-start mb-4 -ml-1 md:-ml-3">
+            {step > 0 && (
+              <button onClick={handleBack} className="text-left text-sm md:text-base text-gray-600 hover:text-gray-800 transition">
+                &lt; back to previous
+              </button>
+            )}
+          </div>
+          <h2 className="text-3xl md:text-4xl font-bold mb-7 text-gray-900 slide-up">{(current as any).text}</h2>
 
-          {!isLinksStep ? (
+          {(
             <>
               <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
                 {(current as any).options?.map((opt: string) => (
@@ -725,7 +715,7 @@ export default function Onboarding() {
 
               {showSub && subQuestion && (
                 <>
-                  <p className="text-gray-500 text-lg mt-8 mb-4 slide-up">{subQuestion.text}</p>
+                  <p className="text-gray-500 text-xl mt-8 mb-4 slide-up">{subQuestion.text}</p>
                   <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
                     {subQuestion.options.map((opt: string) => (
                       <Button
@@ -747,39 +737,21 @@ export default function Onboarding() {
                 </>
               )}
             </>
-          ) : (
-            // LINKS STEP
-            <div className="grid gap-3 text-left">
-              {[
-                ['instagram', 'https://instagram.com/username'],
-                ['tiktok', 'https://www.tiktok.com/@handle'],
-                ['youtube', 'https://www.youtube.com/@handle or channel URL'],
-                ['twitter', 'https://x.com/handle or https://twitter.com/handle'],
-                ['linkedin', 'https://www.linkedin.com/in/handle or /company/...'],
-                ['twitch', 'https://www.twitch.tv/handle'],
-                ['facebook', 'https://www.facebook.com/handle'],
-                ['pinterest', 'https://www.pinterest.com/handle'],
-                ['other', 'any other public link…'],
-              ].map(([k, ph]) => (
-                <div key={k}>
-                  <label className="block text-sm mb-1 capitalize">{k}</label>
-                  <input
-                    value={(linksDraft as any)[k]}
-                    onChange={(e) => setLinksDraft(prev => ({ ...prev, [k]: e.target.value }))}
-                    placeholder={ph}
-                    className="w-full rounded-xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black/20"
-                  />
-                </div>
-              ))}
-              <p className="text-xs text-gray-500 mt-1">optional — we’ll analyze public info to tailor your plan</p>
-            </div>
           )}
 
           <button
             onClick={handleContinue}
-            className="mt-6 px-8 py-2 rounded-full bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition pulse-gentle"
+            className="mt-7 mb-14 px-10 py-3 rounded-full text-lg bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition pulse-gentle"
           >
-            {isLinksStep ? (authed ? 'finish & see my report' : 'sign in to see my report') : 'continue'}
+            {/* Button text: use final label on last question */}
+            {(() => {
+              // Determine if there are more applicable questions ahead
+              let nextIdx = step + 1
+              while (nextIdx < questions.length && questions[nextIdx].when && !questions[nextIdx].when!(answers)) nextIdx++
+              const hasMore = nextIdx < questions.length
+              if (!hasMore) return 'finish & generate report'
+              return 'continue'
+            })()}
           </button>
 
           {/* Mini advice: STUCK */}

@@ -94,7 +94,7 @@ export default function TopNav() {
             <Link
               href="/account"
               aria-label="Go to account"
-              className="w-9 h-9 rounded-full border flex items-center justify-center hover:bg-gray-50 transition"
+              className="w-9 h-9 rounded-full border flex items-center justify-center hover:bg-gray-200 transition-colors"
               title={email || undefined}
             >
               {/* minimalist avatar glyph */}

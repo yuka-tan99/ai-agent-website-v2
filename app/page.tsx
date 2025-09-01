@@ -48,7 +48,7 @@ export default function Home() {
         <div className="mt-8 flex justify-center">
           <Link
             href="/onboarding"
-            className="px-6 py-4 rounded-xl bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition transform hover:scale-[1.03] pulse-gentle"
+            className="px-7 py-3 rounded-full bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition transform hover:scale-[1.03] pulse-gentle"
           >
             Let&apos;s Start
           </Link>

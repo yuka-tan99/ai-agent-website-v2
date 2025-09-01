@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { searchKBServer } from "@/lib/rag";
 import { geminiTextModel, GEMINI_SAFETY } from "@/lib/gemini";
 import { supabaseServer } from "@/lib/supabaseServer";
-import { claudeClient, claudeJSON } from '@/lib/claude'; // <- add at top
+import { callClaudeJSON } from '@/lib/claude';
 
 
 // Optional: if you have link snapshots wired
@@ -465,8 +465,8 @@ ${links.length ? linkSummary : "(no links provided)"}
 
     try {
       if (provider === 'anthropic') {
-        const anthropic = claudeClient();
-        raw = await claudeJSON(anthropic, prompt);
+        const obj = await callClaudeJSON<any>({ prompt, timeoutMs: 60000 });
+        raw = JSON.stringify(obj);
       } else {
         // existing Gemini path
         const model = geminiTextModel();

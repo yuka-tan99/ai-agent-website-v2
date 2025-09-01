@@ -1,9 +1,14 @@
-// app/account/page.tsx  (SERVER WRAPPER)
-export const dynamic = 'force-dynamic'   // ok on server files
-// no `revalidate` export here — not needed
+export const dynamic = 'force-dynamic'
 
-import AccountPageClient from './AccountPageClient'
+import AccountPageClient from '@/components/AccountPageClient'
+import nextDynamic from 'next/dynamic';
+
 
 export default function Page() {
-  return <AccountPageClient />
+  return (
+    <>
+      <AccountPageClient /> {/* defaults to 'usage' */}
+      {/* <ChatGate />          shows chat only when authed; hidden on /, /onboarding, /signin */}
+    </>
+  )
 }

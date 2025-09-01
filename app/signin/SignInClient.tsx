@@ -7,7 +7,7 @@ export default function SignInClient() {
   const router = useRouter()
   const search = useSearchParams()
 
-  // lazy-load supabase browser client
+  // supabase
   const [sb, setSb] = useState<any>(null)
   useEffect(() => {
     let mounted = true
@@ -17,15 +17,23 @@ export default function SignInClient() {
     return () => { mounted = false }
   }, [])
 
+  // mode from query (?mode=signin|signup)
   const [mode, setMode] = useState<'signin'|'signup'>('signin')
+  useEffect(() => {
+    const m = (search.get('mode') || '').toLowerCase()
+    if (m === 'signup') setMode('signup')
+    else if (m === 'signin') setMode('signin')
+  }, [search])
+
   const [usePhone, setUsePhone] = useState(false)
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('') // only used in signup mode
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  // detect where we came from
+  // (kept for parity, but not used for back nav anymore)
   const fromParam = search.get('from')
   const cameFromOnboarding = useMemo(() => {
     if (fromParam === 'onboarding') return true
@@ -37,147 +45,224 @@ export default function SignInClient() {
     } catch { return false }
   }, [fromParam])
 
-  const goBack = () => {
+  const goBack = () => router.push('/')
+
+  // OAuth helpers (safe no-op if not configured)
+  const oauth = async (provider: 'google'|'azure'|'apple') => {
+    if (!sb?.auth?.signInWithOAuth) {
+      setMsg('OAuth not configured in this environment.')
+      return
+    }
     try {
-    //   const ref = document.referrer || ''
-    //   if (ref.includes('/account')) { router.push('/'); return }
-    //   if (cameFromOnboarding) { router.push('/onboarding'); return }
-    //   if (window.history.length > 1) { router.back(); return }
-      router.push('/')
-    } catch {}
-    router.push('/')
+      setLoading(true); setMsg(null)
+      const redirectTo = `${window.location.origin}/auth/callback`
+      const { data, error } = await sb.auth.signInWithOAuth({
+        provider: provider === 'azure' ? 'azure' : provider, // supabase provider keys
+        options: { redirectTo }
+      })
+      if (error) throw error
+      // redirect handled by supabase; nothing else here
+    } catch (e:any) {
+      setMsg(e?.message || 'OAuth failed')
+    } finally { setLoading(false) }
   }
 
-    const submit = async () => {
+  const submit = async () => {
     if (!sb) return
     try {
-        setLoading(true); setMsg(null)
+      setLoading(true); setMsg(null)
 
-        // quick input guards
-        if (!password) { setMsg('Please enter your password.'); return }
-        if (usePhone) {
+      if (!password) { setMsg('Please enter your password.'); return }
+      if (usePhone) {
         if (!phone) { setMsg('Please enter your phone number.'); return }
-        } else {
+      } else {
         if (!email) { setMsg('Please enter your email.'); return }
-        }
+      }
 
-        if (usePhone) {
-        // PHONE AUTH
-        if (mode === 'signup') {
-            const { error } = await sb.auth.signUp({ phone, password })
-            if (error) throw error
-            setMsg('Check your phone for confirmation (if enabled).')
-            return
-        } else {
-            const { error } = await sb.auth.signInWithPassword({ phone, password })
-            if (error) throw error
-            router.replace('/account')
-            return
+      if (mode === 'signup') {
+        // simple frontend confirm check (backend unchanged)
+        if (!usePhone && confirm && confirm !== password) {
+          setMsg('Passwords do not match.')
+          return
         }
-        } else {
-        // EMAIL AUTH
+      }
+
+      if (usePhone) {
         if (mode === 'signup') {
-            // Make Supabase send the magic confirmation link back to *this* origin
-            const redirectTo = `${window.location.origin}/auth/callback` // or '/account' if you prefer
-            const { error } = await sb.auth.signUp(
+          const { error } = await sb.auth.signUp({ phone, password })
+          if (error) throw error
+          setMsg('Check your phone for confirmation (if enabled).')
+          return
+        } else {
+          const { error } = await sb.auth.signInWithPassword({ phone, password })
+          if (error) throw error
+          router.replace('/account')
+          return
+        }
+      } else {
+        if (mode === 'signup') {
+          const redirectTo = `${window.location.origin}/auth/callback`
+          const { error } = await sb.auth.signUp(
             { email, password },
-            { emailRedirectTo: redirectTo } // 👈 ensures localhost redirects to localhost; vercel to vercel
-            )
-            if (error) throw error
-            setMsg('Check your email to confirm your account.')
-            return
+            { emailRedirectTo: redirectTo }
+          )
+          if (error) throw error
+          setMsg('Check your email to confirm your account.')
+          return
         } else {
-            const { error } = await sb.auth.signInWithPassword({ email, password })
-            if (error) throw error
-            router.replace('/account')
-            return
+          const { error } = await sb.auth.signInWithPassword({ email, password })
+          if (error) throw error
+          router.replace('/account')
+          return
         }
-        }
-    } catch (e: any) {
-        setMsg(e?.message || 'Auth failed')
+      }
+    } catch (e:any) {
+      setMsg(e?.message || 'Auth failed')
     } finally {
-        setLoading(false)
+      setLoading(false)
     }
-    }
+  }
+
+  // Shared bits
+  const Title = mode === 'signin' ? 'Sign In' : 'Create Account'
+  const PrimaryCta = mode === 'signin' ? 'Log In' : 'Sign Up'
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-white px-4">
-      {/* Back button */}
-      <div className="absolute left-4 top-4">
-        <button
-          onClick={goBack}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-black"
-          aria-label="Go back"
-        >
-          <span aria-hidden>←</span> Back
-        </button>
-      </div>
+<main className="min-h-screen flex items-center justify-center bg-[#f9fafb] px-4 pt-6 md:pt-8">
+      {/* Top bar brand (use your existing nav if present; this is just a spacer) */}
+      {/* <div className="h-14 flex items-center justify-between px-4">
+        <div className="font-bold text-sm md:text-base">marketing mentor ai</div>
+        <button onClick={goBack} className="text-sm text-gray-600 hover:text-black">Back</button>
+      </div> */}
 
-      <div className="w-full max-w-sm space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold">
-            {mode === 'signin' ? 'Sign In' : 'Create your account'}
-          </h1>
+      <section className="max-w-md mx-auto px-4 pb-16">
+        {/* Title */}
+        <h1 className="text-2xl font-semibold text-center mb-6">{Title}</h1>
+
+        {/* Provider buttons */}
+        <div className="space-y-3">
           <button
-            className="text-sm underline"
-            onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
+            onClick={() => oauth('google')}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 rounded-xl border py-3 hover:bg-gray-50 disabled:opacity-60"
           >
-            {mode === 'signin' ? 'Create an account' : 'Have an account? Sign in'}
+            <img alt="" src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="h-5 w-5" />
+            <span>Continue with Google</span>
+          </button>
+          <button
+            onClick={() => oauth('azure')}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 rounded-xl border py-3 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <img alt="" src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/microsoft.svg" className="h-5 w-5" />
+            <span>Continue with Microsoft</span>
+          </button>
+          <button
+            onClick={() => oauth('apple')}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 rounded-xl border py-3 hover:bg-gray-50 disabled:opacity-60"
+          >
+            <img alt="" src="https://cdn.jsdelivr.net/gh/simple-icons/simple-icons/icons/apple.svg" className="h-5 w-5" />
+            <span>Continue with Apple</span>
           </button>
         </div>
 
-        <div className="flex gap-2 text-sm">
+        {/* Divider */}
+        <div className="relative my-8">
+          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+            <div className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center">
+            <span className="bg-white px-3 text-sm text-gray-500">OR</span>
+          </div>
+        </div>
+
+        {/* Sub-links under title (match screenshot behavior) */}
+        {mode === 'signin' ? (
+          <div className="text-center mb-6 space-y-1">
+            <button
+              onClick={() => setMode('signin')}
+              className="text-indigo-600 hover:underline text-sm"
+            >
+              Other ways to log in
+            </button>
+            <div className="text-sm">
+              or{' '}
+              <a href="/signin?mode=signup" className="text-indigo-600 hover:underline">
+                Create Account
+              </a>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Email / Phone toggle */}
+        <div className="flex gap-2 text-sm justify-center mb-4">
           <button
-            className={`px-3 py-1 rounded-full border ${!usePhone ? 'bg-black text-white' : ''}`}
+            className={`px-3 py-1 rounded-full border ${!usePhone ? 'bg-[#8B6F63] text-white' : ''}`}
             onClick={() => setUsePhone(false)}
           >
             Email
           </button>
           <button
-            className={`px-3 py-1 rounded-full border ${usePhone ? 'bg-black text-white' : ''}`}
+            className={`px-3 py-1 rounded-full border ${usePhone ? 'bg-[#8B6F63] text-white' : ''}`}
             onClick={() => setUsePhone(true)}
           >
             Phone
           </button>
         </div>
 
-        {!usePhone ? (
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e)=>setEmail(e.target.value)}
-            className="w-full rounded-xl border px-4 py-2"
-          />
-        ) : (
-          <input
-            type="tel"
-            placeholder="+1 555 123 4567"
-            value={phone}
-            onChange={(e)=>setPhone(e.target.value)}
-            className="w-full rounded-xl border px-4 py-2"
-          />
-        )}
+        {/* Inputs */}
+        <div className="space-y-3">
+          {!usePhone ? (
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e)=>setEmail(e.target.value)}
+              className="w-full rounded-xl border px-4 py-3"
+            />
+          ) : (
+            <input
+              type="tel"
+              placeholder="Phone"
+              value={phone}
+              onChange={(e)=>setPhone(e.target.value)}
+              className="w-full rounded-xl border px-4 py-3"
+            />
+          )}
 
-        <input
-          type="password"
-          placeholder="your password"
-          value={password}
-          onChange={(e)=>setPassword(e.target.value)}
-          className="w-full rounded-xl border px-4 py-2"
-        />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e)=>setPassword(e.target.value)}
+            className="w-full rounded-xl border px-4 py-3"
+          />
 
+          {mode === 'signup' && !usePhone && (
+            <input
+              type="password"
+              placeholder="Confirm password"
+              value={confirm}
+              onChange={(e)=>setConfirm(e.target.value)}
+              className="w-full rounded-xl border px-4 py-3"
+            />
+          )}
+        </div>
+
+        {/* Submit */}
         <button
           disabled={loading || !sb}
           onClick={submit}
-          className="w-full rounded-xl bg-black text-white py-2 disabled:opacity-60"
+          className="mt-4 w-full rounded-xl bg-[#8B6F63] text-white py-3 disabled:opacity-60"
         >
-          {loading ? 'Please wait…' : (mode === 'signin' ? 'Sign In' : 'Create Account')}
+          {loading ? 'Please wait…' : PrimaryCta}
         </button>
 
+        {/* Forgot link in signin mode */}
         {mode === 'signin' && (
           <button
-            className="w-full rounded-xl border py-2 disabled:opacity-60"
+            className="mt-3 w-full rounded-xl border py-3 disabled:opacity-60"
             disabled={!sb}
             onClick={async () => {
               if (!email) { setMsg('Enter your email first'); return }
@@ -191,9 +276,17 @@ export default function SignInClient() {
           </button>
         )}
 
-        {msg && <p className="text-sm text-gray-600">{msg}</p>}
-        {!sb && <p className="text-xs text-gray-400">Initializing…</p>}
-      </div>
+        {/* Footer prompt under signup form */}
+        {mode === 'signup' && (
+          <p className="mt-4 text-sm text-gray-600 text-center">
+            Already have an account?{' '}
+            <a href="/signin?mode=signin" className="underline">Log in</a>
+          </p>
+        )}
+
+        {msg && <p className="mt-4 text-sm text-gray-600 text-center">{msg}</p>}
+        {!sb && <p className="mt-2 text-xs text-gray-400 text-center">Initializing…</p>}
+      </section>
     </main>
   )
 }

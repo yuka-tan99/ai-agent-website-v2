@@ -49,6 +49,7 @@ export default function CreatorReport() {
   const sb = supabaseBrowser()
   const router = useRouter()
   const ranOnce = useRef(false)
+  const CACHE_KEY = "report_cache_v1";
 
   // auth state
   useEffect(() => {
@@ -61,34 +62,62 @@ export default function CreatorReport() {
   }, [])
 
   // load saved plan, else generate
-  useEffect(() => {
-    if (ranOnce.current) return
-    ranOnce.current = true
-    ;(async () => {
-      try {
-        const saved = await fetch('/api/report', { cache: 'no-store' })
-        if (saved.ok) {
-          const { plan } = await saved.json()
-          if (plan && isValidPlan(plan)) { setData(plan); setLoading(false); return }
+useEffect(() => {
+  if (ranOnce.current) return;
+  ranOnce.current = true;
+
+  // 1) Try cached plan for instant paint
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (isValidPlan(parsed)) {
+        setData(parsed);
+        setLoading(false); // <- instant render
+      }
+    }
+  } catch {}
+
+  // 2) Always try server for freshness (non-blocking if we already rendered)
+  (async () => {
+    try {
+      // Prefer saved server copy
+      const saved = await fetch('/api/report', { cache: 'no-store' });
+      if (saved.ok) {
+        const { plan } = await saved.json();
+        if (plan && isValidPlan(plan)) {
+          setData(plan);
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(plan)); } catch {}
+          setLoading(false);
+          return;
         }
-        const persona = JSON.parse(localStorage.getItem('onboarding') || '{}')
-        const links = JSON.parse(localStorage.getItem('social_links') || '[]')
+      }
+
+      // Otherwise generate (only if we had nothing)
+      if (!data) {
+        const persona = JSON.parse(localStorage.getItem('onboarding') || '{}');
+        const links = JSON.parse(localStorage.getItem('social_links') || '[]');
         const res = await fetch('/api/plan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ persona, links }),
           cache: 'no-store',
-        })
-        if (!res.ok) throw new Error(`Generation failed (${res.status})`)
-        const json = await res.json()
-        if (isValidPlan(json)) setData(json)
-      } catch (e: any) {
-        setError(e?.message || 'Failed to load plan')
-      } finally {
-        setLoading(false)
+        });
+        if (!res.ok) throw new Error(`Generation failed (${res.status})`);
+        const json = await res.json();
+        if (isValidPlan(json)) {
+          setData(json);
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(json)); } catch {}
+        }
       }
-    })()
-  }, [])
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load plan');
+    } finally {
+      setLoading(false);
+    }
+  })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   // const rightRail = useMemo(
   //   () => (
@@ -448,7 +477,7 @@ async function downloadFullReportPdf() {
       <div className="flex justify-center my-10">
         <button
           onClick={downloadFullReportPdf}
-          className="report-download bg-black text-white hover:bg-gray-800 transition pulse-gentle"
+          className="report-download bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition pulse-gentle"
         >
           download full report
         </button>

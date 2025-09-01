@@ -14,6 +14,8 @@ export default function DesignStyles() {
 
       /* -------- Color tokens pulled from your front_end.txt -------- */
       [data-mentor-ui] {
+        --navH: 56px; /* TopNav height */
+        --accent-grape: #7C3AED; /* mild/darker purple that's easy on eyes */
         --soft-purple: #9B7EDE;
         --earth-green: #7A8471;
         --text-900: #111827;
@@ -24,21 +26,16 @@ export default function DesignStyles() {
         --card-bg: rgba(255,255,255,.8);
       }
 
-      /* Subtle page background (keep it minimal & modern) */
-      [data-mentor-ui] {
-        background-attachment: fixed;
-        background-image:
-          radial-gradient(900px 480px at 90% -10%, rgba(155,126,222,.08), transparent 60%),
-          radial-gradient(900px 520px at 10% 110%, rgba(122,132,113,.06), transparent 60%);
-      }
+      /* Unified page background to match TopNav */
+      [data-mentor-ui] { background-color: #f9fafb; background-image: none !important; }
 
       /* Decorative helpers mirrored from front_end.txt */
-      [data-mentor-ui] .gradient-text {
-        background: linear-gradient(135deg, var(--soft-purple), var(--earth-green));
+        [data-mentor-ui] .gradient-text {
+        background: linear-gradient(135deg, var(--accent-grape), var(--soft-purple));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-      }
+        }
       [data-mentor-ui] .circle-bg {
         background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
       }
@@ -102,6 +99,32 @@ export default function DesignStyles() {
         [data-mentor-ui] .pulse-gentle { animation: none !important; }
       }
 
+      /* ===== Password modal ===== */
+      [data-mentor-ui] .pw-modal { position: fixed; inset: 0; z-index: 100; }
+      [data-mentor-ui] .pw-backdrop { position: absolute; inset: 0; background: rgba(17,24,39,.45); backdrop-filter: blur(2px); }
+      [data-mentor-ui] .pw-dialog {
+        position: relative;
+        margin: 12vh auto 0; max-width: 460px;
+        background: #fff; border-radius: 18px; overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0,0,0,.25);
+      }
+      [data-mentor-ui] .pw-head { display:flex; align-items:center; justify-content:space-between; padding: 14px 18px; background: #f3f4f6; border-bottom: 1px solid rgba(0,0,0,.06); }
+      [data-mentor-ui] .pw-head h3 { margin:0; font-size: 1.05rem; color: var(--text-900); font-weight: 600; }
+      [data-mentor-ui] .pw-x { font-size: 22px; line-height: 1; background: transparent; border: 0; color: #6b7280; }
+      [data-mentor-ui] .pw-body { padding: 16px 18px; }
+      [data-mentor-ui] .pw-input {
+        width: 100%; height: 44px; border-radius: 9999px; padding: 0 16px; outline: none;
+        border: 2px solid color-mix(in srgb, var(--soft-purple) 80%, #bda7ff);
+      }
+      [data-mentor-ui] .pw-input:focus { box-shadow: 0 0 0 3px color-mix(in oklab, var(--soft-purple) 22%, transparent); }
+      [data-mentor-ui] .pw-msg { margin-top: 8px; font-size: .9rem; color: #b91c1c; }
+      [data-mentor-ui] .pw-foot { background: #eef2f7; padding: 14px 18px; display:flex; justify-content:flex-end; }
+      [data-mentor-ui] .pw-btn {
+        padding: 10px 18px; border-radius: 9999px; border: 0; color: #fff;
+        background: #8B6F63; box-shadow: 0 6px 18px rgba(139,111,99,.35);
+      }
+      [data-mentor-ui] .pw-btn:disabled { opacity: .6; box-shadow: none; }
+
       /* === Palette from front_end.txt (scoped) === */
 [data-mentor-ui]{
   --soft-purple: #9B7EDE;
@@ -117,13 +140,8 @@ export default function DesignStyles() {
   --card-border: rgba(255,255,255,.22);
 }
 
-/* Subtle radial page background like your landing */
-[data-mentor-ui]{
-  background-attachment: fixed;
-  background-image:
-    radial-gradient(1200px 600px at 90% -10%, rgba(155,126,222,.08), transparent 60%),
-    radial-gradient(1000px 600px at 10% 110%, rgba(122,132,113,.06), transparent 60%);
-}
+/* Uniform background (no decorative gradients) */
+[data-mentor-ui]{ background-color: #f9fafb; background-image: none !important; }
 
 /* Glass cards */
 [data-mentor-ui] .dashboard-card{
@@ -207,6 +225,160 @@ export default function DesignStyles() {
   text-align: center;
   margin-top: 0.25rem;
 }
-    `}</style>
+
+/* ---- Account shell, soft purple ---- */
+
+[data-mentor-ui] .acc-shell { --border: rgba(0,0,0,.08); --hover: rgba(0,0,0,.04); --pill: rgba(155,126,222,.12); }
+[data-mentor-ui] .acc-titlebar{
+  position: fixed;
+  top: var(--navH);
+  left: 0;
+  right: 0;
+  height: var(--titleH);
+  background:#ffffffcc;
+  backdrop-filter: blur(8px);
+  border-bottom:1px solid rgba(0,0,0,.08);
+  display:flex;
+  align-items:center;
+  z-index: 30;
+}
+  /* The frame that contains the left rail + content, below TopNav */
+[data-mentor-ui] .acc-frame{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: var(--navH); /* right under TopNav */
+}
+/* Left rail matches page background; keeps subtle divider */
+[data-mentor-ui] .acc-rail{
+  background: transparent; /* inherits global light background */
+  border-right:1px solid rgba(0,0,0,.08);
+}
+
+[data-mentor-ui] .acc-link {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .6rem .8rem;
+  border-radius: .75rem;
+  transition: color .15s ease;
+  color: #4B5563;            /* default gray-600 */
+  font-weight: 400;
+}
+
+[data-mentor-ui] .acc-link:hover {
+  color: #8B6F63; /* chocolate-500 on hover */
+}
+
+[data-mentor-ui] .acc-link.active {
+  color: #8B6F63; /* chocolate-500 when active */
+  font-weight: 600;
+}
+
+  [data-mentor-ui] .acc-card     { background:#fff; border:1px solid var(--border); border-radius:16px; }
+  /* Primary button uses chocolate-500 */
+  [data-mentor-ui] .btn-primary  { background:#8B6F63; color:#fff; border-radius:12px; padding:.55rem .9rem; }
+  [data-mentor-ui] .btn-primary:hover { background:#7A5F58; transform: translateY(-1px); }
+    
+  [data-mentor-ui] .acc-card {
+    background: rgba(255,255,255,.9);
+    border: 1px solid rgba(0,0,0,.06);
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.04);
+  }
+  [data-mentor-ui] .acc-label {
+    display: block;
+    font-size: 0.9rem;
+    color: #4B5563;
+    margin-bottom: 0.35rem;
+  }
+  [data-mentor-ui] .acc-input {
+    width: 100%;
+    height: 44px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.12);
+    padding: 0 14px;
+    outline: none;
+    background: #fff;
+    transition: box-shadow .15s ease, border-color .15s ease;
+  }
+[data-mentor-ui] .acc-input:focus {
+  border-color: var(--accent-grape);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-grape) 28%, transparent);
+}
+
+/* Usage page pill header (does not cover left rail) */
+[data-mentor-ui] .usage-pill{
+  position: relative;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 18px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,.04);
+}
+[data-mentor-ui] .usage-pill::after{
+  content: "";
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 6px;
+  height: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #8ecae6, #2a9d8f, #8ecae6);
+  opacity: .85;
+  filter: blur(.2px);
+}
+  [data-mentor-ui] .btn-primary {
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: #8B6F63;
+    color: #fff;
+    transition: transform .15s ease, background .15s ease;
+  }
+  [data-mentor-ui] .btn-primary:hover { background: #7A5F58; transform: translateY(-1px); }
+  [data-mentor-ui] .btn-secondary {
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.12);
+    background: #fff;
+    transition: transform .15s ease, background .15s ease;
+  }
+  [data-mentor-ui] .btn-secondary:hover { background: #f8f8f8; transform: translateY(-1px); }
+  [data-mentor-ui] .acc-check {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.95rem;
+    color: #374151;
+  }
+[data-mentor-ui] .acc-check input {
+  width: 18px; height: 18px;
+  accent-color: var(--accent-grape);
+}
+  [data-mentor-ui] .acc-hint {
+    color: #6B7280;
+    font-size: 0.85rem;
+  }
+
+
+/* Internal scrollbars only for the two panes */
+[data-mentor-ui] .acc-scroll::-webkit-scrollbar,
+[data-mentor-ui] .acc-rail::-webkit-scrollbar { width: 8px; }
+[data-mentor-ui] .acc-scroll::-webkit-scrollbar-thumb,
+[data-mentor-ui] .acc-rail::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.12);
+  border-radius: 8px;
+}
+
+/* Heights for bars (tweak if your TopNav height differs) */
+[data-mentor-ui]{
+  --navH: 56px;   /* TopNav total height */
+  --titleH: 48px; /* “Usage/Rewards/Profile” title bar height */
+}
+
+`
+
+    
+    }</style>
   )
 }

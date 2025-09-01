@@ -30,6 +30,18 @@ export default function ChatGate() {
   if (pathname === "/" || pathname.startsWith("/onboarding") || pathname.startsWith("/signin")) {
     return null
   }
+  // Public routes (no chat)
+  const isPublic =
+    pathname === "/" ||
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/signin")
+
+  // Report routes (no chat while viewing the report)
+  const isReport =
+    pathname === "/dashboard" ||              // your current report page
+    pathname.startsWith("/dashboard/")        // safety if you add subroutes later
+
+  if (isPublic || isReport) return null
 
   return <ChatWidget />
 }

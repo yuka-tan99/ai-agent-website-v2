@@ -12,9 +12,9 @@ export default function LandingHero() {
   return (
     <header className="w-full relative">
       {/* Absolutely position brand top-left */}
-      <div className="absolute top-0 left-10 font-bold text-sm md:text-base tracking-tight text-gray-900" style={{ fontFamily: 'inherit' }}>
+      {/* <div className="absolute top-0 left-10 font-bold text-sm md:text-base tracking-tight text-gray-900" style={{ fontFamily: 'inherit' }}>
         marketing mentor ai
-      </div>
+      </div> */}
 
       {/* Hero section */}
       <div className="flex items-center justify-center px-6 pt-16"> 

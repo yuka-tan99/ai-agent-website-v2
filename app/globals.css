@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 :root { color-scheme: light; }
-body { @apply bg-white text-gray-900; }
+/* Unified very light blue-gray background across the app */
+body { @apply text-gray-900; background-color: #f9fafb; }
 .container { @apply max-w-6xl mx-auto px-4; }
 .card { @apply rounded-2xl border shadow-sm bg-white; }
 .blur-lock { @apply backdrop-blur-md bg-white/50 border; }
@@ -20,30 +21,39 @@ html { scroll-behavior: smooth; }
 }
 
 .loader {
+  width: 80px;
   height: 60px;
-  aspect-ratio: 2;
-  border-bottom: 3px solid #0000;
+  box-sizing: border-box;
   background:
-    linear-gradient(90deg, #524656 50%, #0000 0)
-    -25% 100% / 50% 3px repeat-x border-box;
+    linear-gradient(#fff 0 0) left /calc(50% - 15px) 8px no-repeat,
+    linear-gradient(#fff 0 0) right/calc(50% - 15px) 8px no-repeat,
+    conic-gradient(from 135deg at top,#0000, red 1deg 90deg,#0000 91deg) bottom/14px 8px repeat-x,
+    #000;
+  border-bottom: 2px solid red;
   position: relative;
-  animation: l3-0 .75s linear infinite;
+  overflow: hidden;
+  animation: l6-0 1s infinite linear;
 }
-.loader:before {
+.loader::before {
   content: "";
   position: absolute;
-  inset: auto 42.5% 0;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: #CF4647;
-  animation: l3-1 .75s cubic-bezier(0,900,1,900) infinite;
+  width: 10px;
+  height: 14px;
+  background: lightblue;
+  left: -5px;
+  animation:
+    l6-1 2s infinite cubic-bezier(0,100,1,100),
+    l6-2 2s infinite linear;
 }
-@keyframes l3-0 {
-  to { background-position: -125% 100%; }
+@keyframes l6-0{
+  50% { background-position: left,right,bottom -2px left -4px }
 }
-@keyframes l3-1 {
-  0%,2% { bottom: 0%; }
-  98%,to { bottom: .1%; }
+@keyframes l6-1{
+  0%,27%   {bottom: calc(50% + 4px)}
+  65%,100% {bottom: calc(50% + 4.1px)}
+}
+@keyframes l6-2{
+  100% {left:100%}
 }
 
 
@@ -67,3 +77,16 @@ html { scroll-behavior: smooth; }
   .progress-fill { transition: none; }
 }
 
+/* Smooth fade-in for report */
+.report-fade {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 360ms ease, transform 360ms ease;
+}
+.report-fade.is-in {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .report-fade { transition: none; opacity: 1; transform: none; }
+}

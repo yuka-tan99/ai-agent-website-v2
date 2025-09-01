@@ -1,8 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { redirect, useRouter } from 'next/navigation'
 import { PlatformPie, CadenceBar } from '@/components/Charts'
+
+const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === "true";
+if (DEV_BYPASS) {
+  redirect("/dashboard"); // 👈 skip paywall entirely in dev/preview
+}
 
 export default function Paywall(){
   const router = useRouter()
@@ -102,7 +107,7 @@ export default function Paywall(){
           <p className="text-sm text-gray-600 mb-4">One-time payment. Instant access.</p>
           <button
             onClick={checkout}
-            className="w-full px-6 py-3 rounded-xl bg-black text-white disabled:opacity-60"
+            className="w-full px-6 py-3 rounded-xl bg-[#8B6F63] text-white disabled:opacity-60"
             disabled={loading}
           >
             {loading ? 'Redirecting…' : 'Unlock Now'}

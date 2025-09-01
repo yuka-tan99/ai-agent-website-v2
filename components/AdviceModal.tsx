@@ -25,7 +25,7 @@ export default function AdviceModal({
   const icon = isIdea ? '💡' : '🎯'
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
+  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-4" onClick={onClose}>
       <div className="max-w-md w-full rounded-3xl bg-white p-8 shadow-2xl text-center" onClick={(e)=>e.stopPropagation()}>
         <div className={`mx-auto h-12 w-12 rounded-full grid place-items-center text-xl ${badgeClasses}`}>
           {icon}

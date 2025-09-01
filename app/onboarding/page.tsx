@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession'
 import { supabaseBrowser } from '@/lib/supabaseClient'
 import AdviceModal from '@/components/AdviceModal'
-import DesignStyles from '@/components/DesignStyles' // [ADD]
+import DesignStyles from '@/components/DesignStyles'
 
 /** ---------- Types ---------- */
 type BaseQ = {
@@ -320,32 +320,21 @@ type QLite = { id: string; multiple?: boolean }
 
 function listApplicableQuestions(answers: Record<string, any>) {
   const out: QLite[] = []
-
   for (const q of questions) {
-    // respect conditional "when"
     if (q.when && !q.when(answers)) continue
-
-    // main
     out.push({ id: q.id, multiple: q.multiple })
-
-    // sub (could be static or dynamic map)
     if (q.sub) {
       if ('id' in q.sub) {
-        // static
         const s = q.sub as any
         out.push({ id: s.id, multiple: s.multiple })
       } else {
-        // dynamic: only the active one for the current main selection
         const selected = answers[q.id]
         const dyn = (q.sub as Record<string, any>)[String(selected)]
         if (dyn && dyn.id) out.push({ id: dyn.id, multiple: dyn.multiple })
       }
     }
-
-    // sub2 (optional)
     if (q.sub2) out.push({ id: q.sub2.id, multiple: q.sub2.multiple })
   }
-
   return out
 }
 
@@ -369,9 +358,8 @@ export default function Onboarding() {
   const router = useRouter()
   const sb = supabaseBrowser()
 
-  // session id per browser
+  // Session id per browser
   const [sessionId] = useState(() => getOrCreateOnboardingSessionId())
-
 
   const [step, setStep] = useState(0)
   const [showSub, setShowSub] = useState(false)
@@ -383,52 +371,20 @@ export default function Onboarding() {
   })
   const [authed, setAuthed] = useState<boolean | null>(null)
 
-  // NEW — mini advice modal state
-  const [adviceOpen, setAdviceOpen] = useState(false)
-  const [adviceText, setAdviceText] = useState<string>("")
-  const [adviceLoading, setAdviceLoading] = useState(false)
+  // Mini advice modal state
+  const [tipOpen, setTipOpen] = useState(false)
+  const [tipText, setTipText] = useState('')
+  const [holdOpen, setHoldOpen] = useState(false)
+  const [holdTitle, setHoldTitle] = useState('clarity is kindness')
+  const [holdText, setHoldText] = useState('')
 
-  // 👇 ADD just after your last useState (e.g., after linksDraft)
-  const [tipOpen, setTipOpen] = useState(false);
-  const [tipText, setTipText] = useState('');
-
-  // NEW: "holding back" modal state
-  const [holdOpen, setHoldOpen] = useState(false);
-  const [holdTitle, setHoldTitle] = useState('clarity is kindness');
-  const [holdText, setHoldText] = useState('');
-
-  // Reset the "shown" flag for each fresh visit to the page
+  // Reset “shown once” flags each visit
   useEffect(() => {
-    try { sessionStorage.removeItem('stuck_tip_shown'); } catch {}
-    try { sessionStorage.removeItem('holding_tip_shown'); } catch {}
-  }, []);
-  // NEW — show once per session
-  const ADVICE_FLAG_KEY = 'advice_stuck_seen'
+    try { sessionStorage.removeItem('stuck_tip_shown') } catch {}
+    try { sessionStorage.removeItem('holding_tip_shown') } catch {}
+  }, [])
 
-  // NEW — fetch advice from API
-  const triggerAdvice = async (topic: string | string[], currentAnswers: Record<string, any>) => {
-    try {
-      // Don’t spam: show only once per session
-      if (localStorage.getItem(ADVICE_FLAG_KEY) === '1') return
-      setAdviceLoading(true)
-      const res = await fetch('/api/advice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, answers: currentAnswers }),
-        cache: 'no-store',
-      })
-      const json = await res.json().catch(() => ({}))
-      const tip = (json?.advice || '').toString().trim()
-      if (tip) {
-        setAdviceText(tip)
-        setAdviceOpen(true)
-        localStorage.setItem(ADVICE_FLAG_KEY, '1')
-      }
-    } catch {}
-    finally { setAdviceLoading(false) }
-  }
-
-  // 🔐 track auth state
+  // Track auth state
   useEffect(() => {
     let unsub: (() => void) | undefined
     sb.auth.getUser().then(({ data }) => setAuthed(!!data.user))
@@ -437,9 +393,9 @@ export default function Onboarding() {
     return () => { try { unsub?.() } catch {} }
   }, [sb])
 
-  // 🆕 ensure a shell row exists immediately so the table isn't empty
+  // Ensure a shell session row exists immediately
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
         await fetch('/api/onboarding/save', {
           method: 'POST',
@@ -451,7 +407,7 @@ export default function Onboarding() {
     })()
   }, [sessionId])
 
-  // 🔸 helper: persist partial changes incrementally to your session row
+  // Persist partial changes incrementally
   const persistDraft = async (patch: { answers?: any; links?: string[] }) => {
     try {
       await fetch('/api/onboarding/save', {
@@ -460,124 +416,113 @@ export default function Onboarding() {
         body: JSON.stringify({ sessionId, ...patch }),
         cache: 'no-store',
       })
-    } catch { /* ignore */ }
+    } catch {}
   }
 
-  // 👇 ADD below persistDraft, above the restore useEffect
+  // Show one-off tips
   const maybeShowStuckTip = async (nextAnswers: Record<string, any>) => {
-    const FLAG = 'stuck_tip_shown';
+    const FLAG = 'stuck_tip_shown'
     try {
-      if (sessionStorage.getItem(FLAG)) return;
+      if (sessionStorage.getItem(FLAG)) return
+      const stuck = Array.isArray(nextAnswers.stuckReason) ? nextAnswers.stuckReason : []
+      if (!stuck.length) return
 
-      const stuck = Array.isArray(nextAnswers.stuckReason) ? nextAnswers.stuckReason : [];
-      if (!stuck.length) return;
-
-      const payload = {
-        identity: nextAnswers.identity,
-        stuckReason: stuck,
-        goal: nextAnswers.goal,
-        reach: nextAnswers.reach,
-        techComfort: nextAnswers.techComfort,
-        techGaps: nextAnswers.techGaps,
-      };
-
-      let tip = '';
+      let tip = ''
       try {
         const res = await fetch('/api/onboarding/mini-advice', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            identity: nextAnswers.identity,
+            stuckReason: stuck,
+            goal: nextAnswers.goal,
+            reach: nextAnswers.reach,
+            techComfort: nextAnswers.techComfort,
+            techGaps: nextAnswers.techGaps,
+          }),
           cache: 'no-store',
-        });
-        if (res.ok) {
-          const json = await res.json().catch(() => ({}));
-          tip = (json?.tip || '').toString().trim();
-        }
+        })
+        const json = res.ok ? await res.json().catch(()=> ({})) : {}
+        tip = (json?.tip || '').toString().trim()
       } catch {}
 
       if (!tip) {
-        const choice = (stuck[0] || '').toLowerCase();
+        const choice = (stuck[0] || '').toLowerCase()
         if (choice.includes('plateau')) {
-          tip = "You’re not broken — your format just needs a tune-up. This week, audit your last 10 posts, keep the top 2 hook patterns, and remix them 3 ways. Small repeats beat big resets.";
+          tip = "You’re not broken — your format just needs a tune-up. Audit your last 10 posts, keep the top 2 hook patterns, and remix them 3 ways."
         } else if (choice.includes('not sure what content')) {
-          tip = "Pick 3 topics you could talk about for a month. Save 10 example posts you like, then make 1 fast remix of each. Momentum > perfection.";
+          tip = "Pick 3 topics you could talk about for a month. Save 10 example posts you like, then make 1 fast remix of each. Momentum > perfection."
         } else if (choice.includes('engagement')) {
-          tip = "Make comments a content source: ask one specific prompt per post, reply with a short video to the best answer, and pin it. It compounds fast.";
+          tip = "Make comments a content source: ask one specific prompt per post, reply with a short video to the best answer, and pin it."
         } else if (choice.includes('confidence') || choice.includes('stuck')) {
-          tip = "Shrink the task: record 3 x 20-second drafts today. No publishing yet. Tomorrow, trim one to 12 seconds and ship it. Done is data.";
+          tip = "Shrink the task: record 3 x 20-second drafts today. Tomorrow, trim one to 12 seconds and ship it. Done is data."
         } else {
-          tip = "Run tiny loops: 1 idea → 1 draft → publish → note the first 2 seconds’ retention. Repeat tomorrow. The path out of stuck is short cycles.";
+          tip = "Run tiny loops: 1 idea → 1 draft → publish → check the first 2 seconds’ retention. Repeat tomorrow."
         }
       }
 
-      setTipText(tip);
-      setTipOpen(true);
-      sessionStorage.setItem(FLAG, '1');
+      setTipText(tip)
+      setTipOpen(true)
+      sessionStorage.setItem(FLAG, '1')
     } catch {}
-  };
+  }
 
   const maybeShowHoldingTip = async (nextAnswers: Record<string, any>) => {
-    const FLAG = 'holding_tip_shown';
+    const FLAG = 'holding_tip_shown'
     try {
-      if (sessionStorage.getItem(FLAG)) return;
+      if (sessionStorage.getItem(FLAG)) return
+      const hb = Array.isArray(nextAnswers.holdingBack) ? nextAnswers.holdingBack : []
+      if (!hb.length) return
 
-      const hb = Array.isArray(nextAnswers.holdingBack) ? nextAnswers.holdingBack : [];
-      if (!hb.length) return;
-
-      const payload = {
-        kind: 'holding',
-        identity: nextAnswers.identity,
-        holdingBack: hb,
-        goal: nextAnswers.goal,
-        reach: nextAnswers.reach,
-        techComfort: nextAnswers.techComfort,
-        techGaps: nextAnswers.techGaps,
-      };
-
-      let title = 'clarity is kindness';
-      let tip = '';
-
+      let title = 'clarity is kindness'
+      let tip = ''
       try {
         const res = await fetch('/api/onboarding/mini-advice', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            kind: 'holding',
+            identity: nextAnswers.identity,
+            holdingBack: hb,
+            goal: nextAnswers.goal,
+            reach: nextAnswers.reach,
+            techComfort: nextAnswers.techComfort,
+            techGaps: nextAnswers.techGaps,
+          }),
           cache: 'no-store',
-        });
-        if (res.ok) {
-          const json = await res.json().catch(() => ({}));
-          title = (json?.title || title).toString();
-          tip = (json?.tip || '').toString().trim();
-        }
+        })
+        const json = res.ok ? await res.json().catch(()=> ({})) : {}
+        title = (json?.title || title).toString()
+        tip = (json?.tip || '').toString().trim()
       } catch {}
 
-      // Fallback if API gave nothing
       if (!tip) {
-        const choice = (hb[0] || '').toLowerCase();
+        const choice = (hb[0] || '').toLowerCase()
         if (choice.includes('time')) {
-          title = 'start smaller, win sooner';
-          tip = "short on time? record 3 quick 15-second drafts this week.\nship one. save the rest for remixing tomorrow.";
+          title = 'start smaller, win sooner'
+          tip = "Short on time? Record 3 quick 15-second drafts this week. Ship one. Save the rest for remixing tomorrow."
         } else if (choice.includes('judgment') || choice.includes('feedback')) {
-          title = 'post for one person';
-          tip = "pick a single friend who’d love your post and make it for them.\none audience member > the whole internet.";
+          title = 'post for one person'
+          tip = "Pick a single friend who’d love your post and make it for them. One audience member > the whole internet."
         } else if (choice.includes('monetize')) {
-          title = 'one path, two weeks';
-          tip = "choose one offer (brand deal / product / service).\ncreate 4 posts that all point to it.\nclarity converts better than variety.";
+          title = 'one path, two weeks'
+          tip = "Choose one offer (brand deal / product / service). Make 4 posts that all point to it."
         } else {
-          title = 'focus beats friction';
-          tip = "circle one priority for the next 7 days.\nship tiny posts that serve only that.\nprogress > perfection.";
+          title = 'focus beats friction'
+          tip = "Circle one priority for the next 7 days. Ship tiny posts that serve only that. Progress > perfection."
         }
       }
 
-      setHoldTitle(title);
-      setHoldText(tip);
-      setHoldOpen(true);
-      sessionStorage.setItem(FLAG, '1');
+      setHoldTitle(title)
+      setHoldText(tip)
+      setHoldOpen(true)
+      sessionStorage.setItem(FLAG, '1')
     } catch {}
-  };
-  // restore any previous progress for this session (answers + links)
+  }
+
+  // Restore any previous progress for this session (answers + links)
   useEffect(() => {
-    (async () => {
+    ;(async () => {
       try {
         const res = await fetch(`/api/onboarding/save?sessionId=${encodeURIComponent(sessionId)}`, { cache: 'no-store' })
         if (!res.ok) return
@@ -607,7 +552,7 @@ export default function Onboarding() {
   const totalSteps = questions.length + 1
   const isLinksStep = step === questions.length
 
-  const { done, total, percent } = useMemo(() => computeProgress(answers), [answers])
+  const { percent } = useMemo(() => computeProgress(answers), [answers])
 
   const current = useMemo(() => {
     if (isLinksStep) return { id: LINKS_STEP_ID, text: 'drop links to your public profiles (optional)' } as any
@@ -627,52 +572,40 @@ export default function Onboarding() {
   const subQuestion: BaseQ | null = isLinksStep ? null : (dynamicSub || staticSub || null)
   const subSelected = subQuestion ? answers[subQuestion.id] : null
 
-  const toggleSelect = (existing: string | string[] | undefined, value: string): string | string[] => {
-    if (!Array.isArray(existing)) return [value]
-    return existing.includes(value) ? existing.filter((v) => v !== value) : [...existing, value]
-  }
-
   // Save after each selection (and auto-reveal sub for single-choice)
   const handleSelect = (key: string, value: string, multi?: boolean) => {
     setAnswers((prev) => {
-      const cur = prev[key];
+      const cur = prev[key]
       const next = multi
         ? (Array.isArray(cur) ? (cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]) : [value])
-        : value;
+        : value
 
-      let merged = { ...prev, [key]: next };
+      let merged = { ...prev, [key]: next }
 
-      // If selecting the MAIN question (current) AND it's NOT multiple-choice
-      // and it has a sub-question, auto-show the sub panel immediately.
+      // If selecting the MAIN question and it has a sub, auto-show sub
       try {
-        const curr: any = current as any; // uses current from outer scope
-        const isMain = key === curr?.id;
-        const isSingle = !!isMain && !curr?.multiple;
-        const hasSub = !!curr?.sub;
-
+        const curr: any = current as any
+        const isMain = key === curr?.id
+        const isSingle = !!isMain && !curr?.multiple
+        const hasSub = !!curr?.sub
         if (isMain && isSingle && hasSub) {
-          // Clear any previous sub answers (static or dynamic) to avoid stale state
           if (curr.sub && typeof curr.sub === 'object' && !('id' in curr.sub)) {
-            // dynamic map: clear all possible sub-ids
             Object.values(curr.sub as Record<string, any>).forEach((s: any) => {
-              if (s?.id && merged[s.id] !== undefined) delete (merged as any)[s.id];
-            });
+              if (s?.id && merged[s.id] !== undefined) delete (merged as any)[s.id]
+            })
           } else if (curr.sub && 'id' in curr.sub) {
-            const sid = (curr.sub as any).id;
-            if (sid && merged[sid] !== undefined) delete (merged as any)[sid];
+            const sid = (curr.sub as any).id
+            if (sid && merged[sid] !== undefined) delete (merged as any)[sid]
           }
-
-          setShowSub(true);
+          setShowSub(true)
         }
       } catch {}
 
-      // persist incrementally
-      persistDraft({ answers: merged });
-
-      // (advice triggers remain commented in your code)
-      return merged;
-    });
-  };
+      // Persist
+      persistDraft({ answers: merged })
+      return merged
+    })
+  }
 
   const isActive = (q: BaseQ, val: string) =>
     q.multiple ? Array.isArray(answers[q.id]) && (answers[q.id] as string[]).includes(val) : answers[q.id] === val
@@ -680,7 +613,6 @@ export default function Onboarding() {
   const hasAnswer = (q: BaseQ, val: string | string[] | undefined) =>
     q.multiple ? Array.isArray(val) && val.length > 0 : typeof val === 'string' && val.length > 0
 
-  // Merge "other" typed value into selection array on continue (and save)
   const mergeOtherIfNeeded = (q: BaseQ) => {
     if (!q.allowOther) return
     const sel = answers[q.id]
@@ -698,185 +630,178 @@ export default function Onboarding() {
   }
 
   const handleContinue = async () => {
-    // --- Decide which advice (if any) to show for THIS Continue press ---
+    const isLinks = isLinksStep
+    const mainQ = current as BaseQ
+    const subQ = subQuestion as BaseQ | null
+
     const stuckShown = !!sessionStorage.getItem('stuck_tip_shown')
     const holdShown  = !!sessionStorage.getItem('holding_tip_shown')
 
-    // Make sure we’re checking the actual visible prompt:
-    // - stuckReason is a SUB question under `identity`
-    const willShowStuck =
-      !isLinksStep &&
-      !stuckShown &&
-      subQuestion?.id === 'stuckReason' &&
-      hasAnswer(subQuestion, subSelected || undefined)
+    const willShowStuck = !isLinks && !stuckShown && subQ?.id === 'stuckReason' && hasAnswer(subQ, subSelected || undefined)
+    const willShowHold  = !isLinks && !holdShown && mainQ?.id === 'holdingBack' && hasAnswer(mainQ, mainSelected || undefined)
 
-    // holdingBack is a MAIN question
-    const willShowHold =
-      !isLinksStep &&
-      !holdShown &&
-      (current as any)?.id === 'holdingBack' &&
-      hasAnswer(current as BaseQ, mainSelected || undefined)
-
-    // --- Links step (unchanged) ---
-    if (isLinksStep) {
-      const links = Object.values(linksDraft).map(s => s.trim()).filter(Boolean)
+    // ---- Final step (Links) → mark complete then go to dashboard
+    if (isLinks) {
+      const links = Object.values(linksDraft).map((s) => s.trim()).filter(Boolean)
       localStorage.setItem('social_links', JSON.stringify(links))
       localStorage.setItem('onboarding', JSON.stringify(answers))
-      await persistDraft({ links })
+      await persistDraft({ answers, links })
 
-      if (authed) {
-        try {
-          await fetch('/api/onboarding/attach', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId }),
-            cache: 'no-store',
-          })
-        } catch {}
-        return router.push('/account')
+      if (!authed) {
+        const next = encodeURIComponent('/dashboard')
+        return router.push(`/signin?next=${next}`)
       }
-      return router.push('/signin')
+
+      try {
+        // Mark onboarding complete for this session + attach answers/links
+        await fetch('/api/onboarding/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, answers, links }),
+          cache: 'no-store',
+        })
+      } catch { /* non-blocking */ }
+
+      // Return to account; user can click "My Report" to generate on demand.
+      return router.push('/account')
     }
 
-    // --- Normal steps: validate & merge "other" if needed ---
-    mergeOtherIfNeeded(current as BaseQ)
-    if (subQuestion) mergeOtherIfNeeded(subQuestion)
+    // ---- Normal steps
+    mergeOtherIfNeeded(mainQ)
+    if (subQ) mergeOtherIfNeeded(subQ)
 
-    if (!hasAnswer(current as BaseQ, mainSelected || undefined)) return
-    if (subQuestion && !showSub) { setShowSub(true); return }
-    if (subQuestion && !hasAnswer(subQuestion, subSelected || undefined)) return
+    if (!hasAnswer(mainQ, mainSelected || undefined)) return
+    if (subQ && !showSub) { setShowSub(true); return }
+    if (subQ && !hasAnswer(subQ, subSelected || undefined)) return
 
-    // --- Advance FIRST so the next question is already on screen ---
     const nextIdx = step + 1
     if (nextIdx < totalSteps) {
       setStep(nextIdx)
       setShowSub(false)
     }
 
-    // --- Then open the advice modal WITHOUT await (no blocking, no “cleared answers” feel) ---
     if (willShowStuck) {
       void maybeShowStuckTip(answers)
     } else if (willShowHold) {
       void maybeShowHoldingTip(answers)
     }
   }
+
   return (
     <div data-mentor-ui>
-      <DesignStyles /> {/* styling injector (visual only) */}
+      <DesignStyles />
 
-      {/* Top progress bar (purely visual; uses your existing `percent`) */}
+      {/* Top progress bar */}
       <div className="fixed top-0 left-0 w-full h-1 bg-gray-200 z-50">
         <div className="h-full bg-[var(--soft-purple)] transition-all duration-500" style={{ width: `${percent}%` }} />
       </div>
 
-      {/* original container, unchanged text */}
-      <div className="min-h-screen flex flex-col items-center justify-center bg-white px-4 text-center fade-in">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in">
         <div className="w-full max-w-2xl">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900 slide-up">{(current as any).text}</h2>
 
-      <h2 className="text-2xl font-bold mb-6 text-gray-900 slide-up">{(current as any).text}</h2>
-
-        {!isLinksStep ? (
-          <>
-            <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
-              {(current as any).options?.map((opt: string) => (
-                <Button
-                  key={opt}
-                  label={opt}
-                  active={isActive(current as any, opt)}
-                  onClick={() => handleSelect((current as any).id, opt, !!(current as any).multiple)}
-                />
-              ))}
-            </div>
-
-            {(current as any).allowOther &&
-              Array.isArray(answers[(current as any).id]) &&
-              (answers[(current as any).id] as string[]).includes('other') && (
-                <OtherInput
-                  value={otherDrafts[(current as any).id] || ''}
-                  onChange={(v) => setOtherDrafts((p) => ({ ...p, [(current as any).id]: v }))}
-                  placeholder="add your platform or content type…"
-                />
-              )}
-
-            {showSub && subQuestion && (
-              <>
-                <p className="text-gray-500 text-lg mt-8 mb-4 slide-up">{subQuestion.text}</p>
-                <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
-                  {subQuestion.options.map((opt: string) => (
-                    <Button
-                      key={opt}
-                      label={opt}
-                      active={isActive(subQuestion, opt)}
-                      onClick={() => handleSelect(subQuestion.id, opt, !!subQuestion.multiple)}
-                    />
-                  ))}
-                </div>
-                {subQuestion.allowOther &&
-                  Array.isArray(answers[subQuestion.id]) &&
-                  (answers[subQuestion.id] as string[]).includes('other') && (
-                    <OtherInput
-                      value={otherDrafts[subQuestion.id] || ''}
-                      onChange={(v) => setOtherDrafts((p) => ({ ...p, [subQuestion.id]: v }))}
-                    />
-                  )}
-              </>
-            )}
-          </>
-        ) : (
-          // LINKS STEP UI
-          <div className="grid gap-3 text-left">
-            {[
-              ["instagram", "https://instagram.com/username"],
-              ["tiktok", "https://www.tiktok.com/@handle"],
-              ["youtube", "https://www.youtube.com/@handle or channel URL"],
-              ["twitter", "https://x.com/handle or https://twitter.com/handle"],
-              ["linkedin", "https://www.linkedin.com/in/handle or /company/..."],
-              ["twitch", "https://www.twitch.tv/handle"],
-              ["facebook", "https://www.facebook.com/handle"],
-              ["pinterest", "https://www.pinterest.com/handle"],
-              ["other", "any other public link…"],
-            ].map(([k, ph]) => (
-              <div key={k}>
-                <label className="block text-sm mb-1 capitalize">{k}</label>
-                <input
-                  value={(linksDraft as any)[k]}
-                  onChange={(e) => setLinksDraft(prev => ({ ...prev, [k]: e.target.value }))}
-                  placeholder={ph}
-                  className="w-full rounded-xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black/20"
-                />
+          {!isLinksStep ? (
+            <>
+              <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
+                {(current as any).options?.map((opt: string) => (
+                  <Button
+                    key={opt}
+                    label={opt}
+                    active={isActive(current as any, opt)}
+                    onClick={() => handleSelect((current as any).id, opt, !!(current as any).multiple)}
+                  />
+                ))}
               </div>
-            ))}
-            <p className="text-xs text-gray-500 mt-1">optional — we’ll analyze public info to tailor your plan</p>
-          </div>
-        )}
 
-        <button
-          onClick={handleContinue}
-          className="mt-6 px-8 py-2 rounded-full bg-black text-white hover:bg-gray-800 transition pulse-gentle"
-        >
-          {isLinksStep ? (authed ? 'finish & go to my account' : 'sign in to see my plan') : 'continue'}
-        </button>
+              {(current as any).allowOther &&
+                Array.isArray(answers[(current as any).id]) &&
+                (answers[(current as any).id] as string[]).includes('other') && (
+                  <OtherInput
+                    value={otherDrafts[(current as any).id] || ''}
+                    onChange={(v) => setOtherDrafts((p) => ({ ...p, [(current as any).id]: v }))}
+                    placeholder="add your platform or content type…"
+                  />
+                )}
 
-        {/* Mini advice: STUCK (yellow bulb) */}
-        <AdviceModal
-          open={tipOpen}
-          onClose={() => setTipOpen(false)}
-          title="the authenticity advantage"
-          text={tipText}
-          variant="idea"
-        />
+              {showSub && subQuestion && (
+                <>
+                  <p className="text-gray-500 text-lg mt-8 mb-4 slide-up">{subQuestion.text}</p>
+                  <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
+                    {subQuestion.options.map((opt: string) => (
+                      <Button
+                        key={opt}
+                        label={opt}
+                        active={isActive(subQuestion, opt)}
+                        onClick={() => handleSelect(subQuestion.id, opt, !!subQuestion.multiple)}
+                      />
+                    ))}
+                  </div>
+                  {subQuestion.allowOther &&
+                    Array.isArray(answers[subQuestion.id]) &&
+                    (answers[subQuestion.id] as string[]).includes('other') && (
+                      <OtherInput
+                        value={otherDrafts[subQuestion.id] || ''}
+                        onChange={(v) => setOtherDrafts((p) => ({ ...p, [subQuestion.id]: v }))}
+                      />
+                    )}
+                </>
+              )}
+            </>
+          ) : (
+            // LINKS STEP
+            <div className="grid gap-3 text-left">
+              {[
+                ['instagram', 'https://instagram.com/username'],
+                ['tiktok', 'https://www.tiktok.com/@handle'],
+                ['youtube', 'https://www.youtube.com/@handle or channel URL'],
+                ['twitter', 'https://x.com/handle or https://twitter.com/handle'],
+                ['linkedin', 'https://www.linkedin.com/in/handle or /company/...'],
+                ['twitch', 'https://www.twitch.tv/handle'],
+                ['facebook', 'https://www.facebook.com/handle'],
+                ['pinterest', 'https://www.pinterest.com/handle'],
+                ['other', 'any other public link…'],
+              ].map(([k, ph]) => (
+                <div key={k}>
+                  <label className="block text-sm mb-1 capitalize">{k}</label>
+                  <input
+                    value={(linksDraft as any)[k]}
+                    onChange={(e) => setLinksDraft(prev => ({ ...prev, [k]: e.target.value }))}
+                    placeholder={ph}
+                    className="w-full rounded-xl border px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-black/20"
+                  />
+                </div>
+              ))}
+              <p className="text-xs text-gray-500 mt-1">optional — we’ll analyze public info to tailor your plan</p>
+            </div>
+          )}
 
-        {/* Mini advice: HOLDING BACK (pink target) */}
-        <AdviceModal
-          open={holdOpen}
-          onClose={() => setHoldOpen(false)}
-          title={holdTitle}
-          text={holdText}
-          variant="focus"
-          buttonLabel="Got it"
-        />
+          <button
+            onClick={handleContinue}
+            className="mt-6 px-8 py-2 rounded-full bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition pulse-gentle"
+          >
+            {isLinksStep ? (authed ? 'finish & see my report' : 'sign in to see my report') : 'continue'}
+          </button>
+
+          {/* Mini advice: STUCK */}
+          <AdviceModal
+            open={tipOpen}
+            onClose={() => setTipOpen(false)}
+            title="the authenticity advantage"
+            text={tipText}
+            variant="idea"
+          />
+
+          {/* Mini advice: HOLDING BACK */}
+          <AdviceModal
+            open={holdOpen}
+            onClose={() => setHoldOpen(false)}
+            title={holdTitle}
+            text={holdText}
+            variant="focus"
+            buttonLabel="Got it"
+          />
+        </div>
       </div>
     </div>
-  </div>
   )
 }

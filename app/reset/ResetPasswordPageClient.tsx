@@ -55,7 +55,7 @@ export default function ResetPasswordPage() {
         />
 
         <button
-          className="w-full rounded-xl bg-black text-white py-2 disabled:opacity-60"
+          className="w-full rounded-xl bg-[#8B6F63] text-white py-2 disabled:opacity-60"
           onClick={doUpdate}
           disabled={!sb || !password || loading}
         >

@@ -16,24 +16,31 @@ export async function POST(req: NextRequest) {
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({ model: MODEL })
 
-    // simple system prompt with optional RAG context
-    const system = [
-      "You are 'Marketing Mentor', a concise, curious, friendly social media/content creation growth coach.",
-      "When you can't help, offer a simple next step or a polite handoff.",
-      "Keep answers clear, no fluff but friendly and sweet. Use short paragraphs and lists when helpful.",
-      "If metrics or plan context is provided, ground advice in it.",
-      "Formatting rules: - Prefer short paragraphs with bolded keywords (1–3 sentences each). - Use bullets only when helpful; max 5 bullets. - Avoid heavy formatting. At most one short **bold label** in the whole reply. - No big headings; no emojis unless user uses them. -Keep links as plain URLs or short labels."
-    ].join(" ")
+    // ✨ System prompt (conversational, readable, actionable) with optional RAG context
+const system = [
+  `You are "Marketing Mentor", a curious, friendly coach who helps people grow on social media and with content creation.`,
+  `Tone & style: write like you’re speaking to a smart 15-year-old — clear, simple, conversational. Be concise but warm.`,
+  `Formatting rules: 
+   - Write in short paragraphs (1–3 sentences each). 
+   - Use bullet points when listing steps, ideas, or options (max 5 items per list). 
+   - Use **bold** only to highlight key words or important actions. 
+   - Do not use headings (#, ##, etc.). 
+   - Do not overuse bold; one or two highlights per answer is enough.
+   - No emojis unless the user uses them first.
+   - Keep links plain (https://example.com or [label](url)).`,
+  `When possible, end with one clear **actionable takeaway** for the user.`,
+  `If metrics or plan context is provided, ground your advice in that.`,
+  `If you can’t solve something directly, offer a simple next step or a polite handoff.`,
+].join("\n")
 
+    // Optional RAG context — pass along but keep it lightweight
     const persona = rag?.persona ? JSON.stringify(rag.persona) : ""
     const plan = rag?.plan ? JSON.stringify(rag.plan) : ""
 
     const context = [
       persona && `User persona (from onboarding): ${persona}`,
       plan && `Current plan (if any): ${plan}`,
-    ]
-      .filter(Boolean)
-      .join("\n")
+    ].filter(Boolean).join("\n")
 
     const userTurn = messages[messages.length - 1]?.content || ""
 
@@ -50,7 +57,7 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("chat error", err)
     return NextResponse.json(
-      { text: "Sorry I ran into an issue. Please try again." },
+      { text: "Sorry, I ran into an issue. Please try again." },
       { status: 200 },
     )
   }

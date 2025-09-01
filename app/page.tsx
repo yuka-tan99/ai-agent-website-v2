@@ -35,23 +35,22 @@ export default function Home() {
     <div data-mentor-ui>
       <DesignStyles />
 
-      <main className="min-h-screen flex flex-col items-center bg-white pt-12">
-        {/* Top-left brand, headline, animated subline (matches your video) */}
+      {/* make this relative so we can absolutely position the top-right buttons */}
+      <main className="relative min-h-screen flex flex-col items-center bg-[#f9fafb] pt-12">
+
+        {/* Top-right auth buttons (keep routes; only labels changed) */}
+
+
+        {/* Hero */}
         <LandingHero />
 
-        {/* Buttons only (lifted up, wording unchanged) */}
-        <div className="flex items-center gap-4 mt-6">
-          <Link
-            href="/signin"
-            className="px-6 py-4 rounded-xl border border-gray-300 text-gray-800 hover:bg-gray-100 transition transform hover:scale-[1.03]"
-          >
-            sign in
-          </Link>
+        {/* Centered single CTA (removed the middle Log In button) */}
+        <div className="mt-8 flex justify-center">
           <Link
             href="/onboarding"
-            className="px-6 py-4 rounded-xl bg-black text-white hover:bg-gray-800 transition transform hover:scale-[1.03] pulse-gentle"
+            className="px-6 py-4 rounded-xl bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition transform hover:scale-[1.03] pulse-gentle"
           >
-            let's start
+            Let&apos;s Start
           </Link>
         </div>
       </main>

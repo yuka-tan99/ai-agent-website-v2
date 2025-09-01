@@ -368,8 +368,18 @@ function summarizeMainProblem(sig: ReturnType<typeof deriveSignals>, plan: any) 
   else if (pains.some(p => /camera|on-camera|awkward|shy/.test(p))) title = "On‑camera discomfort"
   else if (pains.some(p => /time|busy|no time/.test(p))) title = "Limited time"
 
-  const fixes = (plan?.roadblocks || []).slice(0, 2).map((rb: any) => rb?.solution).filter(Boolean)
-  const fixText = fixes.length ? `Here’s how to fix it: ${fixes.map((s: string) => s.replace(/\n/g, ' ')).join(' ')} ` : ''
+  // Pull up to two roadblock solutions and normalize any list hyphens into sentences
+  const fixes = (plan?.roadblocks || []).slice(0, 2).map((rb: any) => String(rb?.solution || '')).filter(Boolean)
+  const fixSentences: string[] = []
+  for (const text of fixes) {
+    const lines = String(text)
+      .replace(/\r/g, '')
+      .split('\n')
+      .map(l => l.replace(/^\s*[-•]\s*/, '').trim())
+      .filter(Boolean)
+    if (lines.length) fixSentences.push(lines.join('. ') + (lines.length ? '.' : ''))
+  }
+  const fixText = fixSentences.length ? `Here’s how to fix it: ${fixSentences.join(' ')}` : ''
 
   const desc =
     title === 'Inconsistent posting'
@@ -418,5 +428,53 @@ export function finalizePlan(rawFromLLM: any, personaOrAnswers: any, fameScore: 
     plan.main_problem = plan.main_problem || mp.title
     plan.main_problem_detail = mp.detail
   }
+
+  // Fill empty sections with sensible defaults so UI never shows blanks
+  const ensureSection = (sec: any, kind: string) => {
+    const has = !!(sec?.summary) || (Array.isArray(sec?.bullets) && sec.bullets.length)
+    if (has) return sec
+    const bullets: string[] = []
+    let summary = ''
+    switch (kind) {
+      case 'ai_marketing_psychology':
+        summary = 'Use simple psychological cues and clarity to make posts easy to understand and share.'
+        bullets.push('Lead with the outcome in 2 seconds', 'Use concrete nouns and verbs', 'Ask one specific question to earn replies')
+        break
+      case 'foundational_psychology':
+        summary = 'Build trust and attention by repeating recognizable patterns and showing social proof.'
+        bullets.push('Pick 3 content pillars', 'Repeat hooks that already worked', 'Show quick wins or mini‑case studies')
+        break
+      case 'platform_specific_strategies':
+        summary = 'Focus on 1–2 platforms you can post on daily; mirror what works there.'
+        bullets.push('Copy the pacing of top posts', 'Rework one idea into Shorts/Reels/TikTok', 'Use captions to add missing context')
+        sec.charts = sec.charts || { platform_focus: seeds.platform_focus }
+        break
+      case 'content_strategy':
+        summary = 'Create repeatable formats so you can ship quickly without losing quality.'
+        bullets.push('Define 3 formats you can repeat', 'Keep a swipe file of 20 references', 'Batch 5 drafts on Sunday')
+        break
+      case 'posting_frequency':
+        summary = 'Short, frequent posts beat rare, long ones when you are learning.'
+        bullets.push('Post 1 small piece daily for 14 days', 'Review watch‑time on the first 2 seconds', 'Cut slow intros')
+        break
+      case 'metrics_mindset':
+        summary = 'Measure inputs you control and study the first moments of attention.'
+        bullets.push('Track posts/week and 2s retention', 'Duplicate patterns from winners', 'Remove low‑ROI tasks for a week')
+        break
+      case 'mental_health':
+        summary = 'Protect energy; treat each post as an experiment, not a verdict.'
+        bullets.push('Set a 20‑minute publish window', 'Use templates to reduce friction', 'Celebrate streaks, not views')
+        break
+    }
+    return { ...(sec || {}), summary, bullets }
+  }
+
+  plan.sections.ai_marketing_psychology = ensureSection(plan.sections.ai_marketing_psychology, 'ai_marketing_psychology')
+  plan.sections.foundational_psychology = ensureSection(plan.sections.foundational_psychology, 'foundational_psychology')
+  plan.sections.platform_specific_strategies = ensureSection(plan.sections.platform_specific_strategies, 'platform_specific_strategies')
+  plan.sections.content_strategy = ensureSection(plan.sections.content_strategy, 'content_strategy')
+  plan.sections.posting_frequency = ensureSection(plan.sections.posting_frequency, 'posting_frequency')
+  plan.sections.metrics_mindset = ensureSection(plan.sections.metrics_mindset, 'metrics_mindset')
+  plan.sections.mental_health = ensureSection(plan.sections.mental_health, 'mental_health')
   return plan
 }

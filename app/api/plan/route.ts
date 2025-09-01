@@ -1,9 +1,8 @@
 // app/api/plan/route.ts
 import { NextResponse } from "next/server";
 import { searchKBServer } from "@/lib/rag";
-import { geminiTextModel, GEMINI_SAFETY } from "@/lib/gemini";
 import { supabaseServer } from "@/lib/supabaseServer";
-import { callClaudeJSON } from '@/lib/claude';
+import { callClaudeJSONWithRetry } from '@/lib/claude';
 
 
 // Optional: if you have link snapshots wired
@@ -460,28 +459,10 @@ ${links.length ? linkSummary : "(no links provided)"}
     // }
 
 
-    const provider = process.env.LLM_PROVIDER || 'gemini';
     let raw = '';
-
     try {
-      if (provider === 'anthropic') {
-        const obj = await callClaudeJSON<any>({ prompt, timeoutMs: 60000 });
-        raw = JSON.stringify(obj);
-      } else {
-        // existing Gemini path
-        const model = geminiTextModel();
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          safetySettings: GEMINI_SAFETY,
-          generationConfig: {
-            temperature: 0.2,
-            topP: 0.9,
-            maxOutputTokens: 1800,
-            responseMimeType: "application/json",
-          },
-        });
-        raw = (result.response?.text?.() || "").trim();
-      }
+      const obj = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 60000, maxTokens: 1400 }, 1);
+      raw = JSON.stringify(obj);
     } catch (e: any) {
       console.warn("[api/plan] llm error:", e?.message || e);
       raw = "";

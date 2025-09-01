@@ -6,6 +6,7 @@ type ClaudeArgs = {
   prompt: string;
   model?: string;      // allow override per-call
   timeoutMs?: number;  // hard cap so we never hang
+  maxTokens?: number;  // cap output to reduce latency
 };
 
 /**
@@ -17,6 +18,7 @@ export async function callClaudeJSON<T = any>({
   prompt,
   model,
   timeoutMs = 60000,
+  maxTokens = 1400,
 }: ClaudeArgs): Promise<T> {
   const key = apiKey || process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("Missing ANTHROPIC_API_KEY");
@@ -37,7 +39,7 @@ export async function callClaudeJSON<T = any>({
       },
       body: JSON.stringify({
         model: _model,
-        max_tokens: 2000,
+        max_tokens: maxTokens,
         temperature: 0.4,
         system: "Return JSON only. No prose outside JSON. Keep it concise, clear, and actionable.",
         messages: [{ role: "user", content: prompt }],
@@ -71,5 +73,16 @@ export async function callClaudeJSON<T = any>({
     throw new Error(`Claude returned non-JSON or failed: ${e?.message || e}`);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export async function callClaudeJSONWithRetry<T = any>(args: ClaudeArgs, retries = 1): Promise<T> {
+  try {
+    return await callClaudeJSON<T>(args);
+  } catch (e: any) {
+    if (retries <= 0) throw e;
+    const t = Math.max(20000, Math.floor((args.timeoutMs || 60000) * 0.75));
+    const smaller = Math.max(900, (args.maxTokens || 1400) - 300);
+    return await callClaudeJSONWithRetry<T>({ ...args, timeoutMs: t, maxTokens: smaller }, retries - 1);
   }
 }

@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabaseServer";
 import { prepareReportInputs, finalizePlan } from "@/lib/reportMapping";
-import { callClaudeJSON } from "@/lib/claude";
+import { callClaudeJSONWithRetry } from "@/lib/claude";
 
 function onboardingComplete(row: any): boolean {
   if (!row) return false;
@@ -75,11 +75,12 @@ export async function POST(req: NextRequest) {
     // Sonnet-4 is now default in callClaudeJSON; pass model only if you want to override
     let raw: any;
     try {
-      raw = await callClaudeJSON<any>({
+      raw = await callClaudeJSONWithRetry<any>({
         prompt,
-        model,                // optional; omit to use DEFAULT_MODEL (Sonnet-4)
+        model,                // optional; omit to use DEFAULT_MODEL
         timeoutMs: 60_000,
-      });
+        maxTokens: 1400,
+      }, 1);
       if (process.env.DEBUG_LOG === 'true') console.log("[/api/report][POST] LLM ok");
     } catch (e: any) {
       console.warn("[/api/report][POST] LLM failed:", e?.message || e);

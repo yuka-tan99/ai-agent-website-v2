@@ -28,6 +28,8 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
 
   // Profile local UI state (no backend writes)
   const [displayName, setDisplayName] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [pwdOpen, setPwdOpen] = useState(false)
   const [pwd, setPwd] = useState('')
   const [pwdBusy, setPwdBusy] = useState(false)
@@ -55,12 +57,33 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
         return
       }
       setEmail(data.user.email || '')
+      try {
+        const meta: any = data.user.user_metadata || {}
+        const initialName = (meta.name || meta.full_name || '') as string
+        if (initialName) {
+          setDisplayName(initialName)
+          try { localStorage.setItem('profile_name', initialName) } catch {}
+        } else {
+          const cached = localStorage.getItem('profile_name')
+          if (cached) setDisplayName(cached)
+        }
+      } catch {}
     })()
 
     const sub = sb.auth.onAuthStateChange((_e, s) => {
       if (!active) return
       if (!s?.user) router.replace('/signin?mode=signin')
-      else setEmail(s.user.email || '')
+      else {
+        setEmail(s.user.email || '')
+        try {
+          const meta: any = s.user.user_metadata || {}
+          const initialName = (meta.name || meta.full_name || '') as string
+          if (initialName) {
+            setDisplayName(initialName)
+            try { localStorage.setItem('profile_name', initialName) } catch {}
+          }
+        } catch {}
+      }
     })
 
     return () => {
@@ -179,9 +202,28 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
                 >
                   Change password
                 </button>
-                <button className="btn-primary" onClick={() => alert('Saved locally.')}>
-                  Save
+                <button
+                  className="btn-primary"
+                  disabled={savingName}
+                  onClick={async () => {
+                    setSaveMsg(null)
+                    try {
+                      setSavingName(true)
+                      const { error } = await sb.auth.updateUser({ data: { name: displayName } })
+                      if (error) throw error
+                      setSaveMsg('Saved')
+                      try { localStorage.setItem('profile_name', displayName) } catch {}
+                      setTimeout(() => setSaveMsg(null), 1200)
+                    } catch (e:any) {
+                      setSaveMsg(e?.message || 'Failed to save')
+                    } finally {
+                      setSavingName(false)
+                    }
+                  }}
+                >
+                  {savingName ? 'Saving…' : 'Save'}
                 </button>
+                {saveMsg && <span className="text-sm text-gray-600">{saveMsg}</span>}
               </div>
             </div>
           </div>

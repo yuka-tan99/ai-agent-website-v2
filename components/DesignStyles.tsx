@@ -325,7 +325,8 @@ export default function DesignStyles() {
   bottom: 6px;
   height: 3px;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #8ecae6, #2a9d8f, #8ecae6);
+  /* chocolate-500 sheen with subtle light/dark sweep */
+  background: linear-gradient(90deg, #A08277, #8B6F63, #7A5F58);
   opacity: .85;
   filter: blur(.2px);
 }

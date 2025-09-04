@@ -19,7 +19,6 @@ export default async function FameInsightsPage() {
   const supa = await supabaseServer()
   const { data: { user } } = await supa.auth.getUser()
   if (!user) redirect('/signin')
-  if (!(await hasAccess(user.id))) redirect('/paywall')
 
   const { data: rep } = await supa
     .from('reports')
@@ -27,8 +26,10 @@ export default async function FameInsightsPage() {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  // If no plan found, show a friendly message rather than bouncing
+  // If no plan found, require access; otherwise show friendly message
   if (!rep?.plan) {
+    const access = await hasAccess(user.id)
+    if (!access) redirect('/paywall')
     return (
       <main className="container py-8">
         <FadeIn>

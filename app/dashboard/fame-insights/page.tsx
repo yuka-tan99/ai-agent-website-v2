@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 // Use a plain anchor to avoid Link's client-hook context in this server page
 import { redirect } from 'next/navigation'
 import { supabaseServer } from '@/lib/supabaseServer'
+import FadeIn from '@/components/FadeIn'
 
 async function hasAccess(userId: string) {
   const supa = await supabaseServer()
@@ -26,7 +27,23 @@ export default async function FameInsightsPage() {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (!rep?.plan) redirect('/dashboard')
+  // If no plan found, show a friendly message rather than bouncing
+  if (!rep?.plan) {
+    return (
+      <main className="container py-8">
+        <FadeIn>
+          <div className="mb-4">
+            <a href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">&larr; Back</a>
+          </div>
+          <div className="dashboard-card p-6 text-center">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">no report yet</h2>
+            <p className="text-sm text-gray-600 mb-4">We couldn’t find your plan on this session. Head back to your dashboard to generate or view it.</p>
+            <a href="/dashboard" className="inline-flex items-center justify-center rounded-full bg-[#6237A0] text-white px-5 py-2 hover:bg-[#4F2D82] transition">go to dashboard</a>
+          </div>
+        </FadeIn>
+      </main>
+    )
+  }
 
   const plan: any = rep.plan
   const breakdown: Array<{ key: string; label: string; percent: number }> = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
@@ -85,7 +102,7 @@ export default async function FameInsightsPage() {
 
   return (
     <main className="container py-8">
-      <div className="report-fade is-in">
+      <FadeIn>
         <div className="mb-4">
           <a href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">&larr; Back</a>
         </div>
@@ -122,7 +139,7 @@ export default async function FameInsightsPage() {
             </details>
           ))}
         </div>
-      </div>
+      </FadeIn>
     </main>
   )
 }

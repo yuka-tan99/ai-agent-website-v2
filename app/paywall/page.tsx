@@ -24,13 +24,14 @@ export default function Paywall(){
     let cancel = false
     ;(async () => {
       const { data: { user } } = await sb.auth.getUser()
-      if (!user) return
+      const uid = user?.id
+      if (!uid) return
       async function checkOnce() {
         try {
           const { data } = await sb
             .from('onboarding_sessions')
             .select('purchase_status')
-            .eq('user_id', user.id)
+            .eq('user_id', uid)
             .maybeSingle()
           if (!cancel && data?.purchase_status === 'paid') {
             router.replace('/dashboard')

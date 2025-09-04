@@ -27,14 +27,20 @@ export default function ChatGate() {
   if (authed !== true) return null
 
   // Optionally hide on specific paths
-  if (pathname === "/" || pathname.startsWith("/onboarding") || pathname.startsWith("/signin")) {
+  if (
+    pathname === "/" ||
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/signin") ||
+    pathname.startsWith("/paywall")
+  ) {
     return null
   }
   // Public routes (no chat)
   const isPublic =
     pathname === "/" ||
     pathname.startsWith("/onboarding") ||
-    pathname.startsWith("/signin")
+    pathname.startsWith("/signin") ||
+    pathname.startsWith("/paywall")
 
   // Report routes (no chat while viewing the report)
   const isReport =

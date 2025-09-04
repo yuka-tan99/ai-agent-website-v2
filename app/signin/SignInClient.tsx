@@ -198,13 +198,13 @@ export default function SignInClient() {
         {/* Email / Phone toggle */}
         <div className="flex gap-2 text-sm justify-center mb-4">
           <button
-            className={`px-3 py-1 rounded-full border ${!usePhone ? 'bg-[#8B6F63] text-white' : ''}`}
+            className={`px-3 py-1 rounded-full border ${!usePhone ? 'bg-[#6237A0] text-white' : ''}`}
             onClick={() => setUsePhone(false)}
           >
             Email
           </button>
           <button
-            className={`px-3 py-1 rounded-full border ${usePhone ? 'bg-[#8B6F63] text-white' : ''}`}
+            className={`px-3 py-1 rounded-full border ${usePhone ? 'bg-[#6237A0] text-white' : ''}`}
             onClick={() => setUsePhone(true)}
           >
             Phone
@@ -254,7 +254,7 @@ export default function SignInClient() {
         <button
           disabled={loading || !sb}
           onClick={submit}
-          className="mt-4 w-full rounded-xl bg-[#8B6F63] text-white py-3 disabled:opacity-60"
+          className="mt-4 w-full rounded-xl bg-[#6237A0] text-white py-3 disabled:opacity-60"
         >
           {loading ? 'Please wait…' : PrimaryCta}
         </button>

@@ -121,7 +121,7 @@ export default function DesignStyles() {
       [data-mentor-ui] .pw-foot { background: #eef2f7; padding: 14px 18px; display:flex; justify-content:flex-end; }
       [data-mentor-ui] .pw-btn {
         padding: 10px 18px; border-radius: 9999px; border: 0; color: #fff;
-        background: #8B6F63; box-shadow: 0 6px 18px rgba(139,111,99,.35);
+        background: #6237A0; box-shadow: 0 6px 18px rgba(98,55,160,.35);
       }
       [data-mentor-ui] .pw-btn:disabled { opacity: .6; box-shadow: none; }
 
@@ -268,18 +268,18 @@ export default function DesignStyles() {
 }
 
 [data-mentor-ui] .acc-link:hover {
-  color: #8B6F63; /* chocolate-500 on hover */
+  color: #6237A0; /* primary on hover */
 }
 
 [data-mentor-ui] .acc-link.active {
-  color: #8B6F63; /* chocolate-500 when active */
+  color: #6237A0; /* primary when active */
   font-weight: 600;
 }
 
   [data-mentor-ui] .acc-card     { background:#fff; border:1px solid var(--border); border-radius:16px; }
-  /* Primary button uses chocolate-500 */
-  [data-mentor-ui] .btn-primary  { background:#8B6F63; color:#fff; border-radius:12px; padding:.55rem .9rem; }
-  [data-mentor-ui] .btn-primary:hover { background:#7A5F58; transform: translateY(-1px); }
+  /* Primary button uses brand primary */
+  [data-mentor-ui] .btn-primary  { background:#6237A0; color:#fff; border-radius:12px; padding:.55rem .9rem; }
+  [data-mentor-ui] .btn-primary:hover { background:#4F2D82; transform: translateY(-1px); }
     
   [data-mentor-ui] .acc-card {
     background: rgba(255,255,255,.9);
@@ -325,19 +325,19 @@ export default function DesignStyles() {
   bottom: 6px;
   height: 3px;
   border-radius: 9999px;
-  /* chocolate-500 sheen with subtle light/dark sweep */
-  background: linear-gradient(90deg, #A08277, #8B6F63, #7A5F58);
+  /* primary sheen with subtle light/dark sweep */
+  background: linear-gradient(90deg, #7B5BC1, #6237A0, #4C2B7A);
   opacity: .85;
   filter: blur(.2px);
 }
   [data-mentor-ui] .btn-primary {
     padding: 10px 16px;
     border-radius: 12px;
-    background: #8B6F63;
+    background: #6237A0;
     color: #fff;
     transition: transform .15s ease, background .15s ease;
   }
-  [data-mentor-ui] .btn-primary:hover { background: #7A5F58; transform: translateY(-1px); }
+  [data-mentor-ui] .btn-primary:hover { background: #4F2D82; transform: translateY(-1px); }
   [data-mentor-ui] .btn-secondary {
     padding: 10px 16px;
     border-radius: 12px;

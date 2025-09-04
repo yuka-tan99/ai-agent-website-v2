@@ -156,7 +156,7 @@ export default function ChatWidget() {
       {/* floating elliptical button */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed z-40 bottom-6 right-6 rounded-full px-5 py-3 bg-[#8B6F63] text-white shadow-lg transition transform hover:scale-[1.03] pulse-gentle"
+        className="fixed z-40 bottom-6 right-6 rounded-full px-5 py-3 bg-[#6237A0] text-white shadow-lg transition transform hover:scale-[1.03] pulse-gentle"
       aria-label={open ? "Close chat" : "Chat with your marketing mentor"}
       >
         {!open ? "Chat with your marketing mentor" : "Close"}
@@ -232,16 +232,18 @@ export default function ChatWidget() {
           </form>
           <style jsx>{`
             .mm-wrap{ position: fixed; z-index: 40; bottom: 24px; right: 24px; width: min(420px, calc(100vw - 2rem)); border-radius: 24px; box-shadow: 0 15px 40px rgba(0,0,0,.18); overflow: hidden; background: #fff; }
-            .mm-head{ display:flex; align-items:center; gap:12px; padding:14px 16px; background:#D9C9C0; color:#0f172a; border-bottom:1px solid rgba(0,0,0,.06); }
-            .mm-avatar{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,.05); font-size:18px; }
+            /* Lavender header */
+            .mm-head{ display:flex; align-items:center; gap:12px; padding:14px 16px; background:#E4A0F7; color:#1E1340; border-bottom:1px solid rgba(98,55,160,.20); }
+            .mm-avatar{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: rgba(255,255,255,.7); font-size:18px; }
             .mm-title{ font-weight:700; }
-            .mm-sub{ font-size:.85rem; color:#475569; margin-top:2px; }
-            .mm-close{ margin-left:auto; background:transparent; border:0; font-size:22px; color:#475569; }
-            .mm-body{ max-height:50vh; overflow:auto; padding:22px 18px; background:#F8FAFC; }
-            .mm-input{ display:flex; align-items:center; gap:10px; padding:14px; background:#EEF2F6; border-top:1px solid rgba(0,0,0,.06); }
-            .mm-input-field{ flex:1; border:0; outline:none; background:#E2E8F0; padding:12px 16px; border-radius:18px; }
-            .mm-send{ width:42px; height:42px; border-radius:50%; background:#8B6F63; color:#fff; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(139,111,99,.35); border:0; }
-            .mm-send:hover{ background:#7A5F58; }
+            .mm-sub{ font-size:.85rem; color:#3E2B6E; margin-top:2px; }
+            .mm-close{ margin-left:auto; background:transparent; border:0; font-size:22px; color:#3E2B6E; }
+            /* Gentle lavender canvas */
+            .mm-body{ max-height:50vh; overflow:auto; padding:22px 18px; background:#FCF7FF; }
+            .mm-input{ display:flex; align-items:center; gap:10px; padding:14px; background:#F3D6FF; border-top:1px solid rgba(98,55,160,.18); }
+            .mm-input-field{ flex:1; border:0; outline:none; background:#F0E1FF; padding:12px 16px; border-radius:18px; }
+            .mm-send{ width:42px; height:42px; border-radius:50%; background:#6237A0; color:#fff; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(98,55,160,.35); border:0; }
+            .mm-send:hover{ background:#4F2D82; }
           `}</style>
         </div>
       )}
@@ -302,7 +304,7 @@ function ChatBubble({
       {!isUser ? copyButton : null}
       <style jsx>{`
         .mm-bwrap{ display:flex; align-items:flex-start; gap:8px; margin: 6px 0; }
-        .mm-bubble-ai{ position:relative; max-width:85%; padding:14px 16px; border-radius:22px; background:#8B6F63; color:#fff; box-shadow: 0 8px 18px rgba(0,0,0,.12); margin: 10px 0; }
+        .mm-bubble-ai{ position:relative; max-width:85%; padding:14px 16px; border-radius:22px; background:#6237A0; color:#fff; box-shadow: 0 8px 18px rgba(0,0,0,.12); margin: 10px 0; }
         .mm-bubble-user{ position:relative; max-width:85%; padding:14px 16px; border-radius:22px; background:#CBD5E1; color:#0f172a; box-shadow: 0 8px 18px rgba(0,0,0,.08); margin: 10px 0; }
         .mm-copy-side{ width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid rgba(0,0,0,.08); background:#fff; color:#334155; box-shadow: 0 4px 10px rgba(0,0,0,.06); opacity:0; transition: opacity .2s ease; align-self:flex-start; margin-top:6px; }
         .mm-copy-side:hover{ background:#f1f5f9; }

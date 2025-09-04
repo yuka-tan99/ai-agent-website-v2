@@ -75,13 +75,36 @@ export function computeFameScore(a: ReturnType<typeof normalizeAnswers>) {
   const many = (arr: string[]) => Math.min(1, (arr?.length || 0) / 4)
 
   const factors = {
-    time: /(\b10\+|10-20|20|30|hour|daily)/i.test(a.timeAvailable) ? 1 : /5-10|5–10|weekly|some/i.test(a.timeAvailable) ? 0.6 : a.timeAvailable ? 0.35 : 0.25,
-    camera: /love|comfortable|okay/i.test(a.camera) ? 1 : /awk|shy|no/i.test(a.camera) ? 0.35 : 0.6,
-    planning: /plan|schedule|calendar|plan-first/i.test(a.planVsWing) ? 1 : /mix|both|hybrid/i.test(a.planVsWing) ? 0.7 : 0.45,
-    tech: /high|comfortable|power/i.test(a.techComfort) ? 1 : /medium/i.test(a.techComfort) ? 0.7 : a.techComfort ? 0.45 : 0.5,
-    audience: many(a.reach),
-    interests: many(a.topics) * 0.8 + many(a.creativity) * 0.2,
-    experimentation: Math.max(0.2, 1 - many(a.triedButDidntWork)),
+    // More encouraging baselines: unknowns map to ~0.6 instead of harsh lows
+    time: /(\b10\+|10-20|20|30|hour|daily)/i.test(a.timeAvailable)
+      ? 1
+      : /5-10|5–10|weekly|some/i.test(a.timeAvailable)
+        ? 0.7
+        : a.timeAvailable
+          ? 0.5
+          : 0.6, // unknown → assume moderate readiness
+    camera: /love|comfortable|okay/i.test(a.camera)
+      ? 1
+      : /awk|shy|no/i.test(a.camera)
+        ? 0.5
+        : 0.7, // unknown → neutral/encouraging
+    planning: /plan|schedule|calendar|plan-first/i.test(a.planVsWing)
+      ? 1
+      : /mix|both|hybrid/i.test(a.planVsWing)
+        ? 0.8
+        : a.planVsWing
+          ? 0.6
+          : 0.65,
+    tech: /high|comfortable|power/i.test(a.techComfort)
+      ? 1
+      : /medium/i.test(a.techComfort)
+        ? 0.8
+        : a.techComfort
+          ? 0.6
+          : 0.65,
+    audience: Math.max(0.35, many(a.reach)),
+    interests: Math.max(0.35, many(a.topics) * 0.8 + many(a.creativity) * 0.2),
+    experimentation: Math.max(0.4, 1 - many(a.triedButDidntWork)),
   }
 
   const weights = {
@@ -111,13 +134,35 @@ export function computeFameBreakdown(a: ReturnType<typeof normalizeAnswers>) {
   const many = (arr: string[]) => Math.min(1, (arr?.length || 0) / 4)
 
   const factors = {
-    consistency: /(\b10\+|10-20|20|30|hour|daily)/i.test(a.timeAvailable) ? 1 : /5-10|5–10|weekly|some/i.test(a.timeAvailable) ? 0.6 : a.timeAvailable ? 0.35 : 0.25,
-    camera_comfort: /love|comfortable|okay/i.test(a.camera) ? 1 : /awk|shy|no/i.test(a.camera) ? 0.35 : 0.6,
-    planning: /plan|schedule|calendar|plan-first/i.test(a.planVsWing) ? 1 : /mix|both|hybrid/i.test(a.planVsWing) ? 0.7 : 0.45,
-    tech_comfort: /high|comfortable|power/i.test(a.techComfort) ? 1 : /medium/i.test(a.techComfort) ? 0.7 : a.techComfort ? 0.45 : 0.5,
-    audience_readiness: many(a.reach),
-    interest_breadth: many(a.topics) * 0.8 + many(a.creativity) * 0.2,
-    experimentation: Math.max(0.2, 1 - many(a.triedButDidntWork)),
+    consistency: /(\b10\+|10-20|20|30|hour|daily)/i.test(a.timeAvailable)
+      ? 1
+      : /5-10|5–10|weekly|some/i.test(a.timeAvailable)
+        ? 0.7
+        : a.timeAvailable
+          ? 0.5
+          : 0.6,
+    camera_comfort: /love|comfortable|okay/i.test(a.camera)
+      ? 1
+      : /awk|shy|no/i.test(a.camera)
+        ? 0.5
+        : 0.7,
+    planning: /plan|schedule|calendar|plan-first/i.test(a.planVsWing)
+      ? 1
+      : /mix|both|hybrid/i.test(a.planVsWing)
+        ? 0.8
+        : a.planVsWing
+          ? 0.6
+          : 0.65,
+    tech_comfort: /high|comfortable|power/i.test(a.techComfort)
+      ? 1
+      : /medium/i.test(a.techComfort)
+        ? 0.8
+        : a.techComfort
+          ? 0.6
+          : 0.65,
+    audience_readiness: Math.max(0.35, many(a.reach)),
+    interest_breadth: Math.max(0.35, many(a.topics) * 0.8 + many(a.creativity) * 0.2),
+    experimentation: Math.max(0.4, 1 - many(a.triedButDidntWork)),
   }
 
   const weights = {

@@ -23,20 +23,18 @@ async function hasPlanAccess(userId: string) {
   if (DEV_BYPASS) return true;
   const supa = await supabaseServer();
   const { data } = await supa
-    .from('purchases')
-    .select('id')
+    .from('onboarding_sessions')
+    .select('purchase_status')
     .eq('user_id', userId)
-    .eq('product_key', 'plan')
-    .eq('status', 'paid')
     .maybeSingle();
-  return !!data;
+  return data?.purchase_status === 'paid';
 }
 
 export default async function DashboardPage() {
   const supa = await supabaseServer();
   const { data: { user } } = await supa.auth.getUser();
   if (!user) redirect('/signin');
-
+  // Enforce paywall first. Only paid users can view or generate a report.
   if (!(await hasPlanAccess(user.id))) redirect('/paywall');
 
   // If a report already exists -> render instantly
@@ -107,7 +105,7 @@ export default async function DashboardPage() {
 //     try {
 //       const res = await fetch(url, { ...init, signal: ctl.signal, cache: "no-store" });
 //       const text = await res.text();
-//       let json: any = null;
+//       let json: any = null;i
 //       try { json = text ? JSON.parse(text) : null; } catch {}
 //       return { ok: res.ok, status: res.status, json, text };
 //     } finally {

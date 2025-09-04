@@ -49,7 +49,12 @@ export async function callClaudeJSON<T = any>({
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Claude error ${res.status}: ${text || res.statusText}`);
+      const retryAfter = Number(res.headers.get('retry-after') || '0') || 0;
+      const err: any = new Error(`Claude error ${res.status}: ${text || res.statusText}`);
+      (err.code as any) = res.status;
+      (err.status as any) = res.status;
+      (err.retryAfter as any) = retryAfter;
+      throw err;
     }
 
     const data = await res.json();
@@ -81,6 +86,10 @@ export async function callClaudeJSONWithRetry<T = any>(args: ClaudeArgs, retries
     return await callClaudeJSON<T>(args);
   } catch (e: any) {
     if (retries <= 0) throw e;
+    // Respect rate limit 429 with a short backoff
+    const is429 = (e?.code === 429 || e?.status === 429 || /\b429\b/.test(String(e?.message || '')));
+    const backoffMs = is429 ? Math.max(800, Math.min(3000, Math.round((e?.retryAfter || 0) * 1000) || 1200)) : 0;
+    if (backoffMs) await new Promise(r => setTimeout(r, backoffMs));
     const t = Math.max(20000, Math.floor((args.timeoutMs || 60000) * 0.75));
     const smaller = Math.max(900, (args.maxTokens || 1400) - 300);
     return await callClaudeJSONWithRetry<T>({ ...args, timeoutMs: t, maxTokens: smaller }, retries - 1);

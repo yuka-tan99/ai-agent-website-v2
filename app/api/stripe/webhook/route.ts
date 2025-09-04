@@ -1,57 +1,43 @@
+// app/api/stripe/webhook/route.ts
 import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { supabaseAdmin } from '@/lib/supabaseServer' // must use SERVICE role key!
 
-// Use latest supported Stripe API version
-const stripeSecret = process.env.STRIPE_SECRET_KEY as string
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET as string
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
 
 export async function POST(req: Request) {
-  if (!stripeSecret || !webhookSecret) {
-    return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
-  }
+  const sig = (await headers()).get('stripe-signature')
+  const whsec = process.env.STRIPE_WEBHOOK_SECRET
+  if (!sig || !whsec) return NextResponse.json({ error: 'Missing webhook secret' }, { status: 500 })
 
-  const stripe = new Stripe(stripeSecret, { apiVersion: '2024-06-20' })
+  // IMPORTANT: raw body for signature verification
+  const raw = Buffer.from(await req.arrayBuffer())
 
-  let body: Buffer
-  try {
-    body = Buffer.from(await req.arrayBuffer())
-  } catch (err) {
-    return NextResponse.json({ error: 'Failed to read request body' }, { status: 400 })
-  }
-
-  const sig = (await headers()).get('stripe-signature') as string
   let event: Stripe.Event
-
   try {
-    event = stripe.webhooks.constructEvent(body, sig, webhookSecret)
-  } catch (err: any) {
-    console.error('Webhook signature verification failed.', err.message)
-    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 })
+    event = stripe.webhooks.constructEvent(raw, sig, whsec)
+  } catch (e: any) {
+    console.error('Bad signature', e?.message)
+    return NextResponse.json({ error: 'Bad signature' }, { status: 400 })
   }
 
-  // Handle event types
   try {
-    switch (event.type) {
-      case 'checkout.session.completed':
-        console.log('✅ Checkout session completed', event.data.object)
-        // You could update DB here
-        break
-
-      case 'invoice.payment_succeeded':
-        console.log('💰 Payment succeeded', event.data.object)
-        break
-
-      case 'customer.subscription.deleted':
-        console.log('⚠️ Subscription canceled', event.data.object)
-        break
-
-      default:
-        console.log(`Unhandled event type ${event.type}`)
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session
+      const user_id = session.metadata?.user_id
+      if (!user_id) {
+        console.warn('checkout.session.completed missing metadata.user_id')
+      } else {
+        const sb = supabaseAdmin() // MUST be instantiated with service_role key (bypasses RLS)
+        // Ensure a row exists, then set paid
+        await sb.from('onboarding_sessions')
+          .upsert({ user_id, purchase_status: 'paid', updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      }
     }
-  } catch (err) {
-    console.error('Webhook handler error:', err)
-    return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 })
+  } catch (e) {
+    console.error('Webhook handler error:', e)
+    return NextResponse.json({ error: 'handler error' }, { status: 500 })
   }
 
   return NextResponse.json({ received: true })

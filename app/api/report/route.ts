@@ -87,7 +87,57 @@ export async function POST(req: NextRequest) {
       raw = {}; // finalizePlan will fill sensible defaults from answers/fame
     }
 
-    const plan = finalizePlan(raw, answers, fame);
+    let plan = finalizePlan(raw, answers, fame);
+
+    // Add a one-time, thorough fame assessment paragraph based on onboarding + breakdown
+    try {
+      const breakdown = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
+      const pct: Record<string, number> = {
+        overall: Math.round(plan.fame_score ?? 0),
+      }
+      for (const b of breakdown) pct[b.key] = Math.round(Number(b.percent) || 0)
+      const assess = await callClaudeJSONWithRetry<{ assessment: string }>({
+        prompt: `You are Marketing Mentor, a social media growth expert. Return JSON only.\n\nWrite ONE thorough paragraph titled 'assessment' (3–7 sentences) that explains the creator's current strengths and weaknesses and the biggest opportunities ahead. Be encouraging and helpful with no fluff. Use the percentages as directional signals, not verdicts. Include 1–2 specific next steps.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT:\n{"assessment":"..."}`,
+        timeoutMs: 45000,
+        maxTokens: 500,
+      }, 1)
+      if (assess && typeof assess.assessment === 'string') {
+        (plan as any).fame_assessment = assess.assessment
+      }
+    } catch {
+      // simple fallback so UI never blocks
+      const overall = Math.round(plan.fame_score ?? 0)
+      ;(plan as any).fame_assessment = `You have solid raw potential (around ${overall}%). Lean on your strongest habits and formats, and shore up the weakest link in your weekly workflow. Keep your scope narrow for two weeks, post on a steady cadence, and run one small experiment per post. This combination compounds quickly.`
+    }
+
+    // Per-section insights to show under each section on Fame Insights page
+    try {
+      const breakdown = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
+      const pct: Record<string, number> = {
+        overall: Math.round(plan.fame_score ?? 0),
+      }
+      for (const b of breakdown) pct[b.key] = Math.round(Number(b.percent) || 0)
+      const insight = await callClaudeJSONWithRetry<Record<string, string>>({
+        prompt: `You are Marketing Mentor. Return JSON only.\n\nWrite one concise but thorough paragraph (3–5 sentences) for EACH of these keys explaining what the user's onboarding answers suggest and the top opportunity to improve that dimension. Encouraging, specific, no fluff.\nKeys: overall, consistency, camera_comfort, planning, tech_comfort, audience_readiness, interest_breadth, experimentation.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT (flat object with those exact keys):\n{"overall":"","consistency":"","camera_comfort":"","planning":"","tech_comfort":"","audience_readiness":"","interest_breadth":"","experimentation":""}`,
+        timeoutMs: 50000,
+        maxTokens: 900,
+      }, 1)
+      if (insight && typeof insight === 'object') {
+        (plan as any).fame_section_insights = insight
+      }
+    } catch {
+      const mk = (k: string) => `This area can move fast with one small weekly ritual focused on ${k.replace(/_/g,' ')}. Keep changes tiny and measurable for the next 14 days to build momentum.`
+      ;(plan as any).fame_section_insights = {
+        overall: mk('overall execution'),
+        consistency: mk('consistency'),
+        camera_comfort: mk('on‑camera comfort'),
+        planning: mk('planning and batching'),
+        tech_comfort: mk('tooling and editing'),
+        audience_readiness: mk('audience clarity'),
+        interest_breadth: mk('topic focus'),
+        experimentation: mk('experimentation'),
+      }
+    }
 
     const up = await supa
       .from("reports")

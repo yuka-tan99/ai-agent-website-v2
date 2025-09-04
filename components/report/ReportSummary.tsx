@@ -123,9 +123,14 @@ const S = normalizeAllSections(plan.sections || {})
             <Donut percent={Math.round(plan.fame_score ?? 0)} />
           </div>
           {openFame && (
-            <div className="mt-3">
-              <Breakdown items={Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []} />
-            </div>
+            <>
+              <div className="mt-3">
+                <Breakdown items={Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []} />
+              </div>
+              <div className="mt-5 flex justify-center">
+                <a href="/dashboard/fame-insights" className="px-5 py-2 rounded-full bg-[#6237A0] text-white hover:bg-[#4F2D82] transition-colors">learn more</a>
+              </div>
+            </>
           )}
         </section>
 
@@ -149,6 +154,11 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "ai" ? null : "ai")}
         section={S.ai_marketing_psychology}
         icon="ai"
+        extra={
+          <div className="mt-5 flex justify-center">
+            <a href="/dashboard/ai-psych" className="px-5 py-2 rounded-full bg-[#6237A0] text-white hover:bg-[#4F2D82] transition-colors">learn more</a>
+          </div>
+        }
       />
       <Accordion
         title="foundational psychology"
@@ -199,7 +209,7 @@ const S = normalizeAllSections(plan.sections || {})
       />
 
       <div className="flex justify-center mt-10">
-        <button className="rounded-full px-8 py-4 bg-[#8B6F63] text-white">download full report</button>
+        <button className="rounded-full px-8 py-4 bg-[#6237A0] text-white">download full report</button>
       </div>
     </div>
   )
@@ -356,7 +366,7 @@ function IconBadge({ kind }: { kind?: string }) {
   }
 }
 
-function Breakdown({ items }: { items: { label: string; percent: number }[] }) {
+function Breakdown({ items, showRaw = true }: { items: { label: string; percent: number; factor?: number }[]; showRaw?: boolean }) {
   if (!Array.isArray(items) || items.length === 0) return (
     <div className="text-sm text-gray-500">No breakdown available.</div>
   )
@@ -366,9 +376,19 @@ function Breakdown({ items }: { items: { label: string; percent: number }[] }) {
         <div key={i} className="grid grid-cols-[140px_1fr_48px] items-center gap-3">
           <div className="text-sm text-gray-700">{it.label}</div>
           <div className="h-2 rounded bg-gray-100 overflow-hidden">
-            <div className="h-full bg-[#9B7EDE]" style={{ width: `${Math.max(0, Math.min(100, it.percent))}%` }} />
+            {(() => {
+              const raw = typeof (it as any).factor === 'number' ? Math.round(((it as any).factor as number) * 100) : undefined
+              const pct = showRaw && typeof raw === 'number' ? raw : Math.round(it.percent)
+              return <div className="h-full bg-[#9B7EDE]" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+            })()}
           </div>
-          <div className="text-sm text-gray-800 text-right">{Math.round(it.percent)}%</div>
+          <div className="text-sm text-gray-800 text-right">
+            {(() => {
+              const raw = typeof (it as any).factor === 'number' ? Math.round(((it as any).factor as number) * 100) : undefined
+              const pct = showRaw && typeof raw === 'number' ? raw : Math.round(it.percent)
+              return <>{pct}%</>
+            })()}
+          </div>
         </div>
       ))}
     </div>

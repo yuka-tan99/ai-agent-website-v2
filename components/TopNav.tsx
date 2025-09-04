@@ -63,22 +63,28 @@ export default function TopNav() {
         {/* Brand (click → landing if logged out, /account if logged in) */}
         <Link
           href={email ? "/account" : "/"}
-          className="font-bold text-sm md:text-base tracking-tight text-gray-900"
+          className="font-bold text-sm md:text-base tracking-tight text-gray-700 hover:text-[#6237A0] active:text-[#4F2D82] transition-colors"
         >
           marketing mentor ai
         </Link>
 
         {/* Right side */}
         {!email ? (
-          <nav className="flex items-center gap-3">
+          <nav className="flex items-center gap-4">
             <Link
               href="/signin?mode=signin"
-              className="px-4 py-2 rounded-xl border border-gray-300 text-gray-800 hover:bg-gray-100 transition"
+              aria-label="Log in"
+              className="font-semibold text-gray-600 hover:text-gray-900 transition-colors transform hover:scale-105"
             >
               Log In
             </Link>
-            {/* optional: hide Sign Up for now; comment back in when you want it visible */}
-            {/* <Link href="/signin?mode=signup" className="px-4 py-2 rounded-xl bg-black text-white hover:bg-gray-800 transition">Sign Up</Link> */}
+            <Link
+              href="/signin?mode=signup"
+              aria-label="Sign up"
+              className="px-4 py-2 rounded-full font-semibold text-white bg-[#6237A0] hover:bg-[#DEACF5] hover:text-[#1E1340] active:scale-95 transition-colors"
+            >
+              Signup &gt;
+            </Link>
           </nav>
         ) : (
           <div className="flex items-center gap-3">
@@ -94,7 +100,7 @@ export default function TopNav() {
             <Link
               href="/account"
               aria-label="Go to account"
-              className="w-9 h-9 rounded-full border flex items-center justify-center hover:bg-gray-200 transition-colors"
+              className="w-9 h-9 rounded-full border border-transparent bg-[#D7BFDC] hover:bg-[#C3A3CA] active:bg-[#B892C5] transition-colors flex items-center justify-center"
               title={email || undefined}
             >
               {/* minimalist avatar glyph */}

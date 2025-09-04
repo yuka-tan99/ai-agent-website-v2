@@ -650,7 +650,7 @@ export default function Onboarding() {
       await persistDraft({ answers })
 
       if (!authed) {
-        const next = encodeURIComponent('/dashboard')
+        const next = encodeURIComponent('/paywall')
         return router.push(`/signin?next=${next}`)
       }
       try {
@@ -659,7 +659,7 @@ export default function Onboarding() {
           body: JSON.stringify({ sessionId, answers }), cache: 'no-store'
         })
       } catch {}
-      return router.push('/dashboard')
+      return router.push('/paywall')
     }
 
     if (willShowStuck) {
@@ -741,7 +741,7 @@ export default function Onboarding() {
 
           <button
             onClick={handleContinue}
-            className="mt-7 mb-14 px-10 py-3 rounded-full text-lg bg-[#8B6F63] text-white hover:bg-[#7A5F58] transition pulse-gentle"
+            className="mt-7 mb-14 px-10 py-3 rounded-full text-lg bg-[#28104E] text-white hover:bg-[#1F0C3D] transition pulse-gentle"
           >
             {/* Button text: use final label on last question */}
             {(() => {

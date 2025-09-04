@@ -132,7 +132,7 @@ export default function Paywall(){
               className="w-full px-6 py-3 rounded-xl bg-[#6237A0] text-white disabled:opacity-60 hover:bg-[#4F2D82]"
               disabled={loading}
             >
-              {loading ? 'Redirecting…' : 'unlock your full report'}
+              {loading ? 'Redirecting…' : 'unlock now'}
             </button>
             {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
             <div className="mt-3 text-xs text-gray-500">Already purchased? <Link className="underline" href="/dashboard">Go to dashboard</Link></div>

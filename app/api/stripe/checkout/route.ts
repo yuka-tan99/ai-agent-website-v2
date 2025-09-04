@@ -14,7 +14,19 @@ export async function POST(req: Request) {
   const product = url.searchParams.get('product') || 'plan'
   const price = productMap[product]
   const secret = process.env.STRIPE_SECRET_KEY
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  // Derive base URL from the incoming request. If localhost, keep localhost;
+  // otherwise use forwarded proto/host (works on Vercel) or env fallback.
+  const forwardedProto = req.headers.get('x-forwarded-proto') || undefined
+  const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || undefined
+  const hdrOrigin = req.headers.get('origin') || undefined
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL
+  let appUrl = envUrl || 'http://localhost:3000'
+  if (hdrOrigin && /localhost|127\.0\.0\.1/.test(hdrOrigin)) {
+    appUrl = hdrOrigin
+  } else if (forwardedHost) {
+    const proto = forwardedProto || (url.protocol ? url.protocol.replace(':','') : 'https')
+    appUrl = `${proto}://${forwardedHost}`
+  }
   if (!secret || !price) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
   }

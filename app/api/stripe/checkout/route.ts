@@ -5,6 +5,8 @@ import { supabaseRoute } from '@/lib/supabaseServer'
 
 const productMap: Record<string, string> = {
   plan: process.env.PRICE_ID_PLAN || '',
+  ai: process.env.PRICE_ID_AI || '', // recurring monthly ($6)
+  ai_one_time: process.env.PRICE_ID_AI_ONE_TIME || '', // optional: one-time $6 for 1-month pass
   advisor: process.env.PRICE_ID_ADVISOR || '',
   expert: process.env.PRICE_ID_EXPERT || '',
 }
@@ -12,6 +14,7 @@ const productMap: Record<string, string> = {
 export async function POST(req: Request) {
   const url = new URL(req.url)
   const product = url.searchParams.get('product') || 'plan'
+  const modeOverride = url.searchParams.get('mode') as 'payment' | 'subscription' | null
   const price = productMap[product]
   const secret = process.env.STRIPE_SECRET_KEY
   // Derive base URL from the incoming request. If localhost, keep localhost;
@@ -48,12 +51,31 @@ export async function POST(req: Request) {
   }
 
   const stripe = new Stripe(secret, { apiVersion: '2024-06-20' })
+  const mode: 'payment' | 'subscription' = modeOverride || (product === 'ai' || product === 'advisor' ? 'subscription' : 'payment')
+
+  // Choose correct price for AI: recurring for subscription, one-time for payment
+  let chosenPrice = price
+  if (product === 'ai' && mode === 'payment') {
+    const oneTime = productMap['ai_one_time']
+    if (!oneTime) {
+      return NextResponse.json({
+        error: 'AI one-month pass requires PRICE_ID_AI_ONE_TIME (one-time $6 price). Create a one-time price in Stripe and set PRICE_ID_AI_ONE_TIME in env, or choose subscription mode.'
+      }, { status: 500 })
+    }
+    chosenPrice = oneTime
+  }
+  const redirectAfter = product === 'ai' ? '/account' : '/dashboard'
+  const cancelPath = product === 'ai' ? '/paywall/ai' : '/paywall'
   const session = await stripe.checkout.sessions.create({
-    mode: product === 'advisor' ? 'subscription' : 'payment',
-    line_items: [{ price, quantity: 1 }],
-    // IMPORTANT: land on /success to wait for webhook to set purchase_status='paid'
-    success_url: `${appUrl}/api/stripe/confirm?session_id={CHECKOUT_SESSION_ID}&redirect=/dashboard`,
-    cancel_url: `${appUrl}/paywall`,
+    mode,
+    line_items: [{ price: chosenPrice, quantity: 1 }],
+    // Land on /success to poll while webhook processes
+    success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}&redirect=${encodeURIComponent(redirectAfter)}`,
+    cancel_url: `${appUrl}${cancelPath}`,
+    client_reference_id: user.id,
+    // Ensure metadata propagates to PaymentIntent/Subscription/Invoice for webhook correlation
+    payment_intent_data: mode === 'payment' ? { metadata: { user_id: user.id, product_key: product } } : undefined,
+    subscription_data: mode === 'subscription' ? { metadata: { user_id: user.id, product_key: product } } : undefined,
     metadata: { user_id: user.id, product_key: product },
   })
 

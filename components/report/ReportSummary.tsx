@@ -128,7 +128,7 @@ const S = normalizeAllSections(plan.sections || {})
                 <Breakdown items={Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []} />
               </div>
               <div className="mt-5 flex justify-center">
-                <a href="/dashboard/fame-insights" className="px-5 py-2 rounded-full bg-[#6237A0] text-white hover:bg-[#4F2D82] transition-colors">learn more</a>
+                <a href="/dashboard/fame-insights" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</a>
               </div>
             </>
           )}
@@ -156,7 +156,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="ai"
         extra={
           <div className="mt-5 flex justify-center">
-            <a href="/dashboard/ai-psych" className="px-5 py-2 rounded-full bg-[#6237A0] text-white hover:bg-[#4F2D82] transition-colors">learn more</a>
+            <a href="/dashboard/ai-psych" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</a>
           </div>
         }
       />
@@ -209,7 +209,7 @@ const S = normalizeAllSections(plan.sections || {})
       />
 
       <div className="flex justify-center mt-10">
-        <button className="rounded-full px-8 py-4 bg-[#6237A0] text-white">download full report</button>
+        <button className="rounded-full px-8 py-4 bg-[var(--accent-grape)] text-white">download full report</button>
       </div>
     </div>
   )

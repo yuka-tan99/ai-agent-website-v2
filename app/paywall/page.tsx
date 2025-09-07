@@ -129,7 +129,7 @@ export default function Paywall(){
             <p className="text-gray-600 mb-5">One-time $39. Instantly unblur and access your personalized strategy.</p>
             <button
               onClick={checkout}
-              className="w-full px-6 py-3 rounded-xl bg-[#6237A0] text-white disabled:opacity-60 hover:bg-[#4F2D82]"
+              className="w-full px-6 py-3 rounded-xl bg-[var(--accent-grape)] text-white disabled:opacity-60 hover:bg-[#874E95]"
               disabled={loading}
             >
               {loading ? 'Redirecting…' : 'unlock now'}

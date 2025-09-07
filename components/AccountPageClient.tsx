@@ -25,6 +25,8 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
   const pathname = usePathname()
 
   const [email, setEmail] = useState('')
+  const [access, setAccess] = useState<any | null>(null)
+  const [accessLoading, setAccessLoading] = useState<boolean>(false)
 
   // Profile local UI state (no backend writes)
   const [displayName, setDisplayName] = useState('')
@@ -105,6 +107,51 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
 
   const isActive = (href: string) => pathname === href
 
+  // Load AI access window for usage view
+  useEffect(() => {
+    if (section !== 'usage') return
+    let cancelled = false
+    setAccessLoading(true)
+    fetch('/api/me/access', { cache: 'no-store' })
+      .then(r => r.json())
+      .then((j) => { if (!cancelled) setAccess(j) })
+      .catch(() => { if (!cancelled) setAccess(null) })
+      .finally(() => { if (!cancelled) setAccessLoading(false) })
+    return () => { cancelled = true }
+  }, [section])
+
+  // Compute percent remaining and labels
+  const usage = useMemo(() => {
+    if (!access?.active_window) return null
+    try {
+      const start = new Date(access.active_window.access_starts_at)
+      const end = new Date(access.active_window.access_ends_at)
+      const now = new Date()
+      const totalMs = Math.max(0, end.getTime() - start.getTime())
+      const remMs = Math.max(0, end.getTime() - now.getTime())
+      const pct = totalMs > 0 ? Math.min(100, Math.max(0, (remMs / totalMs) * 100)) : 0
+      const totalDays = Math.max(1, Math.round(totalMs / (1000*60*60*24)))
+      const remDays = Math.max(0, Math.ceil(remMs / (1000*60*60*24)))
+      return { pct, totalDays, remDays, start, end }
+    } catch { return null }
+  }, [access])
+
+  async function downloadMyData() {
+    try {
+      const res = await fetch('/api/me/chat/export', { cache: 'no-store' })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'chat_export.json'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {}
+  }
+
   return (
     <div data-mentor-ui className="acc-shell">
       <DesignStyles />
@@ -163,9 +210,47 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
 
         {/* your existing section renders … unchanged */}
         {section === 'usage' && (
-          <div className="mt-2">
-            <div className="acc-card p-4">
-              <div className="text-gray-600 text-sm">Usage metrics coming soon.</div>
+          <div className="mt-2 space-y-4">
+            <div className="acc-card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-lg font-semibold text-gray-800">AI chat access</div>
+              </div>
+
+              {!accessLoading && (
+                <div className="fade-in">
+                  {access?.active && usage ? (
+                    <div>
+                  <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
+                    <span>Time remaining</span>
+                    <span>{usage.remDays} of {usage.totalDays} days</span>
+                  </div>
+                  <div className="w-full h-3 rounded-full bg-[rgba(98,55,160,.15)] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[var(--accent-grape)] transition-[width] duration-500"
+                      style={{ width: `${usage.pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500">
+                    Access ends on {usage.end.toLocaleDateString()}
+                  </div>
+                  {usage.remDays <= 7 && (
+                    <div className="mt-3 flex items-center gap-3">
+                      <a href="/paywall/ai" className="btn-primary inline-block">Renew now</a>
+                      <span className="text-xs text-gray-500">Keep access without interruption.</span>
+                    </div>
+                  )}
+                </div>
+                  ) : (
+                    <div className="text-sm text-gray-600">
+                      <div>Your AI chat access is not active.</div>
+                      <a href="/paywall/ai" className="inline-block mt-2 btn-primary">Subscribe for access</a>
+                    </div>
+                  )}
+                  <div className="mt-4">
+                    <button onClick={downloadMyData} className="btn-secondary">Download my data</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

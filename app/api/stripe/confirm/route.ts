@@ -1,65 +1,155 @@
-import { NextResponse } from 'next/server'
+// app/api/stripe/confirm/route.ts
+import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin } from '@/lib/supabaseServer'
 
-export async function GET(req: Request) {
-  const url = new URL(req.url)
-  const sessionId = (url.searchParams.get('session_id') || '').trim()
-  const redirectTo = (url.searchParams.get('redirect') || '').trim()
-  if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 400 })
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
 
-  const key = process.env.STRIPE_SECRET_KEY
-  if (!key) return NextResponse.json({ error: 'Stripe not configured' }, { status: 500 })
-
+export async function GET(req: NextRequest) {
   try {
-    const stripe = new Stripe(key, { apiVersion: '2024-06-20' })
-    const session = await stripe.checkout.sessions.retrieve(sessionId)
+    const url = new URL(req.url)
+    const session_id = url.searchParams.get('session_id') || ''
+    if (!session_id) return NextResponse.json({ error: 'missing session_id' }, { status: 400 })
 
-    const paid = (session.payment_status === 'paid') || (session.status === 'complete')
-    const userId = (session.metadata?.user_id || '').trim()
+    const session = await stripe.checkout.sessions.retrieve(session_id)
+    if (session.status !== 'complete' && session.payment_status !== 'paid') {
+      return NextResponse.json({ error: 'session not complete' }, { status: 409 })
+    }
 
-    if (paid && userId) {
-      try {
-        const supa = supabaseAdmin()
-        const now = new Date().toISOString()
-        // Try update first
-        const { data: existing, error: updErr } = await supa
-          .from('onboarding_sessions')
-          .update({ purchase_status: 'paid', updated_at: now })
-          .eq('user_id', userId)
-          .select('id')
-          .maybeSingle()
+    const user_id = (session.metadata?.user_id as string | undefined) || (session.client_reference_id as string | undefined)
+    const product_key = (session.metadata?.product_key as string | undefined) || 'plan'
+    if (!user_id) return NextResponse.json({ error: 'missing user_id metadata on session' }, { status: 400 })
 
-        if (updErr) {
-          console.error('[stripe/confirm] update error:', updErr.message, 'user:', userId, 'session:', sessionId)
-        }
+    const sb = supabaseAdmin()
 
-        if (!existing) {
-          // No row to update — insert minimal row
-          const { error: insErr } = await supa
-            .from('onboarding_sessions')
-            .insert({ user_id: userId, purchase_status: 'paid', updated_at: now })
-          if (insErr) {
-            console.error('[stripe/confirm] insert error:', insErr.message, 'user:', userId, 'session:', sessionId)
-          } else {
-            console.log('[stripe/confirm] inserted + set purchase_status=paid for user:', userId, 'session:', sessionId)
+    // Idempotency: if we already recorded a payment for this session, reuse it
+    const { data: existingPay } = await sb
+      .from('payments')
+      .select('id')
+      .eq('checkout_session_id', session.id)
+      .maybeSingle()
+
+    let payment_id: number | null = existingPay?.id ?? null
+    if (!payment_id) {
+      // Insert payment record with best-effort details
+      let amount_cents: number | undefined
+      let status: string | undefined
+      let currency: string | undefined
+      let payment_intent_id: string | undefined
+      let payment_method_type: string | undefined
+      let card_brand: string | undefined
+      let card_last4: string | undefined
+      let wallet_type: string | undefined
+      let billing_city: string | undefined
+      let billing_state: string | undefined
+      let billing_country: string | undefined
+
+      const piId = session.payment_intent as string | undefined
+      if (piId) {
+        const pi = await stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] })
+        payment_intent_id = pi.id
+        status = pi.status
+        currency = pi.currency
+        amount_cents = typeof session.amount_total === 'number' ? session.amount_total : pi.amount
+        const charge = pi.latest_charge as Stripe.Charge | null
+        if (charge && charge.payment_method_details) {
+          const pmd = charge.payment_method_details as Stripe.Charge.PaymentMethodDetails
+          if ((pmd as any).card) {
+            payment_method_type = 'card'
+            const c = (pmd as any).card as Stripe.Charge.PaymentMethodDetails.Card
+            card_brand = (c.brand ?? undefined) as string | undefined
+            card_last4 = (c.last4 ?? undefined) as string | undefined
+            wallet_type = (c.wallet?.type ?? undefined) as string | undefined
+          } else if ((pmd as any).type) {
+            payment_method_type = (pmd as any).type
           }
-        } else {
-          console.log('[stripe/confirm] set purchase_status=paid for user:', userId, 'session:', sessionId)
+          const addr = charge.billing_details?.address
+          billing_city = addr?.city || undefined
+          billing_state = addr?.state || undefined
+          billing_country = addr?.country || undefined
         }
-      } catch (e) {
-        console.warn('[stripe/confirm] upsert failed:', (e as any)?.message, 'user:', userId, 'session:', sessionId)
+      }
+
+      const { data: inserted, error: insErr } = await sb
+        .from('payments')
+        .insert({
+          user_id,
+          product_key,
+          amount_cents: amount_cents ?? 0,
+          status: status || 'succeeded',
+          checkout_session_id: session.id,
+          payment_intent_id,
+          payment_method_type: payment_method_type || null,
+          card_brand: card_brand || null,
+          card_last4: card_last4 || null,
+          wallet_type: wallet_type || null,
+          billing_city: billing_city || null,
+          billing_state: billing_state || null,
+          billing_country: billing_country || null,
+          currency: (session.currency || currency || 'usd') as string,
+          raw: { session_id: session.id, payment_intent_id: payment_intent_id || null },
+        })
+        .select('id')
+        .single()
+      if (insErr) throw insErr
+      payment_id = inserted?.id ?? null
+    }
+
+    // Ensure onboarding_sessions reflects plan paid (for the dashboard flow)
+    if (product_key === 'plan') {
+      const claimedAt = new Date(session.created ? (session.created as number) * 1000 : Date.now()).toISOString()
+      await sb
+        .from('onboarding_sessions')
+        .upsert({ user_id, purchase_status: 'paid', claimed_at: claimedAt, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    }
+
+    // Grant access if needed (idempotent-ish: we allow multiple rows; caller can verify via /api/me/access)
+    if (product_key === 'plan') {
+      const starts = new Date(session.created ? (session.created as number) * 1000 : Date.now())
+      const ends = new Date(starts)
+      ends.setMonth(ends.getMonth() + 3)
+      await sb.from('access_grants').insert({
+        user_id,
+        product_key: 'ai',
+        source: 'bundle_with_plan_manual',
+        access_starts_at: starts.toISOString(),
+        access_ends_at: ends.toISOString(),
+        payment_id,
+        grant_reason: 'Manual confirm: Free 3 months with report purchase',
+        status: 'active',
+      })
+    } else if (product_key === 'ai') {
+      // If one-time, add 1 month; if subscription, rely on invoice event
+      if (session.mode === 'payment') {
+        const now = new Date()
+        const { data: last } = await sb
+          .from('access_grants')
+          .select('access_ends_at')
+          .eq('user_id', user_id)
+          .eq('product_key', 'ai')
+          .order('access_ends_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        const lastEnd = last?.access_ends_at ? new Date(last.access_ends_at as unknown as string) : undefined
+        const starts = lastEnd && lastEnd > now ? lastEnd : now
+        const ends = new Date(starts)
+        ends.setMonth(ends.getMonth() + 1)
+        await sb.from('access_grants').insert({
+          user_id,
+          product_key: 'ai',
+          source: 'one_month_pass_manual',
+          access_starts_at: starts.toISOString(),
+          access_ends_at: ends.toISOString(),
+          payment_id,
+          grant_reason: 'Manual confirm: 1‑month pass',
+          status: 'active',
+        })
       }
     }
-    if (redirectTo) {
-      try {
-        const dest = new URL(redirectTo, url.origin)
-        return NextResponse.redirect(dest)
-      } catch {}
-    }
-    return NextResponse.json({ ok: true, paid })
+
+    return NextResponse.json({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Failed to confirm session' }, { status: 500 })
+    console.error('confirm error', e)
+    return NextResponse.json({ error: e?.message || 'confirm failed' }, { status: 500 })
   }
 }
-export const runtime = 'nodejs'

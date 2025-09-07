@@ -477,7 +477,7 @@ async function downloadFullReportPdf() {
       <div className="flex justify-center my-10">
         <button
           onClick={downloadFullReportPdf}
-          className="report-download bg-[#6237A0] text-white hover:bg-[#4F2D82] transition pulse-gentle"
+          className="report-download bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition pulse-gentle"
         >
           download full report
         </button>

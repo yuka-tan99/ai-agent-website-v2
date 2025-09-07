@@ -1,12 +1,60 @@
 // app/api/chat/route.ts
 import { NextRequest, NextResponse } from "next/server"
+import { supabaseRoute } from "@/lib/supabaseServer"
 import { GoogleGenerativeAI } from "@google/generative-ai"
+import { redactPII } from "@/lib/redact"
 
 const MODEL = "gemini-1.5-flash" // fast & inexpensive
 
 export async function POST(req: NextRequest) {
   try {
     const { messages = [], rag = {} } = await req.json()
+
+    // Gate access to AI chat based on active grants
+    const supa = supabaseRoute()
+    const { data: { user } } = await supa.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ text: "Please sign in to chat." }, { status: 200 })
+    }
+    const nowIso = new Date().toISOString()
+    const { data: grant, error: grantErr } = await supa
+      .from('access_grants')
+      .select('id, access_starts_at, access_ends_at, status')
+      .eq('user_id', user.id)
+      .eq('product_key', 'ai')
+      .eq('status', 'active')
+      .lte('access_starts_at', nowIso)
+      .gte('access_ends_at', nowIso)
+      .maybeSingle()
+    if (grantErr) {
+      console.warn('grant lookup failed', grantErr)
+    }
+    // Fallback: if report purchased within last 3 months but no access row, allow access
+    if (!grant) {
+      const { data: ob } = await supa
+        .from('onboarding_sessions')
+        .select('purchase_status, claimed_at, updated_at')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const status = ob?.purchase_status
+      const claimedAtStr = ob?.claimed_at || ob?.updated_at || null
+      if (status === 'paid' && claimedAtStr) {
+        const claimedAt = new Date(claimedAtStr as string)
+        const ends = new Date(claimedAt)
+        ends.setMonth(ends.getMonth() + 3)
+        if (new Date() <= ends) {
+          // Allow access without writing (RLS-safe). Proceed to model call.
+        } else {
+          const payUrl = '/paywall/ai'
+          const msg = `Your 3 months of chat access has expired. Pay only $6/month to continue access.`
+          return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl }, { status: 200 })
+        }
+      } else {
+        const payUrl = '/paywall/ai'
+        const msg = `Your 3 months of chat access has expired. Pay only $6/month to continue access.`
+        return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl }, { status: 200 })
+      }
+    }
 
     const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY
     if (!apiKey) {
@@ -28,6 +76,21 @@ const system = [
    - Do not overuse bold; one or two highlights per answer is enough.
    - No emojis unless the user uses them first.
    - Keep links plain (https://example.com or [label](url)).`,
+  `Coaching behavior:`,
+  `- On the first turn with a user, start conversationally (one friendly line) and offer a simple plan or next step.`,
+  `- Ask a clarifying question only when it meaningfully changes the next step; otherwise propose a best-first action.`,
+  `- Never ask multiple back-to-back questions. Prefer action + (optional) one focused question.`,
+  `- Avoid info dumps. Keep outputs short and practical; expand only if the user asks.`,
+  `Compassionate mode (mental health):`,
+  `- If the user expresses distress (e.g., sad, overwhelmed, burnout, bullied, anxious), lead with empathy and validate feelings.`,
+  `- Offer 1–3 gentle, concrete steps (e.g., quick grounding, boundaries online, reporting/blocks, short reset). Keep it brief.`,
+  `- Ask at most one gentle question only if it helps you support them better.`,
+  `- Do not suggest creating or posting content, productivity pushes, or growth tasks in these moments unless the user explicitly asks. Prioritize safety, rest, and mental health resources.
+`,
+  `- If there are signs of crisis or self-harm, respond supportively and advise contacting local emergency services or a crisis hotline; avoid clinical diagnoses.`,
+  `- Do not divert the topic away from their feelings; reflect back what you heard and stay with them. Avoid platitudes or minimizing.`,
+  `- Use short, caring sentences (1–2) and, when helpful, one empathetic question (e.g., "Want to share what felt hardest about that?").`,
+  `- If/when the user signals they want tactics again, gently transition back to practical steps.`,
   `When possible, end with one clear **actionable takeaway** for the user.`,
   `If metrics or plan context is provided, ground your advice in that.`,
   `If you can’t solve something directly, offer a simple next step or a polite handoff.`,
@@ -43,15 +106,52 @@ const system = [
     ].filter(Boolean).join("\n")
 
     const userTurn = messages[messages.length - 1]?.content || ""
+    const userTurnsCount = Array.isArray(messages) ? messages.filter((m:any) => m?.role === 'user').length : 1
 
     const prompt = [
       system,
       context ? `\nContext:\n${context}\n` : "",
+      `Conversation meta: user_turn_index=${userTurnsCount}`,
+      `Guidance: If user_turn_index > 1, skip greetings and jump straight to solutions. If user text shows emotional distress, switch to compassionate mode.`,
       `User: ${userTurn}\nAssistant:`,
     ].join("\n")
 
     const result = await model.generateContent(prompt)
     const text = result.response.text() || "Let’s try that again with a bit more detail."
+
+    // Persist sanitized chat logs (best-effort; ignore failures)
+    try {
+      const redUser = redactPII(userTurn)
+      const redAsst = redactPII(text)
+      await supa.from('chat_messages').insert([
+        { user_id: user.id, role: 'user', content: redUser, meta: { turns: userTurnsCount } },
+        { user_id: user.id, role: 'assistant', content: redAsst, meta: { model: MODEL } },
+      ])
+    } catch (e) {
+      console.warn('chat log persist failed (safe to ignore)', e)
+    }
+
+    // Log usage estimates (tokens and optional cost)
+    try {
+      // naive token estimate ~ 4 chars/token
+      const tokens_input = Math.max(1, Math.round((userTurn.length || 0) / 4))
+      const tokens_output = Math.max(1, Math.round((text.length || 0) / 4))
+      const inRate = parseFloat(process.env.LLM_COST_PER_KTOK_INPUT_USD || '0') // USD per 1k tokens
+      const outRate = parseFloat(process.env.LLM_COST_PER_KTOK_OUTPUT_USD || '0')
+      const costUsd = (inRate * tokens_input + outRate * tokens_output) / 1000
+      const costMicros = Math.round(costUsd * 1_000_000)
+      await supa.from('chat_usage_events').insert({
+        user_id: user.id,
+        session_id: null,
+        prompt_count: 1,
+        tokens_input,
+        tokens_output,
+        cost_usd_micros: (inRate || outRate) ? costMicros : null,
+        meta: { model: MODEL },
+      })
+    } catch (e) {
+      console.warn('chat usage log failed (safe to ignore)', e)
+    }
 
     return NextResponse.json({ text })
   } catch (err) {

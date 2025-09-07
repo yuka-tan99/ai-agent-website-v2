@@ -741,7 +741,7 @@ export default function Onboarding() {
 
           <button
             onClick={handleContinue}
-            className="mt-7 mb-14 px-10 py-3 rounded-full text-lg bg-[#28104E] text-white hover:bg-[#1F0C3D] transition pulse-gentle"
+            className="mt-7 mb-14 px-10 py-3 rounded-full text-lg bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition pulse-gentle"
           >
             {/* Button text: use final label on last question */}
             {(() => {

@@ -27,6 +27,8 @@ export default function SignInClient() {
 
   const [usePhone, setUsePhone] = useState(false)
   const [email, setEmail] = useState('')
+  // Phone parts: country dial code + national number
+  const [dial, setDial] = useState('+1')
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('') // only used in signup mode
@@ -80,21 +82,22 @@ export default function SignInClient() {
       }
 
       if (mode === 'signup') {
-        // simple frontend confirm check (backend unchanged)
-        if (!usePhone && confirm && confirm !== password) {
+        // simple frontend confirm check (applies to email and phone signups)
+        if (confirm && confirm !== password) {
           setMsg('Passwords do not match.')
           return
         }
       }
 
       if (usePhone) {
+        const e164 = `${dial}${(phone || '').replace(/[^0-9]/g, '')}`
         if (mode === 'signup') {
-          const { error } = await sb.auth.signUp({ phone, password })
+          const { error } = await sb.auth.signUp({ phone: e164, password })
           if (error) throw error
           setMsg('Check your phone for confirmation (if enabled).')
           return
         } else {
-          const { error } = await sb.auth.signInWithPassword({ phone, password })
+          const { error } = await sb.auth.signInWithPassword({ phone: e164, password })
           if (error) throw error
           router.replace('/account')
           return
@@ -198,13 +201,13 @@ export default function SignInClient() {
         {/* Email / Phone toggle */}
         <div className="flex gap-2 text-sm justify-center mb-4">
           <button
-            className={`px-3 py-1 rounded-full border ${!usePhone ? 'bg-[#6237A0] text-white' : ''}`}
+            className={`px-3 py-1 rounded-full border ${!usePhone ? 'bg-[var(--accent-grape)] text-white' : ''}`}
             onClick={() => setUsePhone(false)}
           >
             Email
           </button>
           <button
-            className={`px-3 py-1 rounded-full border ${usePhone ? 'bg-[#6237A0] text-white' : ''}`}
+            className={`px-3 py-1 rounded-full border ${usePhone ? 'bg-[var(--accent-grape)] text-white' : ''}`}
             onClick={() => setUsePhone(true)}
           >
             Phone
@@ -222,13 +225,47 @@ export default function SignInClient() {
               className="w-full rounded-xl border px-4 py-3"
             />
           ) : (
-            <input
-              type="tel"
-              placeholder="Phone"
-              value={phone}
-              onChange={(e)=>setPhone(e.target.value)}
-              className="w-full rounded-xl border px-4 py-3"
-            />
+            <div className="flex gap-2">
+              <select
+                aria-label="Country code"
+                className="w-[42%] md:w-[36%] rounded-xl border px-3 py-3 bg-white"
+                value={dial}
+                onChange={(e)=>setDial(e.target.value)}
+              >
+                {/* Common countries first; extend as needed */}
+                <option value="+1">🇺🇸 +1 United States</option>
+                <option value="+1">🇨🇦 +1 Canada</option>
+                <option value="+44">🇬🇧 +44 United Kingdom</option>
+                <option value="+61">🇦🇺 +61 Australia</option>
+                <option value="+64">🇳🇿 +64 New Zealand</option>
+                <option value="+49">🇩🇪 +49 Germany</option>
+                <option value="+33">🇫🇷 +33 France</option>
+                <option value="+91">🇮🇳 +91 India</option>
+                <option value="+65">🇸🇬 +65 Singapore</option>
+                <option value="+81">🇯🇵 +81 Japan</option>
+                <option value="+82">🇰🇷 +82 South Korea</option>
+                <option value="+86">🇨🇳 +86 China</option>
+                <option value="+7">🇷🇺 +7 Russia</option>
+                <option value="+63">🇵🇭 +63 Philippines</option>
+                <option value="+62">🇮🇩 +62 Indonesia</option>
+                <option value="+34">🇪🇸 +34 Spain</option>
+                <option value="+39">🇮🇹 +39 Italy</option>
+                <option value="+55">🇧🇷 +55 Brazil</option>
+                <option value="+52">🇲🇽 +52 Mexico</option>
+                <option value="+57">🇨🇴 +57 Colombia</option>
+                <option value="+51">🇵🇪 +51 Peru</option>
+                <option value="+971">🇦🇪 +971 UAE</option>
+                <option value="+966">🇸🇦 +966 Saudi Arabia</option>
+                <option value="+20">🇪🇬 +20 Egypt</option>
+              </select>
+              <input
+                type="tel"
+                placeholder="Phone number"
+                value={phone}
+                onChange={(e)=>setPhone(e.target.value)}
+                className="flex-1 rounded-xl border px-4 py-3"
+              />
+            </div>
           )}
 
           <input
@@ -239,7 +276,7 @@ export default function SignInClient() {
             className="w-full rounded-xl border px-4 py-3"
           />
 
-          {mode === 'signup' && !usePhone && (
+          {mode === 'signup' && (
             <input
               type="password"
               placeholder="Confirm password"
@@ -254,7 +291,7 @@ export default function SignInClient() {
         <button
           disabled={loading || !sb}
           onClick={submit}
-          className="mt-4 w-full rounded-xl bg-[#6237A0] text-white py-3 disabled:opacity-60"
+          className="mt-4 w-full rounded-xl bg-[var(--accent-grape)] text-white py-3 disabled:opacity-60"
         >
           {loading ? 'Please wait…' : PrimaryCta}
         </button>

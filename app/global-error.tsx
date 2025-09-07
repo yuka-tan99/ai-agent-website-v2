@@ -19,7 +19,7 @@ export default function GlobalError({
           </pre>
           <button
             onClick={() => reset()}
-            className="mt-4 rounded bg-[#6237A0] text-white px-4 py-2"
+            className="mt-4 rounded bg-[var(--accent-grape)] text-white px-4 py-2"
           >
             Try again
           </button>

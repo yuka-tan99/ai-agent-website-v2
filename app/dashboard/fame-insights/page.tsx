@@ -39,7 +39,7 @@ export default async function FameInsightsPage() {
           <div className="dashboard-card p-6 text-center">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">no report yet</h2>
             <p className="text-sm text-gray-600 mb-4">We couldn’t find your plan on this session. Head back to your dashboard to generate or view it.</p>
-            <a href="/dashboard" className="inline-flex items-center justify-center rounded-full bg-[#6237A0] text-white px-5 py-2 hover:bg-[#4F2D82] transition">go to dashboard</a>
+            <a href="/dashboard" className="inline-flex items-center justify-center rounded-full bg-[var(--accent-grape)] text-white px-5 py-2 hover:bg-[#874E95] transition">go to dashboard</a>
           </div>
         </FadeIn>
       </main>

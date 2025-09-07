@@ -15,8 +15,8 @@ export default function DesignStyles() {
       /* -------- Color tokens pulled from your front_end.txt -------- */
       [data-mentor-ui] {
         --navH: 56px; /* TopNav height */
-        --accent-grape: #7C3AED; /* mild/darker purple that's easy on eyes */
-        --soft-purple: #9B7EDE;
+        --accent-grape: #9E5DAB; /* Deep Orchid */
+        --soft-purple: #CFA6D8;  /* light companion */
         --earth-green: #7A8471;
         --text-900: #111827;
         --text-700: #374151;
@@ -80,7 +80,7 @@ export default function DesignStyles() {
       @keyframes slideUp { from { opacity:0; transform: translateY(30px);} to { opacity:1; transform: translateY(0);} }
       @keyframes pulseGentle { 0%,100% { transform: scale(1);} 50% { transform: scale(1.05);} }
 
-      [data-mentor-ui] .fade-in { animation: fadeIn .8s ease-in-out; }
+      [data-mentor-ui] .fade-in { animation: fadeIn .35s ease-out; }
       [data-mentor-ui] .slide-up { animation: slideUp .6s ease-out; }
       [data-mentor-ui] .pulse-gentle { animation: pulseGentle 2s infinite; }
 
@@ -116,18 +116,18 @@ export default function DesignStyles() {
         width: 100%; height: 44px; border-radius: 9999px; padding: 0 16px; outline: none;
         border: 2px solid color-mix(in srgb, var(--soft-purple) 80%, #bda7ff);
       }
-      [data-mentor-ui] .pw-input:focus { box-shadow: 0 0 0 3px color-mix(in oklab, var(--soft-purple) 22%, transparent); }
+      [data-mentor-ui] .pw-input:focus { box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-grape) 22%, transparent); }
       [data-mentor-ui] .pw-msg { margin-top: 8px; font-size: .9rem; color: #b91c1c; }
       [data-mentor-ui] .pw-foot { background: #eef2f7; padding: 14px 18px; display:flex; justify-content:flex-end; }
       [data-mentor-ui] .pw-btn {
         padding: 10px 18px; border-radius: 9999px; border: 0; color: #fff;
-        background: #6237A0; box-shadow: 0 6px 18px rgba(98,55,160,.35);
+        background: var(--accent-grape); box-shadow: 0 6px 18px color-mix(in oklab, var(--accent-grape) 35%, transparent);
       }
       [data-mentor-ui] .pw-btn:disabled { opacity: .6; box-shadow: none; }
 
       /* === Palette from front_end.txt (scoped) === */
 [data-mentor-ui]{
-  --soft-purple: #9B7EDE;
+  --soft-purple: #CFA6D8;
   --earth-brown: #8B7355;
   --earth-green: #7A8471;
 
@@ -162,7 +162,7 @@ export default function DesignStyles() {
 
 /* Gradient text helper from your FE ref */
 [data-mentor-ui] .gradient-text{
-  background: linear-gradient(135deg, var(--soft-purple), var(--earth-green));
+  background: linear-gradient(135deg, var(--accent-grape), var(--soft-purple));
   -webkit-background-clip:text; background-clip:text;
   -webkit-text-fill-color:transparent;
 }
@@ -171,7 +171,7 @@ export default function DesignStyles() {
 [data-mentor-ui] .rb-item{
   background:#fff;
   border:1px solid rgba(17,24,39,.06);
-  border-left:4px solid var(--soft-purple);
+  border-left:4px solid var(--accent-grape);
   border-radius: 12px;
 }
 [data-mentor-ui] .rb-issue{ color: var(--text-900); }
@@ -181,7 +181,7 @@ export default function DesignStyles() {
 @keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulseGentle{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
-[data-mentor-ui] .fade-in{animation:fadeIn .8s ease-in-out}
+[data-mentor-ui] .fade-in{animation:fadeIn .35s ease-out}
 [data-mentor-ui] .slide-up{animation:slideUp .6s ease-out}
 [data-mentor-ui] .pulse-gentle{animation:pulseGentle 2s infinite}
 
@@ -268,18 +268,18 @@ export default function DesignStyles() {
 }
 
 [data-mentor-ui] .acc-link:hover {
-  color: #6237A0; /* primary on hover */
+  color: var(--accent-grape); /* primary on hover */
 }
 
 [data-mentor-ui] .acc-link.active {
-  color: #6237A0; /* primary when active */
+  color: var(--accent-grape); /* primary when active */
   font-weight: 600;
 }
 
   [data-mentor-ui] .acc-card     { background:#fff; border:1px solid var(--border); border-radius:16px; }
   /* Primary button uses brand primary */
-  [data-mentor-ui] .btn-primary  { background:#6237A0; color:#fff; border-radius:12px; padding:.55rem .9rem; }
-  [data-mentor-ui] .btn-primary:hover { background:#4F2D82; transform: translateY(-1px); }
+  [data-mentor-ui] .btn-primary  { background: var(--accent-grape); color:#fff; border-radius:12px; padding:.55rem .9rem; }
+  [data-mentor-ui] .btn-primary:hover { background:#874E95; transform: translateY(-1px); }
     
   [data-mentor-ui] .acc-card {
     background: rgba(255,255,255,.9);
@@ -326,18 +326,18 @@ export default function DesignStyles() {
   height: 3px;
   border-radius: 9999px;
   /* primary sheen with subtle light/dark sweep */
-  background: linear-gradient(90deg, #7B5BC1, #6237A0, #4C2B7A);
+  background: linear-gradient(90deg, #B989C9, #9E5DAB, #874E95);
   opacity: .85;
   filter: blur(.2px);
 }
   [data-mentor-ui] .btn-primary {
     padding: 10px 16px;
     border-radius: 12px;
-    background: #6237A0;
+    background: var(--accent-grape);
     color: #fff;
     transition: transform .15s ease, background .15s ease;
   }
-  [data-mentor-ui] .btn-primary:hover { background: #4F2D82; transform: translateY(-1px); }
+  [data-mentor-ui] .btn-primary:hover { background: #874E95; transform: translateY(-1px); }
   [data-mentor-ui] .btn-secondary {
     padding: 10px 16px;
     border-radius: 12px;

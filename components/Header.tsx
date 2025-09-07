@@ -35,7 +35,7 @@ export default function Header() {
             Sign In
           </Link>
           <button
-            className="px-4 py-2 rounded-xl bg-[#6237A0] text-white hover:bg-[#4F2D82] transition"
+            className="px-4 py-2 rounded-xl bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition"
             onClick={() => router.push('/signin')}
           >
             Get started

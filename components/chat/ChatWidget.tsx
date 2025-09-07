@@ -14,6 +14,9 @@ export default function ChatWidget() {
   const [typing, setTyping] = useState(false)
   const [input, setInput] = useState("")
   const [msgs, setMsgs] = useState<Msg[]>([])
+  const [locked, setLocked] = useState(false)
+  const [lockMsg, setLockMsg] = useState<string | null>(null)
+  const [payUrl, setPayUrl] = useState<string>("/paywall/ai")
   const [feedbackSel, setFeedbackSel] = useState<Record<number, 'up' | 'down' | null>>({})
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -74,8 +77,16 @@ export default function ChatWidget() {
         body: JSON.stringify({ messages: msgs.concat({ role: "user", content: text }), rag: ragPayload }),
       })
       const data = await res.json()
-      const reply = (data?.text || data?.reply || "").toString()
-      setMsgs((m) => [...m, { role: "assistant", content: reply || fallback(text) }])
+      if (data?.reason === 'expired_access') {
+        setLocked(true)
+        if (typeof data?.paywall === 'string') setPayUrl(data.paywall)
+        setLockMsg((data?.text || "Your chat access has expired. Subscribe to continue.").toString())
+        // Add a short assistant notice instead of the full message
+        setMsgs((m) => [...m, { role: "assistant", content: "Looks like your chat access has expired." }])
+      } else {
+        const reply = (data?.text || data?.reply || "").toString()
+        setMsgs((m) => [...m, { role: "assistant", content: reply || fallback(text) }])
+      }
     } catch {
       setMsgs((m) => [...m, { role: "assistant", content: fallback(text) }])
     } finally {
@@ -156,7 +167,7 @@ export default function ChatWidget() {
       {/* floating elliptical button */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed z-40 bottom-6 right-6 rounded-full px-5 py-3 bg-[#6237A0] text-white shadow-lg transition transform hover:scale-[1.03] pulse-gentle"
+        className="fixed z-40 bottom-6 right-6 rounded-full px-5 py-3 bg-[var(--accent-grape)] text-white shadow-lg transition transform hover:scale-[1.03] pulse-gentle"
       aria-label={open ? "Close chat" : "Chat with your marketing mentor"}
       >
         {!open ? "Chat with your marketing mentor" : "Close"}
@@ -192,6 +203,22 @@ export default function ChatWidget() {
               </div>
             ))}
 
+            {/* locked overlay card */}
+            {locked && (
+              <div className="flex justify-center my-3">
+                <div className="w-full max-w-sm rounded-2xl border bg-white shadow p-4 text-center">
+                  <div className="text-base font-semibold mb-1">Access expired</div>
+                  <div className="text-sm text-gray-600 mb-4">{lockMsg || 'Your 3 months of chat access has expired. Pay only $6/month to continue.'}</div>
+                  <a
+                    href={payUrl}
+                    className="inline-flex items-center justify-center rounded-xl bg-[var(--accent-grape)] text-white px-4 py-2 hover:bg-[#874E95]"
+                  >
+                    Unlock AI chat
+                  </a>
+                </div>
+              </div>
+            )}
+
             {/* typing indicator */}
             {typing && (
               <div className="flex justify-start">
@@ -218,10 +245,12 @@ export default function ChatWidget() {
               onKeyDown={onKey}
               placeholder="Type your message..."
               className="mm-input-field"
+              disabled={locked}
             />
             <button
               type="submit"
               className="mm-send"
+              disabled={locked}
               aria-label="Send"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
@@ -242,8 +271,8 @@ export default function ChatWidget() {
             .mm-body{ max-height:50vh; overflow:auto; padding:22px 18px; background:#FCF7FF; }
             .mm-input{ display:flex; align-items:center; gap:10px; padding:14px; background:#F3D6FF; border-top:1px solid rgba(98,55,160,.18); }
             .mm-input-field{ flex:1; border:0; outline:none; background:#F0E1FF; padding:12px 16px; border-radius:18px; }
-            .mm-send{ width:42px; height:42px; border-radius:50%; background:#6237A0; color:#fff; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(98,55,160,.35); border:0; }
-            .mm-send:hover{ background:#4F2D82; }
+            .mm-send{ width:42px; height:42px; border-radius:50%; background: var(--accent-grape); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px color-mix(in oklab, var(--accent-grape) 35%, transparent); border:0; }
+            .mm-send:hover{ background:#874E95; }
           `}</style>
         </div>
       )}
@@ -304,7 +333,7 @@ function ChatBubble({
       {!isUser ? copyButton : null}
       <style jsx>{`
         .mm-bwrap{ display:flex; align-items:flex-start; gap:8px; margin: 6px 0; }
-        .mm-bubble-ai{ position:relative; max-width:85%; padding:14px 16px; border-radius:22px; background:#6237A0; color:#fff; box-shadow: 0 8px 18px rgba(0,0,0,.12); margin: 10px 0; }
+        .mm-bubble-ai{ position:relative; max-width:85%; padding:14px 16px; border-radius:22px; background:var(--accent-grape); color:#fff; box-shadow: 0 8px 18px rgba(0,0,0,.12); margin: 10px 0; }
         .mm-bubble-user{ position:relative; max-width:85%; padding:14px 16px; border-radius:22px; background:#CBD5E1; color:#0f172a; box-shadow: 0 8px 18px rgba(0,0,0,.08); margin: 10px 0; }
         .mm-copy-side{ width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:8px; border:1px solid rgba(0,0,0,.08); background:#fff; color:#334155; box-shadow: 0 4px 10px rgba(0,0,0,.06); opacity:0; transition: opacity .2s ease; align-self:flex-start; margin-top:6px; }
         .mm-copy-side:hover{ background:#f1f5f9; }

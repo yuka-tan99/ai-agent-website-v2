@@ -63,7 +63,7 @@ export default function TopNav() {
         {/* Brand (click → landing if logged out, /account if logged in) */}
         <Link
           href={email ? "/account" : "/"}
-          className="font-bold text-sm md:text-base tracking-tight text-gray-700 hover:text-[#6237A0] active:text-[#4F2D82] transition-colors"
+          className="font-bold text-base md:text-lg tracking-tight text-gray-700 hover:text-[var(--accent-grape)] active:text-[#874E95] transition-colors"
         >
           marketing mentor ai
         </Link>
@@ -81,7 +81,7 @@ export default function TopNav() {
             <Link
               href="/signin?mode=signup"
               aria-label="Sign up"
-              className="px-4 py-2 rounded-full font-semibold text-white bg-[#6237A0] hover:bg-[#DEACF5] hover:text-[#1E1340] active:scale-95 transition-colors"
+              className="px-4 py-2 rounded-full font-semibold text-white bg-[var(--accent-grape)] hover:bg-[#874E95] active:scale-95 transition-colors"
             >
               Signup &gt;
             </Link>

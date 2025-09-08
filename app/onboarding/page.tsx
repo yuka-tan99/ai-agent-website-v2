@@ -26,7 +26,7 @@ const Button = ({ label, active, onClick }: any) => (
   <button
     onClick={onClick}
     className={`px-6 py-3.5 rounded-full min-w-[240px] text-base font-medium transition text-center
-      ${active ? 'bg-[#C9B8F9] text-black border border-transparent' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'}`}
+      ${active ? 'bg-[#D9B8E3] text-black border border-transparent' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'}`}
   >
     {label}
   </button>
@@ -683,7 +683,10 @@ export default function Onboarding() {
           {/* Back to previous */}
           <div className="flex items-center justify-start mb-4 -ml-1 md:-ml-3">
             {step > 0 && (
-              <button onClick={handleBack} className="text-left text-sm md:text-base text-gray-600 hover:text-gray-800 transition">
+              <button
+                onClick={handleBack}
+                className="text-left text-sm md:text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
+              >
                 &lt; back to previous
               </button>
             )}

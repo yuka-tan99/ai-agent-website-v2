@@ -253,7 +253,7 @@ export default function DesignStyles() {
 /* Left rail matches page background; keeps subtle divider */
 [data-mentor-ui] .acc-rail{
   background: transparent; /* inherits global light background */
-  border-right:1px solid rgba(0,0,0,.08);
+  /* removed right divider for seamless look */
 }
 
 [data-mentor-ui] .acc-link {
@@ -280,6 +280,8 @@ export default function DesignStyles() {
   /* Primary button uses brand primary */
   [data-mentor-ui] .btn-primary  { background: var(--accent-grape); color:#fff; border-radius:12px; padding:.55rem .9rem; }
   [data-mentor-ui] .btn-primary:hover { background:#874E95; transform: translateY(-1px); }
+  /* If rounded-full is also present, make pill shape truly round */
+  [data-mentor-ui] .btn-primary.rounded-full { border-radius:9999px !important; padding: .75rem 1.1rem; }
     
   [data-mentor-ui] .acc-card {
     background: rgba(255,255,255,.9);
@@ -346,6 +348,7 @@ export default function DesignStyles() {
     transition: transform .15s ease, background .15s ease;
   }
   [data-mentor-ui] .btn-secondary:hover { background: #f8f8f8; transform: translateY(-1px); }
+  [data-mentor-ui] .btn-secondary.rounded-full { border-radius:9999px !important; padding: .75rem 1.1rem; }
   [data-mentor-ui] .acc-check {
     display: inline-flex;
     align-items: center;

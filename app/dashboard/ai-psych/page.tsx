@@ -27,7 +27,7 @@ export default function AIPsychologyPage() {
       {/* Back link */}
       <div className="container pt-8">
         <div className="mb-4">
-          <Link href="/dashboard" className="text-sm text-gray-600 hover:text-gray-900">&larr; Back</Link>
+          <Link href="/dashboard" className="inline-flex items-center gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">← back</Link>
         </div>
         {/* Hero */}
         <div className="relative overflow-hidden rounded-2xl h-[260px] md:h-[320px]"

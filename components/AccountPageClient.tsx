@@ -170,7 +170,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
               <Link href="/account/referrals" className={`acc-link ${isActive('/account/referrals') ? 'active' : ''}`}><Users className="w-5 h-5" />Referrals</Link>
               <Link href="/account/profile" className={`acc-link ${isActive('/account/profile') ? 'active' : ''}`}><User />   Profile</Link>
 
-              <div className="my-2 h-px bg-[rgba(0,0,0,.08)]" />
+              {/* separator removed for cleaner left rail */}
 
               {/* <button
                 className="acc-link w-full text-left"
@@ -213,7 +213,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
           <div className="mt-2 space-y-4">
             <div className="acc-card p-5">
               <div className="flex items-center justify-between mb-3">
-                <div className="text-lg font-semibold text-gray-800">AI chat access</div>
+                <div className="text-lg font-semibold text-gray-800">{access?.active && usage ? 'AI chat access' : 'Unlock your personal marketing coach'}</div>
               </div>
 
               {!accessLoading && (
@@ -235,19 +235,19 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
                   </div>
                   {usage.remDays <= 7 && (
                     <div className="mt-3 flex items-center gap-3">
-                      <a href="/paywall/ai" className="btn-primary inline-block">Renew now</a>
+                      <a href="/paywall/ai" className="btn-primary rounded-full inline-block px-5 py-3 text-base">Renew now</a>
                       <span className="text-xs text-gray-500">Keep access without interruption.</span>
                     </div>
                   )}
                 </div>
                   ) : (
-                    <div className="text-sm text-gray-600">
-                      <div>Your AI chat access is not active.</div>
-                      <a href="/paywall/ai" className="inline-block mt-2 btn-primary">Subscribe for access</a>
+                    <div>
+                      <div className="text-sm text-gray-600">Get instant, personalized advice for your growth journey, available 24/7</div>
+                      <a href="/paywall/ai" className="inline-block mt-3 btn-primary rounded-full px-5 py-3 text-base">Get instant access</a>
                     </div>
                   )}
                   <div className="mt-4">
-                    <button onClick={downloadMyData} className="btn-secondary">Download my data</button>
+                    <button onClick={downloadMyData} className="btn-secondary rounded-full px-5 py-3 text-base">Download my data</button>
                   </div>
                 </div>
               )}

@@ -19,6 +19,7 @@ export default function ChatWidget() {
   const [payUrl, setPayUrl] = useState<string>("/paywall/ai")
   const [feedbackSel, setFeedbackSel] = useState<Record<number, 'up' | 'down' | null>>({})
   const listRef = useRef<HTMLDivElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
   // welcome message on mount
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function ChatWidget() {
     return "Sorry — I didn’t quite catch that. Try asking about content strategy, growth, or KPIs. If you need a human handoff, head to Account → Support."
   }
 
-  function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
+  function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       void send()
@@ -239,12 +240,21 @@ export default function ChatWidget() {
               void send()
             }}
           >
-            <input
+            <textarea
+              ref={taRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value)
+                const el = taRef.current
+                if (el) {
+                  el.style.height = 'auto'
+                  el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+                }
+              }}
               onKeyDown={onKey}
               placeholder="Type your message..."
               className="mm-input-field"
+              rows={1}
               disabled={locked}
             />
             <button
@@ -262,17 +272,18 @@ export default function ChatWidget() {
           <style jsx>{`
             .mm-wrap{ position: fixed; z-index: 40; bottom: 24px; right: 24px; width: min(420px, calc(100vw - 2rem)); border-radius: 24px; box-shadow: 0 15px 40px rgba(0,0,0,.18); overflow: hidden; background: #fff; }
             /* Lavender header */
-            .mm-head{ display:flex; align-items:center; gap:12px; padding:14px 16px; background:#E4A0F7; color:#1E1340; border-bottom:1px solid rgba(98,55,160,.20); }
+            .mm-head{ display:flex; align-items:center; gap:12px; padding:14px 16px; background:#D9B8E3; color:#1E1340; border-bottom:1px solid rgba(98,55,160,.20); }
             .mm-avatar{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: rgba(255,255,255,.7); font-size:18px; }
             .mm-title{ font-weight:700; }
             .mm-sub{ font-size:.85rem; color:#3E2B6E; margin-top:2px; }
-            .mm-close{ margin-left:auto; background:transparent; border:0; font-size:22px; color:#3E2B6E; }
+            .mm-close{ margin-left:auto; background:transparent; border:0; font-size:22px; color:#3E2B6E; transition: transform .18s ease, color .18s ease; }
+            .mm-close:hover{ transform: scale(1.15); color:#874E95; font-weight:700; }
             /* Gentle lavender canvas */
             .mm-body{ max-height:50vh; overflow:auto; padding:22px 18px; background:#FCF7FF; }
-            .mm-input{ display:flex; align-items:center; gap:10px; padding:14px; background:#F3D6FF; border-top:1px solid rgba(98,55,160,.18); }
-            .mm-input-field{ flex:1; border:0; outline:none; background:#F0E1FF; padding:12px 16px; border-radius:18px; }
-            .mm-send{ width:42px; height:42px; border-radius:50%; background: var(--accent-grape); color:#fff; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px color-mix(in oklab, var(--accent-grape) 35%, transparent); border:0; }
-            .mm-send:hover{ background:#874E95; }
+            .mm-input{ display:flex; align-items:flex-end; gap:10px; padding:14px; background:#F4E9F7; border-top:1px solid rgba(98,55,160,.18); }
+            .mm-input-field{ flex:1; resize:none; border:0; outline:none; background:#ffffff; padding:12px 14px; border-radius:14px; line-height:1.4; max-height:160px; overflow:auto; }
+            .mm-send{ width:42px; height:42px; border-radius:50%; background:#9E5DAB; color:#fff; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(158,93,171,.35); border:0; transition: background .18s ease, transform .18s ease; }
+            .mm-send:hover{ background:#874E95; transform: translateY(-1px); }
           `}</style>
         </div>
       )}

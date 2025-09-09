@@ -2,11 +2,13 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseClient";
 
 export default function TopNav() {
   const [email, setEmail] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     const sb = supabaseBrowser();
@@ -63,9 +65,11 @@ export default function TopNav() {
         {/* Brand (click → landing if logged out, /account if logged in) */}
         <Link
           href={email ? "/account" : "/"}
-          className="font-bold text-base md:text-lg tracking-tight text-gray-700 hover:text-[var(--accent-grape)] active:text-[#874E95] transition-colors"
+          className={`font-bold tracking-tight text-gray-700 hover:text-[var(--accent-grape)] active:text-[#874E95] transition-colors ${
+            pathname === "/" || pathname.startsWith("/onboarding") ? "text-lg md:text-xl" : "text-base md:text-lg"
+          }`}
         >
-          marketing mentor ai
+          BecomeFamous.AI
         </Link>
 
         {/* Right side */}

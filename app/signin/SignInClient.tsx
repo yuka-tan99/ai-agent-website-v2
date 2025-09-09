@@ -134,7 +134,7 @@ export default function SignInClient() {
 <main className="min-h-screen flex items-center justify-center bg-[#f9fafb] px-4 pt-6 md:pt-8">
       {/* Top bar brand (use your existing nav if present; this is just a spacer) */}
       {/* <div className="h-14 flex items-center justify-between px-4">
-        <div className="font-bold text-sm md:text-base">marketing mentor ai</div>
+        <div className="font-bold text-sm md:text-base">BecomeFamous.AI</div>
         <button onClick={goBack} className="text-sm text-gray-600 hover:text-black">Back</button>
       </div> */}
 

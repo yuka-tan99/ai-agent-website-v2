@@ -24,7 +24,7 @@ export default function Header() {
   return (
     <header className="w-full flex items-center justify-between px-6 py-4">
       <Link href="/" className="font-semibold">
-        marketing mentor ai
+        BecomeFamous.AI
       </Link>
       {!authed ? (
         <div className="flex items-center gap-3">

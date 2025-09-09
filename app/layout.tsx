@@ -14,7 +14,7 @@ import nextDynamic from 'next/dynamic'
 const ChatGate = nextDynamic(() => import('@/components/chat/ChatGate'), { ssr: false })
 
 export const metadata: Metadata = {
-  title: 'marketing mentor ai',
+  title: 'BecomeFamous.AI',
   description: 'let’s build your path to fame | are you ready to be popular?',
 }
 

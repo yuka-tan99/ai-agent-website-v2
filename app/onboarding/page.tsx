@@ -680,17 +680,18 @@ export default function Onboarding() {
 
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in pb-24 md:pb-28">
         <div className="w-full max-w-2xl">
-          {/* Back to previous */}
-          <div className="flex items-center justify-start mb-4 -ml-1 md:-ml-3">
-            {step > 0 && (
+          {/* Back to previous (fixed, aligned with title Y, left-aligned) */}
+          {step > 0 && (
+            <div className="fixed left-4 z-40" style={{ top: 'calc(var(--navH) + 12px)' }}>
               <button
                 onClick={handleBack}
                 className="text-left text-sm md:text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
+                aria-label="Back to previous"
               >
                 &lt; back to previous
               </button>
-            )}
-          </div>
+            </div>
+          )}
           <h2 className="text-3xl md:text-4xl font-bold mb-7 text-gray-900 slide-up">{(current as any).text}</h2>
 
           {(

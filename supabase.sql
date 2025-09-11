@@ -37,3 +37,16 @@ language sql stable as $$
   order by kb_chunks.embedding <=> query_embedding
   limit match_count;
 $$;
+
+-- Store thumbs up/down feedback for chat replies
+create table if not exists chat_feedback (
+  id bigint generated always as identity primary key,
+  user_id uuid not null,
+  message_id bigint references public.chat_messages(id),
+  message_index int not null,
+  value text check (value in ('up','down','cleared')) not null,
+  message text,
+  created_at timestamptz default now()
+);
+
+create index if not exists chat_feedback_user_created_idx on chat_feedback(user_id, created_at desc);

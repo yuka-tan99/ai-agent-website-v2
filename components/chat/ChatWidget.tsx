@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { supabaseBrowser } from "@/lib/supabaseClient"
 import Markdown from "@/components/Markdown"
 import { ThumbsDown, ThumbsUp, Copy as CopyIcon, CopyCheck } from "lucide-react";
 
-type Msg = { role: "user" | "assistant" | "system"; content: string }
+type Msg = { role: "user" | "assistant" | "system"; content: string; id?: number }
 
 const dot = "w-2 h-2 rounded-full bg-gray-400 animate-pulse"
 
@@ -20,10 +21,34 @@ export default function ChatWidget() {
   const [feedbackSel, setFeedbackSel] = useState<Record<number, 'up' | 'down' | null>>({})
   const listRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const [displayName, setDisplayName] = useState<string>("")
 
-  // welcome message on mount
+  // On mount: seed a single greeting and warm presence; also cache display name
   useEffect(() => {
-    setMsgs([{ role: "assistant", content: "Hello! I'm your marketing mentor. How can I help you today?" }])
+    // Use cached name immediately for a friendly greeting
+    let cachedName = ""
+    try { cachedName = (localStorage.getItem('profile_name') || '').toString() } catch {}
+    const nick = (cachedName || '').trim()
+    const hello = `hey there${nick ? ` ${nick}` : ''} how can I help you today?`
+    setMsgs([{ role: "assistant", content: hello }])
+
+    // Best-effort fetch of latest profile name for later usage
+    const sb = supabaseBrowser()
+    sb.auth.getUser().then(({ data }) => {
+      const u = data?.user
+      const meta: any = u?.user_metadata || {}
+      const mname = (meta.name || meta.full_name || '').toString().trim()
+      let derived = mname
+      if (!derived && u?.email) {
+        const alias = (u.email.split('@')[0] || '').replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+        derived = alias
+      }
+      if (derived) {
+        setDisplayName(derived)
+        try { localStorage.setItem('profile_name', derived) } catch {}
+      }
+    }).catch(() => {})
+
     const id = setInterval(() => setOnline(true), 15000) // faux presence ping
     return () => clearInterval(id)
   }, [])
@@ -81,12 +106,13 @@ export default function ChatWidget() {
       if (data?.reason === 'expired_access') {
         setLocked(true)
         if (typeof data?.paywall === 'string') setPayUrl(data.paywall)
-        setLockMsg((data?.text || "Your chat access has expired. Subscribe to continue.").toString())
+        setLockMsg((data?.text || "Looks like you don’t have access to your Marketing Mentor yet. Pay only $6/month to continue.").toString())
         // Add a short assistant notice instead of the full message
-        setMsgs((m) => [...m, { role: "assistant", content: "Looks like your chat access has expired." }])
+        setMsgs((m) => [...m, { role: "assistant", content: "Looks like you don’t have access to your Marketing Mentor yet." }])
       } else {
         const reply = (data?.text || data?.reply || "").toString()
-        setMsgs((m) => [...m, { role: "assistant", content: reply || fallback(text) }])
+        const msgId = typeof data?.message_id === 'number' ? data.message_id : undefined
+        setMsgs((m) => [...m, { role: "assistant", content: reply || fallback(text), id: msgId }])
       }
     } catch {
       setMsgs((m) => [...m, { role: "assistant", content: fallback(text) }])
@@ -106,7 +132,7 @@ export default function ChatWidget() {
     }
   }
 
-  function Feedback({ index }: { index: number }) {
+  function Feedback({ index, text, messageId }: { index: number; text: string; messageId?: number }) {
     if (index === 0) return null // hide on greeting only
     const selected = feedbackSel[index] || null
     const setSel = (v: 'up' | 'down') => {
@@ -118,7 +144,7 @@ export default function ChatWidget() {
           fetch("/api/chat/analytics", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ event: "feedback", value: next ?? 'cleared', index }),
+            body: JSON.stringify({ event: "feedback", value: next ?? 'cleared', index, text, message_id: messageId ?? null }),
             keepalive: true,
           })
         } catch {}
@@ -199,7 +225,9 @@ export default function ChatWidget() {
             {msgs.map((m, i) => (
               <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                 <ChatBubble role={m.role} text={m.content}>
-                  {m.role === "assistant" ? <Feedback index={i} /> : null}
+                  {m.role === "assistant" && (m.content?.length || 0) > 250 ? (
+                    <Feedback index={i} text={m.content} messageId={m.id} />
+                  ) : null}
                 </ChatBubble>
               </div>
             ))}
@@ -208,13 +236,13 @@ export default function ChatWidget() {
             {locked && (
               <div className="flex justify-center my-3">
                 <div className="w-full max-w-sm rounded-2xl border bg-white shadow p-4 text-center">
-                  <div className="text-base font-semibold mb-1">Access expired</div>
-                  <div className="text-sm text-gray-600 mb-4">{lockMsg || 'Your 3 months of chat access has expired. Pay only $6/month to continue.'}</div>
+              <div className="text-base font-semibold mb-1">Unlock your Marketing Mentor</div>
+                  <div className="text-sm text-gray-600 mb-4">{lockMsg || 'Looks like you don’t have access to your Marketing Mentor yet. Pay only $6/month to continue.'}</div>
                   <a
                     href={payUrl}
                     className="inline-flex items-center justify-center rounded-xl bg-[var(--accent-grape)] text-white px-4 py-2 hover:bg-[#874E95]"
                   >
-                    Unlock AI chat
+                    Unlock Now
                   </a>
                 </div>
               </div>

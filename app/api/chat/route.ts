@@ -46,12 +46,12 @@ export async function POST(req: NextRequest) {
           // Allow access without writing (RLS-safe). Proceed to model call.
         } else {
           const payUrl = '/paywall/ai'
-          const msg = `Your 3 months of chat access has expired. Pay only $6/month to continue access.`
+          const msg = `Looks like you don’t have access to your Marketing Mentor right now. Pay only $6/month to continue access.`
           return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl }, { status: 200 })
         }
       } else {
         const payUrl = '/paywall/ai'
-        const msg = `Your 3 months of chat access has expired. Pay only $6/month to continue access.`
+        const msg = `Looks like you don’t have access to your Marketing Mentor yet. Pay only $6/month to continue access.`
         return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl }, { status: 200 })
       }
     }
@@ -76,9 +76,10 @@ const system = [
    - Do not overuse bold; one or two highlights per answer is enough.
    - No emojis unless the user uses them first.
    - Keep links plain (https://example.com or [label](url)).`,
-  `Coaching behavior:`,
-  `- On the first turn with a user, start conversationally (one friendly line) and offer a simple plan or next step.`,
-  `- Ask a clarifying question only when it meaningfully changes the next step; otherwise propose a best-first action.`,
+  `Behavior & priorities:`,
+  `- Follow the user's instructions literally. Do not invent their needs, goals, or preferences.`,
+  `- On the first turn, greet briefly and ask how you can help. Do not propose a plan unless the user asks for one.`,
+  `- Ask a clarifying question only when it is required to fulfill the request; otherwise do the thing.`,
   `- Never ask multiple back-to-back questions. Prefer action + (optional) one focused question.`,
   `- Avoid info dumps. Keep outputs short and practical; expand only if the user asks.`,
   `Compassionate mode (mental health):`,
@@ -112,21 +113,27 @@ const system = [
       system,
       context ? `\nContext:\n${context}\n` : "",
       `Conversation meta: user_turn_index=${userTurnsCount}`,
-      `Guidance: If user_turn_index > 1, skip greetings and jump straight to solutions. If user text shows emotional distress, switch to compassionate mode.`,
+      `Guidance: If user_turn_index > 1, do not add extra greetings. Respond directly to the user's latest message. If it's a greeting, a brief hello back is enough; if it's an instruction, execute it. If user text shows emotional distress, switch to compassionate mode.`,
       `User: ${userTurn}\nAssistant:`,
     ].join("\n")
 
     const result = await model.generateContent(prompt)
     const text = result.response.text() || "Let’s try that again with a bit more detail."
 
-    // Persist sanitized chat logs (best-effort; ignore failures)
+    // Persist sanitized chat logs (best-effort; ignore failures) and capture assistant message id
+    let assistantMessageId: number | null = null
     try {
       const redUser = redactPII(userTurn)
       const redAsst = redactPII(text)
-      await supa.from('chat_messages').insert([
-        { user_id: user.id, role: 'user', content: redUser, meta: { turns: userTurnsCount } },
-        { user_id: user.id, role: 'assistant', content: redAsst, meta: { model: MODEL } },
-      ])
+      const { data: inserted } = await supa
+        .from('chat_messages')
+        .insert([
+          { user_id: user.id, role: 'user', content: redUser, meta: { turns: userTurnsCount } },
+          { user_id: user.id, role: 'assistant', content: redAsst, meta: { model: MODEL } },
+        ])
+        .select('id, role')
+      const asst = (inserted || []).find((r: any) => r.role === 'assistant')
+      if (asst?.id) assistantMessageId = asst.id as number
     } catch (e) {
       console.warn('chat log persist failed (safe to ignore)', e)
     }
@@ -153,7 +160,7 @@ const system = [
       console.warn('chat usage log failed (safe to ignore)', e)
     }
 
-    return NextResponse.json({ text })
+    return NextResponse.json({ text, message_id: assistantMessageId })
   } catch (err) {
     console.error("chat error", err)
     return NextResponse.json(

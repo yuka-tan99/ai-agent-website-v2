@@ -682,13 +682,13 @@ export default function Onboarding() {
         <div className="w-full max-w-2xl">
           {/* Back to previous (fixed, aligned with title Y, left-aligned) */}
           {step > 0 && (
-            <div className="fixed left-4 z-40" style={{ top: 'calc(var(--navH) + 12px)' }}>
+            <div className="fixed left-6 z-40" style={{ top: 'calc(var(--navH) + 12px)' }}>
               <button
                 onClick={handleBack}
                 className="text-left text-sm md:text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
                 aria-label="Back to previous"
               >
-                &lt; back to previous
+                &lt;- back
               </button>
             </div>
           )}

@@ -30,12 +30,14 @@ export async function POST(req: Request) {
 
       const sb = supabaseAdmin() // service role (bypasses RLS)
 
-      // Mark user as paid in onboarding_sessions
+      // Mark user as paid in onboarding_sessions only for plan purchases
       if (user_id) {
         const eventTimeIso = new Date((event.created as number) * 1000).toISOString()
-        await sb
-          .from('onboarding_sessions')
-          .upsert({ user_id, purchase_status: 'paid', claimed_at: eventTimeIso, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+        if (product_key === 'plan') {
+          await sb
+            .from('onboarding_sessions')
+            .upsert({ user_id, purchase_status: 'paid', claimed_at: eventTimeIso, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+        }
       } else {
         console.warn('checkout.session.completed missing metadata.user_id')
       }

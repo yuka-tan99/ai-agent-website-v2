@@ -38,8 +38,8 @@ export async function POST(req: Request) {
   const { data: { user } } = await supa.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Not signed in' }, { status: 401 })
 
-  // Gate upsells: must have plan = paid in onboarding_sessions
-  if (product !== 'plan') {
+  // Gate certain upsells behind the plan, but allow AI to be purchased standalone
+  if (product === 'advisor' || product === 'expert') {
     const { data, error } = await supa
       .from('onboarding_sessions')
       .select('purchase_status')

@@ -8,6 +8,7 @@ export default function ResetPasswordPage() {
   const [sb, setSb] = useState<any>(null)
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
 
   // Only load Supabase browser client in the browser
@@ -28,6 +29,14 @@ export default function ResetPasswordPage() {
     try {
       setLoading(true)
       setMsg(null)
+      if (!password || password.length < 8) {
+        setMsg('Password must be at least 8 characters.')
+        return
+      }
+      if (password !== confirm) {
+        setMsg('Passwords do not match.')
+        return
+      }
       const { error } = await sb.auth.updateUser({ password })
       if (error) setMsg(error.message)
       else {
@@ -42,24 +51,31 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center">
+    <main className="min-h-screen flex items-center justify-center bg-[#f9fafb] px-4">
       <div className="w-full max-w-sm space-y-4">
-        <h1 className="text-xl font-semibold">Set a new password</h1>
+        <h1 className="text-xl font-semibold">Reset your password</h1>
 
         <input
           type="password"
-          className="w-full rounded-xl border px-4 py-2"
+          className="w-full rounded-xl border px-4 py-3"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="New password"
         />
+        <input
+          type="password"
+          className="w-full rounded-xl border px-4 py-3"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder="Confirm new password"
+        />
 
         <button
-          className="w-full rounded-xl bg-[var(--accent-grape)] text-white py-2 disabled:opacity-60"
+          className="w-full rounded-xl bg-[var(--accent-grape)] text-white py-3 disabled:opacity-60"
           onClick={doUpdate}
-          disabled={!sb || !password || loading}
+          disabled={!sb || !password || !confirm || loading}
         >
-          {loading ? 'Updating…' : 'Update password'}
+          {loading ? 'Updating…' : 'Change password'}
         </button>
 
         {msg && <p className="text-sm text-gray-600">{msg}</p>}

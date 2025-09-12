@@ -194,8 +194,9 @@ export default function ChatWidget() {
       {/* floating elliptical button */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed z-40 bottom-6 right-6 rounded-full px-5 py-3 bg-[var(--accent-grape)] text-white shadow-lg transition transform hover:scale-[1.03] pulse-gentle"
-      aria-label={open ? "Close chat" : "Chat with your marketing mentor"}
+        className="fixed z-40 right-6 rounded-full px-5 py-3 bg-[var(--accent-grape)] text-white shadow-lg transition transform hover:scale-[1.03] pulse-gentle"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)' }}
+        aria-label={open ? "Close chat" : "Chat with your marketing mentor"}
       >
         {!open ? "Chat with your marketing mentor" : "Close"}
       </button>
@@ -298,7 +299,7 @@ export default function ChatWidget() {
             </button>
           </form>
           <style jsx>{`
-            .mm-wrap{ position: fixed; z-index: 40; bottom: 24px; right: 24px; width: min(420px, calc(100vw - 2rem)); border-radius: 24px; box-shadow: 0 15px 40px rgba(0,0,0,.18); overflow: hidden; background: #fff; }
+            .mm-wrap{ position: fixed; z-index: 40; right: 24px; width: min(420px, calc(100vw - 2rem)); border-radius: 24px; box-shadow: 0 15px 40px rgba(0,0,0,.18); overflow: hidden; background: #fff; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }
             /* Lavender header */
             .mm-head{ display:flex; align-items:center; gap:12px; padding:14px 16px; background:#D9B8E3; color:#1E1340; border-bottom:1px solid rgba(98,55,160,.20); }
             .mm-avatar{ width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: rgba(255,255,255,.7); font-size:18px; }

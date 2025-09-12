@@ -16,7 +16,7 @@ type Props = {
 }
 
 /**
- * Single account shell (Fliki-like). Soft-purple accents via DesignStyles.
+ * Single account shell. Soft-purple accents via DesignStyles.
  * IMPORTANT: Do NOT also render a route layout for /account; this shell should be the only one.
  */
 export default function AccountPageClient({ section = 'usage' }: Props) {
@@ -345,23 +345,31 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
         </div>
         <div className="pw-body">
           <label className="acc-label">New password</label>
-          <input
-            type="password"
-            className="pw-input"
-            placeholder="Enter new password"
-            value={pwd}
-            onChange={(e)=> setPwd(e.target.value)}
-            disabled={pwdBusy}
-          />
+          <div className="relative">
+            <input
+              type="password"
+              className="pw-input pr-10"
+              placeholder="Enter new password"
+              value={pwd}
+              onChange={(e)=> setPwd(e.target.value)}
+              disabled={pwdBusy}
+            />
+            {pwd.length > 0 && pwd.length >= 8 && /[^A-Za-z0-9]/.test(pwd) && (
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-green-600" aria-hidden>✔</span>
+            )}
+          </div>
+          {/* Password strength indicator */}
+          <PasswordStrength value={pwd} />
           {pwdMsg && <div className="pw-msg" role="alert">{pwdMsg}</div>}
         </div>
         <div className="pw-foot">
           <button
             className="pw-btn"
-            disabled={pwdBusy || !pwd || pwd.length < 8}
+            disabled={pwdBusy || !pwd || pwd.length < 8 || !/[^A-Za-z0-9]/.test(pwd)}
             onClick={async () => {
               setPwdMsg(null)
               if (!pwd || pwd.length < 8) { setPwdMsg('Password must be at least 8 characters.'); return }
+              if (!/[^A-Za-z0-9]/.test(pwd)) { setPwdMsg('Include at least 1 special character.'); return }
               try {
                 setPwdBusy(true)
                 const { error } = await sb.auth.updateUser({ password: pwd })
@@ -382,5 +390,36 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
     </div>
   )}
 </div>
+  )
+}
+
+function PasswordStrength({ value }: { value: string }) {
+  const v = value || ''
+  if (!v) return null
+  const hasLower = /[a-z]/.test(v)
+  const hasUpper = /[A-Z]/.test(v)
+  const hasDigit = /\d/.test(v)
+  const hasSpecial = /[^A-Za-z0-9]/.test(v)
+  let score = 0
+  if (v.length >= 8) score++
+  if (v.length >= 12) score++
+  if (hasLower) score++
+  if (hasUpper) score++
+  if (hasDigit) score++
+  if (hasSpecial) score++
+  const label = score <= 2 ? 'weak' : score <= 4 ? 'medium' : 'strong'
+  const color = label === 'weak' ? '#DC2626' : label === 'medium' ? '#F59E0B' : '#16A34A'
+  const pct = Math.min(100, (score / 6) * 100)
+  return (
+    <div className="mt-2" aria-live="polite">
+      <div className="h-1.5 w-full bg-[#E5E7EB] rounded">
+        <div className="h-1.5 rounded" style={{ width: `${pct}%`, background: color }} />
+      </div>
+      <div className="mt-1 text-xs text-gray-600 flex items-center gap-2">
+        <span>Strength:</span>
+        <span style={{ color }}>{label}</span>
+        <span className="text-gray-400">· Use 8+ chars and 1 special</span>
+      </div>
+    </div>
   )
 }

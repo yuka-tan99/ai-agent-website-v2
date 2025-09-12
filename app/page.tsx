@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { supabaseBrowser } from '@/lib/supabaseClient'
 import Link from 'next/link'
 import LandingHero from '@/components/LandingHero'
+import FooterReveal from '@/components/FooterReveal'
 import DesignStyles from '@/components/DesignStyles'
 
 export default function Home() {
@@ -54,6 +55,8 @@ export default function Home() {
           </Link>
         </div>
       </main>
+      {/* Smooth reveal footer */}
+      <FooterReveal />
     </div>
   )
 }

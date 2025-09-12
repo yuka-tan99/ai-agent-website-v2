@@ -9,6 +9,7 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [confirm, setConfirm] = useState('')
+  
   const [loading, setLoading] = useState(false)
 
   // Only load Supabase browser client in the browser
@@ -33,6 +34,7 @@ export default function ResetPasswordPage() {
         setMsg('Password must be at least 8 characters.')
         return
       }
+      if (!/[^A-Za-z0-9]/.test(password)) { setMsg('Include at least 1 special character.'); return }
       if (password !== confirm) {
         setMsg('Passwords do not match.')
         return

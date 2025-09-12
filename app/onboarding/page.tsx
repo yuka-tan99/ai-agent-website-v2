@@ -685,7 +685,7 @@ export default function Onboarding() {
             <div className="fixed left-6 z-40" style={{ top: 'calc(var(--navH) + 12px)' }}>
               <button
                 onClick={handleBack}
-                className="text-left text-sm md:text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
+                className="inline-flex items-center h-11 px-2 rounded-md text-left text-sm md:text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
                 aria-label="Back to previous"
               >
                 &lt;- back

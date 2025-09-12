@@ -257,7 +257,7 @@ async function downloadFullReportPdf() {
           <div className="max-w-5xl mx-auto px-4 py-3">
             <button
               onClick={() => router.push('/account')}
-              className="inline-flex items-center gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
+              className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
               aria-label="Back"
             >
               <span className="-ml-1">←</span>

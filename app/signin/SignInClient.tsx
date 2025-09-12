@@ -34,6 +34,7 @@ export default function SignInClient() {
   const [confirm, setConfirm] = useState('') // only used in signup mode
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  
 
   // (kept for parity, but not used for back nav anymore)
   const fromParam = search.get('from')
@@ -85,6 +86,12 @@ export default function SignInClient() {
         // simple frontend confirm check (applies to email and phone signups)
         if (confirm && confirm !== password) {
           setMsg('Passwords do not match.')
+          return
+        }
+        // enforce minimum policy: 8+ chars and at least 1 special char
+        const hasSpecial = /[^A-Za-z0-9]/.test(password)
+        if (!password || password.length < 8 || !hasSpecial) {
+          setMsg('Password must be at least 8 characters and include 1 special character.')
           return
         }
       }
@@ -272,7 +279,7 @@ export default function SignInClient() {
             type="password"
             placeholder="Password"
             value={password}
-            onChange={(e)=>setPassword(e.target.value)}
+            onChange={(e)=> setPassword(e.target.value)}
             className="w-full rounded-xl border px-4 py-3"
           />
 

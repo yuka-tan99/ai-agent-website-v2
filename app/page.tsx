@@ -37,7 +37,7 @@ export default function Home() {
       <DesignStyles />
 
       {/* make this relative so we can absolutely position the top-right buttons */}
-      <main className="relative min-h-screen flex flex-col items-center bg-[#f9fafb] pt-12">
+      <main className="relative min-h-screen flex flex-col items-center landing-orchid-bg pt-12">
 
         {/* Top-right auth buttons (keep routes; only labels changed) */}
 

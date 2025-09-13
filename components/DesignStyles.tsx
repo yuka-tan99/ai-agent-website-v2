@@ -29,6 +29,16 @@ export default function DesignStyles() {
       /* Unified page background to match TopNav */
       [data-mentor-ui] { background-color: #f9fafb; background-image: none !important; }
 
+      /* Soft orchid gradient for landing page only */
+      [data-mentor-ui] .landing-orchid-bg {
+        /* subtle layered gradient over the base light gray */
+        background-image:
+          /* move the primary orb to the right-center instead of the top edge */
+          radial-gradient(620px 320px at 90% 50%, color-mix(in oklab, var(--accent-grape) 16%, transparent), transparent 55%),
+          radial-gradient(520px 280px at -10% 25%, color-mix(in oklab, var(--soft-purple) 22%, transparent), transparent 60%);
+        background-color: #f9fafb;
+      }
+
       /* Decorative helpers mirrored from front_end.txt */
         [data-mentor-ui] .gradient-text {
         background: linear-gradient(135deg, var(--accent-grape), var(--soft-purple));

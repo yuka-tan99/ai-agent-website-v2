@@ -65,9 +65,7 @@ export default function TopNav() {
         {/* Brand (click → landing if logged out, /account if logged in) */}
         <Link
           href={email ? "/account" : "/"}
-          className={`font-bold tracking-tight text-gray-700 hover:text-[var(--accent-grape)] active:text-[#874E95] transition-colors ${
-            pathname === "/" || pathname.startsWith("/onboarding") ? "text-lg md:text-xl" : "text-base md:text-lg"
-          }`}
+          className={`font-bold tracking-tight text-gray-700 hover:text-[var(--accent-grape)] active:text-[#874E95] transition-colors text-lg md:text-xl`}
         >
           BecomeFamous.AI
         </Link>

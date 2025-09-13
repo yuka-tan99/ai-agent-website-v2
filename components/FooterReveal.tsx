@@ -1,7 +1,9 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
 
-export default function FooterReveal() {
+type Crumb = { homeHref?: string; homeLabel?: string; currentLabel?: string }
+
+export default function FooterReveal({ breadcrumb }: { breadcrumb?: Crumb }) {
   const [visible, setVisible] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
 
@@ -26,42 +28,50 @@ export default function FooterReveal() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="rounded-2xl border border-black/10 bg-white/80 backdrop-blur-md shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
             <div className="px-6 py-8 md:px-8">
+              {breadcrumb?.currentLabel && (
+                <div className="mb-4 text-sm text-gray-600">
+                  <a href={breadcrumb.homeHref || '/'} className="hover:text-gray-900 font-medium">{breadcrumb.homeLabel || 'Home'}</a>
+                  <span className="mx-2 text-gray-400">›</span>
+                  <span className="text-gray-800 font-semibold">{breadcrumb.currentLabel}</span>
+                </div>
+              )}
               <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                  <h3 className="text-sm uppercase tracking-wider text-gray-600">Company</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">Company</h3>
                   <div className="mt-4 flex flex-col gap-2">
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 active:scale-[0.99] transition">Privacy</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 active:scale-[0.99] transition">Terms of use</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 active:scale-[0.99] transition">About</a>
+                    <a href="/privacy" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">Privacy Policy</a>
+                    <a href="/terms" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">Terms of Service</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">About</a>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-sm uppercase tracking-wider text-gray-600">Features</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">Features</h3>
                   <div className="mt-4 flex flex-col gap-2">
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">personalized report</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">ai mentor</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">1:1 expert session</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">personalized report</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">ai mentor</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">1:1 expert session</a>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-sm uppercase tracking-wider text-gray-600">Resources</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">Resources</h3>
                   <div className="mt-4 flex flex-col gap-2">
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">Blog</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">FAQs</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">Pricing</a>
-                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900 hover:bg-gray-50 transition">What's New</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">Blog</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">FAQs</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">Pricing</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">What's New</a>
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-sm uppercase tracking-wider text-gray-600">Connect with us</h3>
+                  <h3 className="text-sm font-semibold text-gray-900">Connect with us</h3>
                   <div className="mt-4 flex flex-wrap gap-2">
                     <a href="#" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-[var(--accent-grape)] hover:bg-[#874E95] px-4 py-2 text-sm font-medium transition shadow-sm text-white">Facebook</a>
                     <a href="#" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-[var(--accent-grape)] hover:bg-[#874E95] px-4 py-2 text-sm font-medium transition shadow-sm text-white">Instagram</a>
                     <a href="#" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-[var(--accent-grape)] hover:bg-[#874E95] px-4 py-2 text-sm font-medium transition shadow-sm text-white">TikTok</a>
                     <a href="#" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-[var(--accent-grape)] hover:bg-[#874E95] px-4 py-2 text-sm font-medium transition shadow-sm text-white">Twitter</a>
+                    <a href="mailto:support@becomefamous.ai" className="focus-ring inline-flex items-center gap-2 rounded-lg bg-[var(--accent-grape)] hover:bg-[#874E95] px-4 py-2 text-sm font-medium transition shadow-sm text-white">Email us</a>
                   </div>
                 </div>
               </div>

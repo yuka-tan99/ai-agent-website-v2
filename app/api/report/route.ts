@@ -34,14 +34,15 @@ export async function POST(req: NextRequest) {
   try {
     const started = Date.now();
     const supa = supabaseRoute();
-    async function setProgress(phase: string, pct: number) {
-      try {
-        await supa.from('report_jobs').upsert({ user_id: user.id, phase, pct, updated_at: new Date().toISOString() })
-      } catch {}
-    }
-
     const { data: { user } } = await supa.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const userId: string = user.id
+
+    async function setProgress(phase: string, pct: number) {
+      try {
+        await supa.from('report_jobs').upsert({ user_id: userId, phase, pct, updated_at: new Date().toISOString() })
+      } catch {}
+    }
 
     const body = await req.json().catch(() => ({} as any));
     const { persona: personaOverride, kbText = "", force = true, model } = body;

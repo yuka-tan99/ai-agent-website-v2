@@ -34,7 +34,8 @@ function requireEnv(name: string) {
 /** Service client for server-side write access (no browser SDK). */
 function serviceClient() {
   const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL')
-  const key = requireEnv('SUPABASE_SERVICE_KEY') // service role
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
+  if (!key) throw new Error('Missing required env: SUPABASE_SERVICE_ROLE_KEY')
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false }
   })

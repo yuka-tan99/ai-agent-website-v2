@@ -1,12 +1,24 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ONBOARDING_SESSION_KEY } from '@/lib/onboardingSession'
 
 export default function SignedUpPage() {
   const router = useRouter()
   const [secs, setSecs] = useState(3)
 
   useEffect(() => {
+    // Best-effort: claim local onboarding session for authed user
+    try {
+      const sid = localStorage.getItem(ONBOARDING_SESSION_KEY)
+      if (sid) {
+        fetch('/api/onboarding/claim', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sid }), cache: 'no-store'
+        }).catch(()=>{})
+      }
+    } catch {}
+
     let active = true
     const id = setInterval(() => {
       if (!active) return
@@ -37,4 +49,3 @@ export default function SignedUpPage() {
     </main>
   )
 }
-

@@ -650,7 +650,7 @@ export default function Onboarding() {
       await persistDraft({ answers })
 
       if (!authed) {
-        const next = encodeURIComponent('/paywall')
+        const next = encodeURIComponent('/auth/signed-up?next=/paywall')
         return router.push(`/signin?next=${next}`)
       }
       try {

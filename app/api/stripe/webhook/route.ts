@@ -3,6 +3,8 @@ import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin } from '@/lib/supabaseServer' // must use SERVICE role key!
+import { prepareReportInputs, finalizePlan } from '@/lib/reportMapping'
+import { callClaudeJSONWithRetry } from '@/lib/claude'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
 
@@ -112,8 +114,18 @@ export async function POST(req: Request) {
 
           // Auto-grant AI chat access based on purchase
           if (product_key === 'plan') {
-            // Exactly 3 months from purchase time
-            const starts = new Date((event.created as number) * 1000)
+            // Add 3 months of AI access on top of any existing future window
+            const now = new Date((event.created as number) * 1000)
+            const { data: last } = await sb
+              .from('access_grants')
+              .select('access_ends_at')
+              .eq('user_id', user_id)
+              .eq('product_key', 'ai')
+              .order('access_ends_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            const lastEnd = last?.access_ends_at ? new Date(last.access_ends_at as unknown as string) : undefined
+            const starts = lastEnd && lastEnd > now ? lastEnd : now
             const ends = new Date(starts)
             ends.setMonth(ends.getMonth() + 3)
             await sb
@@ -128,6 +140,36 @@ export async function POST(req: Request) {
                 grant_reason: 'Free 3 months with report purchase',
                 status: 'active',
               })
+
+            // Best-effort background report generation so it's ready when user lands
+            try {
+              const { data: rep } = await sb
+                .from('reports')
+                .select('user_id')
+                .eq('user_id', user_id)
+                .maybeSingle()
+              if (!rep) {
+                const { data: ob } = await sb
+                  .from('onboarding_sessions')
+                  .select('answers, claimed_at')
+                  .eq('user_id', user_id)
+                  .maybeSingle()
+                if (ob && (ob.answers || ob.claimed_at)) {
+                  const persona = ob.answers || {}
+                  const { prompt, fame, answers } = prepareReportInputs(persona, '')
+                  let raw: any = {}
+                  try {
+                    raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 45000, maxTokens: 1200 }, 1)
+                  } catch {}
+                  let plan = finalizePlan(raw, answers, fame)
+                  try {
+                    await sb.from('reports').upsert({ user_id, plan }, { onConflict: 'user_id' })
+                  } catch (e) { console.warn('background report upsert failed', e) }
+                }
+              }
+            } catch (e) {
+              console.warn('background report generation failed', e)
+            }
           } else if (product_key === 'ai') {
             if (session.mode === 'payment') {
               // One‑month pass: grant exactly 1 month. If existing future access exists, start after it.

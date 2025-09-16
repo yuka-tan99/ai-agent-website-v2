@@ -56,6 +56,8 @@ export default function DesignStyles() {
         -webkit-backdrop-filter: blur(10px);
         backdrop-filter: blur(10px);
         border: 1px solid var(--card-border);
+        border-radius: 24px; /* smoother, rounder */
+        box-shadow: 0 8px 24px rgba(0,0,0,.06);
       }
 
       /* Report header style (thin, centered) */
@@ -210,9 +212,9 @@ export default function DesignStyles() {
 /* Section cards */
 [data-mentor-ui] section.dashboard-card {
   background: #fff; /* solid white */
-  border-radius: 1rem; /* rounded corners */
+  border-radius: 24px; /* smoother, rounder */
   border: 1px solid rgba(0, 0, 0, 0.05); /* subtle border */
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04); /* gentle shadow */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06); /* gentle shadow */
   padding: 1.5rem;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }

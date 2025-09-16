@@ -34,6 +34,12 @@ export async function POST(req: NextRequest) {
   try {
     const started = Date.now();
     const supa = supabaseRoute();
+    async function setProgress(phase: string, pct: number) {
+      try {
+        await supa.from('report_jobs').upsert({ user_id: user.id, phase, pct, updated_at: new Date().toISOString() })
+      } catch {}
+    }
+
     const { data: { user } } = await supa.auth.getUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -53,6 +59,7 @@ export async function POST(req: NextRequest) {
       if (existing.data?.plan) return NextResponse.json({ plan: existing.data.plan });
     }
 
+    await setProgress('starting', 5)
     // fetch onboarding answers
     const ob = await supa
       .from("onboarding_sessions")
@@ -72,6 +79,7 @@ export async function POST(req: NextRequest) {
     const persona = personaOverride ?? (ob.data?.answers ?? {});
     const { prompt, fame, answers } = prepareReportInputs(persona, kbText);
 
+    await setProgress('generating_plan', 30)
     // Sonnet-4 is now default in callClaudeJSON; pass model only if you want to override
     let raw: any;
     try {
@@ -90,6 +98,7 @@ export async function POST(req: NextRequest) {
     let plan = finalizePlan(raw, answers, fame);
 
     // Add a one-time, thorough fame assessment paragraph based on onboarding + breakdown
+    await setProgress('assessment', 55)
     try {
       const breakdown = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
       const pct: Record<string, number> = {
@@ -111,6 +120,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Per-section insights to show under each section on Fame Insights page
+    await setProgress('insights', 75)
     try {
       const breakdown = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
       const pct: Record<string, number> = {
@@ -139,6 +149,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await setProgress('saving', 92)
     const up = await supa
       .from("reports")
       .upsert({ user_id: user.id, plan }, { onConflict: "user_id" })
@@ -149,6 +160,7 @@ export async function POST(req: NextRequest) {
       console.log("[/api/report][POST] upsert:", up.error ? up.error.message : 'ok', "durationMs:", Date.now() - started);
     }
     if (up.error) return NextResponse.json({ error: up.error.message }, { status: 500 });
+    await setProgress('done', 100)
     return NextResponse.json({ plan: up.data?.plan ?? plan });
   } catch (err: any) {
     console.error("[/api/report][POST] error", err);

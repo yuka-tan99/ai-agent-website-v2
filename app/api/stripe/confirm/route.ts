@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     let payment_id: number | null = existingPay?.id ?? null
     if (!payment_id) {
-      // Insert payment record with best-effort details
+      // Insert (idempotent via upsert) payment record with best‑effort details
       let amount_cents: number | undefined
       let status: string | undefined
       let currency: string | undefined
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
 
       const { data: inserted, error: insErr } = await sb
         .from('payments')
-        .insert({
+        .upsert({
           user_id,
           product_key,
           amount_cents: amount_cents ?? 0,
@@ -88,11 +88,22 @@ export async function GET(req: NextRequest) {
           billing_country: billing_country || null,
           currency: (session.currency || currency || 'usd') as string,
           raw: { session_id: session.id, payment_intent_id: payment_intent_id || null },
-        })
+        }, { onConflict: 'checkout_session_id' })
         .select('id')
         .single()
-      if (insErr) throw insErr
-      payment_id = inserted?.id ?? null
+      if (insErr) {
+        // Handle race with webhook inserting the same session; fallback to select the existing row
+        const code = (insErr as any)?.code || ''
+        if (code !== '23505') throw insErr
+        const { data: again } = await sb
+          .from('payments')
+          .select('id')
+          .eq('checkout_session_id', session.id)
+          .maybeSingle()
+        payment_id = again?.id ?? null
+      } else {
+        payment_id = inserted?.id ?? null
+      }
     }
 
     // Ensure onboarding_sessions reflects plan paid (for the dashboard flow)
@@ -105,7 +116,18 @@ export async function GET(req: NextRequest) {
 
     // Grant access if needed (idempotent-ish: we allow multiple rows; caller can verify via /api/me/access)
     if (product_key === 'plan') {
-      const starts = new Date(session.created ? (session.created as number) * 1000 : Date.now())
+      // Extend by 3 months after any existing future window
+      const now = new Date(session.created ? (session.created as number) * 1000 : Date.now())
+      const { data: last } = await sb
+        .from('access_grants')
+        .select('access_ends_at')
+        .eq('user_id', user_id)
+        .eq('product_key', 'ai')
+        .order('access_ends_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const lastEnd = last?.access_ends_at ? new Date(last.access_ends_at as unknown as string) : undefined
+      const starts = lastEnd && lastEnd > now ? lastEnd : now
       const ends = new Date(starts)
       ends.setMonth(ends.getMonth() + 3)
       await sb.from('access_grants').insert({
@@ -118,6 +140,34 @@ export async function GET(req: NextRequest) {
         grant_reason: 'Manual confirm: Free 3 months with report purchase',
         status: 'active',
       })
+
+      // Best-effort background report generation
+      try {
+        const { data: rep } = await sb
+          .from('reports')
+          .select('user_id')
+          .eq('user_id', user_id)
+          .maybeSingle()
+        if (!rep) {
+          const { data: ob } = await sb
+            .from('onboarding_sessions')
+            .select('answers, claimed_at')
+            .eq('user_id', user_id)
+            .maybeSingle()
+          if (ob && (ob.answers || ob.claimed_at)) {
+            const { prepareReportInputs, finalizePlan } = await import('@/lib/reportMapping')
+            const { callClaudeJSONWithRetry } = await import('@/lib/claude')
+            const persona = ob.answers || {}
+            const { prompt, fame, answers } = prepareReportInputs(persona, '')
+            let raw: any = {}
+            try { raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 45000, maxTokens: 1200 }, 1) } catch {}
+            const plan = finalizePlan(raw, answers, fame)
+            await sb.from('reports').upsert({ user_id, plan }, { onConflict: 'user_id' })
+          }
+        }
+      } catch (e) {
+        console.warn('confirm background report gen failed', e)
+      }
     } else if (product_key === 'ai') {
       // If one-time, add 1 month; if subscription, rely on invoice event
       if (session.mode === 'payment') {

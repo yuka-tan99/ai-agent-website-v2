@@ -50,3 +50,12 @@ create table if not exists chat_feedback (
 );
 
 create index if not exists chat_feedback_user_created_idx on chat_feedback(user_id, created_at desc);
+
+-- Progress tracker for report generation (coarse phases)
+create table if not exists report_jobs (
+  user_id uuid primary key references auth.users(id),
+  phase text not null default 'queued',
+  pct int not null default 0,
+  updated_at timestamptz not null default now()
+);
+create index if not exists report_jobs_updated_idx on report_jobs(updated_at desc);

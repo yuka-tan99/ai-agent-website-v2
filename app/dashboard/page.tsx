@@ -34,10 +34,7 @@ export default async function DashboardPage() {
   const supa = await supabaseServer();
   const { data: { user } } = await supa.auth.getUser();
   if (!user) redirect('/signin');
-  // Enforce paywall first. Only paid users can view or generate a report.
-  if (!(await hasPlanAccess(user.id))) redirect('/paywall');
-
-  // If a report already exists -> render instantly
+  // If a report already exists -> render instantly (show report even if paywall flag is stale)
   const { data: rep } = await supa
     .from('reports')
     .select('plan')
@@ -82,6 +79,9 @@ export default async function DashboardPage() {
     if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] onboarding incomplete → redirect /onboarding');
     redirect('/onboarding');
   }
+
+  // Enforce paywall only if no report yet
+  if (!(await hasPlanAccess(user.id))) redirect('/paywall');
 
   // Onboarding complete, no report yet -> redirect to preparing screen
   if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] no report → redirect /dashboard/preparing');

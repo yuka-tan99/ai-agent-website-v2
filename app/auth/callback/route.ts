@@ -3,9 +3,13 @@ import { headers } from 'next/headers'
 import { supabaseRoute } from '@/lib/supabaseServer'
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
+  const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const redirectTo = new URL('/onboarding', request.url)
+  // Preserve ?next for post-auth redirect, fallback to /onboarding
+  const next = searchParams.get('next') || '/auth/signed-up'
+  // Prevent open redirects: only allow same-origin paths
+  const safeNext = next.startsWith('/') ? next : '/onboarding'
+  const redirectTo = new URL(safeNext, origin)
 
   const supa = supabaseRoute()
   if (code) await supa.auth.exchangeCodeForSession(code)

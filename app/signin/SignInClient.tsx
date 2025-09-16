@@ -38,6 +38,7 @@ export default function SignInClient() {
 
   // (kept for parity, but not used for back nav anymore)
   const fromParam = search.get('from')
+  const nextParam = search.get('next') || ''
   const cameFromOnboarding = useMemo(() => {
     if (fromParam === 'onboarding') return true
     try {
@@ -58,7 +59,8 @@ export default function SignInClient() {
     }
     try {
       setLoading(true); setMsg(null)
-      const redirectTo = `${window.location.origin}/auth/callback`
+      const baseCb = `${window.location.origin}/auth/callback`
+      const redirectTo = nextParam ? `${baseCb}?next=${encodeURIComponent(nextParam)}` : baseCb
       const { data, error } = await sb.auth.signInWithOAuth({
         provider: provider === 'azure' ? 'azure' : provider, // supabase provider keys
         options: { redirectTo }
@@ -111,7 +113,8 @@ export default function SignInClient() {
         }
       } else {
         if (mode === 'signup') {
-          const redirectTo = `${window.location.origin}/auth/callback`
+          const baseCb = `${window.location.origin}/auth/callback`
+          const redirectTo = nextParam ? `${baseCb}?next=${encodeURIComponent(nextParam)}` : baseCb
           const { error } = await sb.auth.signUp(
             { email, password },
             { emailRedirectTo: redirectTo }

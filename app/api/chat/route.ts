@@ -16,19 +16,21 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ text: "Please sign in to chat." }, { status: 200 })
     }
-    const nowIso = new Date().toISOString()
-    const { data: grant, error: grantErr } = await supa
+    const now = new Date()
+    const nowIso = now.toISOString()
+    // Pull windows and compute active in code (align with /api/me/access)
+    const { data: windows, error: winErr } = await supa
       .from('access_grants')
       .select('id, access_starts_at, access_ends_at, status')
       .eq('user_id', user.id)
       .eq('product_key', 'ai')
-      .eq('status', 'active')
-      .lte('access_starts_at', nowIso)
-      .gte('access_ends_at', nowIso)
-      .maybeSingle()
-    if (grantErr) {
-      console.warn('grant lookup failed', grantErr)
-    }
+      .order('access_starts_at', { ascending: false })
+    if (winErr) console.warn('grant lookup failed', winErr)
+    const grant = (windows || []).find(w => (
+      (w.status || 'active') === 'active' &&
+      w.access_starts_at && w.access_ends_at &&
+      w.access_starts_at <= nowIso && nowIso <= w.access_ends_at
+    )) || null
     // Fallback: if report purchased within last 3 months but no access row, allow access
     if (!grant) {
       const { data: ob } = await supa

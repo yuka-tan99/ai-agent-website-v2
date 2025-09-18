@@ -17,6 +17,8 @@ export default function ChatWidget() {
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [locked, setLocked] = useState(false)
   const [lockMsg, setLockMsg] = useState<string | null>(null)
+  const [lockDiag, setLockDiag] = useState<any | null>(null)
+  const [showDiag, setShowDiag] = useState(false)
   const [payUrl, setPayUrl] = useState<string>("/paywall/ai")
   const [feedbackSel, setFeedbackSel] = useState<Record<number, 'up' | 'down' | null>>({})
   const listRef = useRef<HTMLDivElement>(null)
@@ -107,6 +109,7 @@ export default function ChatWidget() {
         setLocked(true)
         if (typeof data?.paywall === 'string') setPayUrl(data.paywall)
         setLockMsg((data?.text || "Looks like you don’t have access to your Marketing Mentor yet. Pay only $6/month to continue.").toString())
+        setLockDiag(data?.diag || null)
         // Add a short assistant notice instead of the full message
         setMsgs((m) => [...m, { role: "assistant", content: "Looks like you don’t have access to your Marketing Mentor yet." }])
       } else {
@@ -245,6 +248,21 @@ export default function ChatWidget() {
                   >
                     Unlock Now
                   </a>
+                  {lockDiag ? (
+                    <div className="mt-3 text-left">
+                      <button
+                        className="text-xs text-gray-500 underline"
+                        onClick={() => setShowDiag(v => !v)}
+                      >
+                        {showDiag ? 'Hide diagnostics' : 'Show diagnostics'}
+                      </button>
+                      {showDiag && (
+                        <pre className="mt-2 text-[10px] text-gray-500 bg-gray-50 rounded p-2 overflow-auto max-h-40">
+{JSON.stringify(lockDiag, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}

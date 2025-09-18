@@ -26,13 +26,29 @@ export async function POST(req: NextRequest) {
       .eq('product_key', 'ai')
       .order('access_starts_at', { ascending: false })
     if (winErr) console.warn('grant lookup failed', winErr)
-    const grant = (windows || []).find(w => (
+    const arr = windows || []
+    const grant = arr.find(w => (
       (w.status || 'active') === 'active' &&
       w.access_starts_at && w.access_ends_at &&
       w.access_starts_at <= nowIso && nowIso <= w.access_ends_at
     )) || null
     // Fallback: if report purchased within last 3 months but no access row, allow access
     if (!grant) {
+      const diag: any = {
+        windows_count: arr.length,
+        now: nowIso,
+      }
+      if (arr.length) {
+        const future = arr
+          .filter(w => (w.status || 'active') === 'active' && w.access_starts_at && w.access_starts_at > nowIso)
+          .sort((a:any,b:any) => a.access_starts_at.localeCompare(b.access_starts_at))[0]
+        const past = arr
+          .filter(w => (w.status || 'active') === 'active' && w.access_ends_at && w.access_ends_at < nowIso)
+          .sort((a:any,b:any) => b.access_ends_at.localeCompare(a.access_ends_at))[0]
+        if (future) diag.future_window_starts_at = future.access_starts_at
+        if (past)   diag.latest_past_window_ended_at = past.access_ends_at
+      }
+
       const { data: ob } = await supa
         .from('onboarding_sessions')
         .select('purchase_status, claimed_at, updated_at')
@@ -46,15 +62,18 @@ export async function POST(req: NextRequest) {
         ends.setMonth(ends.getMonth() + 3)
         if (new Date() <= ends) {
           // Allow access without writing (RLS-safe). Proceed to model call.
+          diag.fallback = 'paid_within_3m'
         } else {
           const payUrl = '/paywall/ai'
           const msg = `Looks like you don’t have access to your Marketing Mentor right now. Pay only $6/month to continue access.`
-          return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl }, { status: 200 })
+          diag.fallback = 'paid_expired'; diag.fallback_ended_at = ends.toISOString()
+          return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl, diag }, { status: 200 })
         }
       } else {
         const payUrl = '/paywall/ai'
         const msg = `Looks like you don’t have access to your Marketing Mentor yet. Pay only $6/month to continue access.`
-        return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl }, { status: 200 })
+        diag.fallback = status === 'paid' ? 'paid_no_claimed_at' : 'not_paid'
+        return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl, diag }, { status: 200 })
       }
     }
 

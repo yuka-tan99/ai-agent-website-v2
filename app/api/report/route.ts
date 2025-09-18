@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabaseServer";
 import { prepareReportInputs, finalizePlan } from "@/lib/reportMapping";
+import { createClient } from '@supabase/supabase-js'
 import { callClaudeJSONWithRetry } from "@/lib/claude";
 
 function onboardingComplete(row: any): boolean {
@@ -38,10 +39,17 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const userId: string = user.id
 
+    // Use service role for progress updates so RLS cannot block writes
+    const svcUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY!
+    const admin = createClient(svcUrl, svcKey, { auth: { persistSession: false, autoRefreshToken: false } })
+
     async function setProgress(phase: string, pct: number) {
       try {
-        await supa.from('report_jobs').upsert({ user_id: userId, phase, pct, updated_at: new Date().toISOString() })
-      } catch {}
+        await admin.from('report_jobs').upsert({ user_id: userId, phase, pct, updated_at: new Date().toISOString() })
+      } catch (e) {
+        // non-blocking
+      }
     }
 
     const body = await req.json().catch(() => ({} as any));

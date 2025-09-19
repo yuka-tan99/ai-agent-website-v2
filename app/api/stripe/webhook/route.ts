@@ -3,7 +3,7 @@ import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseAdmin } from '@/lib/supabaseServer' // must use SERVICE role key!
-import { prepareReportInputs, finalizePlan } from '@/lib/reportMapping'
+import { prepareReportInputs, finalizePlan, computeFameBreakdown } from '@/lib/reportMapping'
 import { callClaudeJSONWithRetry } from '@/lib/claude'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' })
@@ -165,6 +165,48 @@ export async function POST(req: Request) {
                     console.warn('[webhook] background LLM failed:', e?.message || e)
                   }
                   let plan = finalizePlan(raw, answers, fame)
+                  // Enrich with assessment + insights (best-effort; tolerate failures)
+                  try {
+                    const breakdown = computeFameBreakdown(answers as any)
+                    const pct: Record<string, number> = { overall: Math.round(fame ?? 0) }
+                    for (const b of breakdown) pct[b.key] = Math.round(Number(b.percent) || 0)
+
+                    const [assessRes, insightRes] = await Promise.allSettled([
+                      callClaudeJSONWithRetry<{ assessment: string }>({
+                        prompt: `You are Marketing Mentor, a social media growth expert. Return JSON only.\n\nWrite ONE thorough paragraph titled 'assessment' (3–7 sentences) that explains the creator's current strengths and weaknesses and the biggest opportunities ahead. Be encouraging and helpful with no fluff. Use the percentages as directional signals, not verdicts. Include 1–2 specific next steps.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT:\n{"assessment":"..."}`,
+                        timeoutMs: 45_000,
+                        maxTokens: 500,
+                      }, 1),
+                      callClaudeJSONWithRetry<Record<string, string>>({
+                        prompt: `You are Marketing Mentor. Return JSON only.\n\nWrite one concise but thorough paragraph (3–5 sentences) for EACH of these keys explaining what the user's onboarding answers suggest and the top opportunity to improve that dimension. Encouraging, specific, no fluff.\nKeys: overall, consistency, camera_comfort, planning, tech_comfort, audience_readiness, interest_breadth, experimentation.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT (flat object with those exact keys):\n{"overall":"","consistency":"","camera_comfort":"","planning":"","tech_comfort":"","audience_readiness":"","interest_breadth":"","experimentation":""}`,
+                        timeoutMs: 50_000,
+                        maxTokens: 900,
+                      }, 1),
+                    ])
+                    if (assessRes.status === 'fulfilled' && assessRes.value?.assessment) {
+                      ;(plan as any).fame_assessment = assessRes.value.assessment
+                    } else {
+                      const overall = Math.round(plan.fame_score ?? fame ?? 0)
+                      ;(plan as any).fame_assessment = `You have solid raw potential (around ${overall}%). Lean on your strongest habits and formats, and shore up the weakest link in your weekly workflow. Keep your scope narrow for two weeks, post on a steady cadence, and run one small experiment per post. This combination compounds quickly.`
+                    }
+                    if (insightRes.status === 'fulfilled' && typeof insightRes.value === 'object') {
+                      ;(plan as any).fame_section_insights = insightRes.value
+                    } else {
+                      const mk = (k: string) => `This area can move fast with one small weekly ritual focused on ${k.replace(/_/g,' ')}. Keep changes tiny and measurable for the next 14 days to build momentum.`
+                      ;(plan as any).fame_section_insights = {
+                        overall: mk('overall execution'),
+                        consistency: mk('consistency'),
+                        camera_comfort: mk('on‑camera comfort'),
+                        planning: mk('planning and batching'),
+                        tech_comfort: mk('tooling and editing'),
+                        audience_readiness: mk('audience clarity'),
+                        interest_breadth: mk('topic focus'),
+                        experimentation: mk('experimentation'),
+                      }
+                    }
+                  } catch (e) {
+                    console.warn('[webhook] enrich extras failed', e)
+                  }
                   try {
                     await sb.from('reports').upsert({ user_id, plan }, { onConflict: 'user_id' })
                     if (process.env.DEBUG_LOG === 'true') console.log('[webhook] background report upsert ok for', user_id)

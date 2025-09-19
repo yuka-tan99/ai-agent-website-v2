@@ -239,7 +239,7 @@ WRITE CLEARLY FOR A 15-YEAR-OLD:
 PLATFORM LABELS (use EXACT strings once each if relevant):
 YouTube, Instagram, TikTok, Twitter/X, LinkedIn, Facebook, Pinterest, Twitch
 
-OUTPUT (JSON ONLY; no markdown fences). MUST match this schema exactly:
+OUTPUT (JSON ONLY; no markdown fences). MUST be STRICTLY parseable by JSON.parse (no trailing commas, no comments, no stray text, no line breaks inside strings). MUST match this schema exactly:
 
 {
   "main_problem": "short noun phrase e.g. 'inconsistent posting'",
@@ -259,6 +259,7 @@ STRICT RULES:
 - Use the platform labels exactly as listed.
 - Make every bullet a command or a concrete example.
 - Keep sentences short. Prefer verbs at the start.
+- Produce VALID JSON ONLY (no trailing commas, no comments, no extra keys). Do not include any text outside the JSON object. Escape internal quotes. Keep array items as simple strings without newlines.
 - Do not include any other keys than in the schema.
 `
 

@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
 
       const { data: inserted, error: insErr } = await sb
         .from('payments')
-        .upsert({
+        .insert({
           user_id,
           product_key,
           amount_cents: amount_cents ?? 0,
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
           billing_country: billing_country || null,
           currency: (session.currency || currency || 'usd') as string,
           raw: { session_id: session.id, payment_intent_id: payment_intent_id || null },
-        }, { onConflict: 'checkout_session_id' })
+        })
         .select('id')
         .single()
       if (insErr) {

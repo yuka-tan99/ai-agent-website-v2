@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 
 export default function PreparingPage() {
   const router = useRouter()
+  const search = useSearchParams()
   const [error, setError] = useState<string | null>(null)
   const phrases = [
     'preparing your personalized report…',
@@ -23,6 +25,11 @@ export default function PreparingPage() {
     let cancelled = false
     ;(async () => {
       try {
+        // If we arrived after checkout, attempt a one-shot manual confirm to self-heal
+        const sid = search.get('session_id')
+        if (sid) {
+          try { await fetch(`/api/stripe/confirm?session_id=${encodeURIComponent(sid)}`, { cache: 'no-store' }) } catch {}
+        }
         // POST once; server returns existing plan if present, or generates then returns
         const res = await fetch('/api/report', {
           method: 'POST',
@@ -49,7 +56,7 @@ export default function PreparingPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [router])
+  }, [router, search])
 
   // Rotate status phrases with a soft fade every 2s
   useEffect(() => {

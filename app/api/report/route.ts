@@ -154,7 +154,10 @@ export async function POST(req: NextRequest) {
     })()
 
     // Wait for all 3 to settle (no throw)
-    await Promise.allSettled([planPromise, assessmentPromise, insightsPromise])
+    const results = await Promise.allSettled([planPromise, assessmentPromise, insightsPromise])
+    if (process.env.DEBUG_LOG === 'true') {
+      console.log('[/api/report][POST] parallel results:', results.map(r => r.status))
+    }
 
     let plan = finalizePlan(raw, answers, fame);
 

@@ -160,10 +160,14 @@ export async function POST(req: Request) {
                   let raw: any = {}
                   try {
                     raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 45000, maxTokens: 1200 }, 1)
-                  } catch {}
+                    if (process.env.DEBUG_LOG === 'true') console.log('[webhook] background LLM ok')
+                  } catch (e: any) {
+                    console.warn('[webhook] background LLM failed:', e?.message || e)
+                  }
                   let plan = finalizePlan(raw, answers, fame)
                   try {
                     await sb.from('reports').upsert({ user_id, plan }, { onConflict: 'user_id' })
+                    if (process.env.DEBUG_LOG === 'true') console.log('[webhook] background report upsert ok for', user_id)
                   } catch (e) { console.warn('background report upsert failed', e) }
                 }
               }

@@ -162,9 +162,15 @@ export async function GET(req: NextRequest) {
             const persona = ob.answers || {}
             const { prompt, fame, answers } = prepareReportInputs(persona, '')
             let raw: any = {}
-            try { raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 45000, maxTokens: 1200 }, 1) } catch {}
+            try {
+              raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 45000, maxTokens: 1200 }, 1)
+              if (process.env.DEBUG_LOG === 'true') console.log('[confirm] background LLM ok')
+            } catch (e: any) {
+              console.warn('[confirm] background LLM failed:', e?.message || e)
+            }
             const plan = finalizePlan(raw, answers, fame)
             await sb.from('reports').upsert({ user_id, plan }, { onConflict: 'user_id' })
+            if (process.env.DEBUG_LOG === 'true') console.log('[confirm] background report upsert ok for', user_id)
           }
         }
       } catch (e) {

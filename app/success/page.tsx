@@ -50,6 +50,13 @@ export default function Success() {
     poll()
     return () => { active = false; if (t) clearTimeout(t) }
   }, [router, search])
-  // No intermediary UI; immediately redirects above
-  return null
+  // Show a tiny status so it doesn't feel blank
+  return (
+    <main className="container min-h-screen flex items-start justify-center pt-[20vh]">
+      <div className="text-center">
+        <div className="loader mx-auto" role="status" aria-label="Finalizing checkout" style={{ width: 96 }} />
+        <div className="mt-5 text-gray-700 text-xl font-medium">finalizing your purchase…</div>
+      </div>
+    </main>
+  )
 }

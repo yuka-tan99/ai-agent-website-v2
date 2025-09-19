@@ -66,15 +66,22 @@ export async function callClaudeJSON<T = any>({
       .replace(/^```\s*/i, "")
       .replace(/```$/i, "");
 
+    // Optional debug logging of raw content (truncated)
+    if (process.env.DEBUG_LOG === 'true') {
+      const preview = cleaned.slice(0, 220).replace(/[\n\r\t]+/g, ' ').trim();
+      console.log(`[Claude] model=${_model} took ${Date.now() - _t0}ms, len=${cleaned.length}, preview=`, preview);
+    }
+
     // Parse JSON + log timing
     const parsed = JSON.parse(cleaned) as T;
     if (process.env.NODE_ENV !== "production") {
-      console.log(
-        `[Claude] model=${_model} responded in ${Date.now() - _t0}ms`
-      );
+      console.log(`[Claude] model=${_model} responded in ${Date.now() - _t0}ms`);
     }
     return parsed;
   } catch (e: any) {
+    if (process.env.DEBUG_LOG === 'true') {
+      console.warn('[Claude] parse/fetch error:', e?.message || e);
+    }
     throw new Error(`Claude returned non-JSON or failed: ${e?.message || e}`);
   } finally {
     clearTimeout(timer);

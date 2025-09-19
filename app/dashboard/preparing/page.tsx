@@ -16,6 +16,8 @@ export default function PreparingPage() {
   const [idx, setIdx] = useState(0)
   const [fade, setFade] = useState(false)
   const [pct, setPct] = useState(5)
+  const [simPct, setSimPct] = useState(5)
+  const startedRef = useState<number>(() => Date.now())[0]
 
   useEffect(() => {
     let cancelled = false
@@ -67,7 +69,7 @@ export default function PreparingPage() {
   }, [])
 
   // Simulated progress while waiting for server (cap at 90%)
-  // Replace simulation with real backend progress polling
+  // Combine real backend polling with a gentle time-based simulation
   useEffect(() => {
     let active = true
     const tick = async () => {
@@ -84,6 +86,18 @@ export default function PreparingPage() {
     return () => { active = false }
   }, [])
 
+  // Time-based smoothing: drift towards 85% over ~45s if server is quiet
+  useEffect(() => {
+    let mounted = true
+    const id = setInterval(() => {
+      if (!mounted) return
+      const elapsed = (Date.now() - startedRef) / 1000 // seconds
+      const target = Math.min(85, Math.round((elapsed / 45) * 85))
+      setSimPct((prev) => Math.max(prev, Math.min(85, target)))
+    }, 1000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [startedRef])
+
   return (
     <main className="container min-h-screen flex items-start justify-center pt-[18vh] md:pt-[20vh]">
       <div className="text-center will-change-transform">
@@ -91,10 +105,10 @@ export default function PreparingPage() {
         <div className="mb-3 w-[280px] mx-auto">
           <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
             <span>Generating report</span>
-            <span className="font-semibold text-gray-800">{pct}%</span>
+            <span className="font-semibold text-gray-800">{Math.max(pct, simPct)}%</span>
           </div>
           <div className="progress-track">
-            <div className="progress-fill" style={{ width: `${pct}%` }} />
+            <div className="progress-fill" style={{ width: `${Math.max(pct, simPct)}%` }} />
           </div>
         </div>
         <div

@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabaseServer";
-import { prepareReportInputs, finalizePlan } from "@/lib/reportMapping";
+import { prepareReportInputs, finalizePlan, computeFameBreakdown } from "@/lib/reportMapping";
 import { createClient } from '@supabase/supabase-js'
 import { callClaudeJSONWithRetry } from "@/lib/claude";
 
@@ -88,63 +88,88 @@ export async function POST(req: NextRequest) {
     const persona = personaOverride ?? (ob.data?.answers ?? {});
     const { prompt, fame, answers } = prepareReportInputs(persona, kbText);
 
-    await setProgress('generating_plan', 30)
-    // Sonnet-4 is now default in callClaudeJSON; pass model only if you want to override
-    let raw: any;
-    try {
-      raw = await callClaudeJSONWithRetry<any>({
-        prompt,
-        model,                // optional; omit to use DEFAULT_MODEL
-        timeoutMs: 60_000,
-        maxTokens: 1400,
-      }, 1);
-      if (process.env.DEBUG_LOG === 'true') console.log("[/api/report][POST] LLM ok");
-    } catch (e: any) {
-      console.warn("[/api/report][POST] LLM failed:", e?.message || e);
-      raw = {}; // finalizePlan will fill sensible defaults from answers/fame
-    }
+    await setProgress('generating_plan', 25)
+
+    // Issue all LLM calls in parallel. Assessment/insights only depend on onboarding-derived
+    // percentages, so we can compute those immediately and run them concurrently with the main plan.
+    const pctFromAnswers: Record<string, number> = (() => {
+      const breakdown = computeFameBreakdown(answers as any)
+      const pct: Record<string, number> = { overall: Math.round(fame ?? 0) }
+      for (const b of breakdown) pct[b.key] = Math.round(Number(b.percent) || 0)
+      return pct
+    })()
+
+    let raw: any = {}
+    let assessmentText: string | null = null
+    let insightsObj: Record<string, string> | null = null
+
+    await setProgress('llm_started', 35)
+
+    const planPromise = (async () => {
+      try {
+        const r = await callClaudeJSONWithRetry<any>({
+          prompt,
+          model,                // optional; omit to use DEFAULT_MODEL
+          timeoutMs: 60_000,
+          maxTokens: 1400,
+        }, 1)
+        raw = r
+        if (process.env.DEBUG_LOG === 'true') console.log("[/api/report][POST] LLM ok")
+      } catch (e: any) {
+        console.warn("[/api/report][POST] LLM failed:", e?.message || e)
+        raw = {}
+      } finally {
+        await setProgress('plan_ready', 60)
+      }
+    })()
+
+    const assessmentPromise = (async () => {
+      try {
+        const assess = await callClaudeJSONWithRetry<{ assessment: string }>({
+          prompt: `You are Marketing Mentor, a social media growth expert. Return JSON only.\n\nWrite ONE thorough paragraph titled 'assessment' (3–7 sentences) that explains the creator's current strengths and weaknesses and the biggest opportunities ahead. Be encouraging and helpful with no fluff. Use the percentages as directional signals, not verdicts. Include 1–2 specific next steps.\n\nPERCENTAGES:\n${JSON.stringify(pctFromAnswers, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT:\n{"assessment":"..."}`,
+          timeoutMs: 45_000,
+          maxTokens: 500,
+        }, 1)
+        if (assess && typeof assess.assessment === 'string') assessmentText = assess.assessment
+      } catch {
+        // fall back later
+      } finally {
+        await setProgress('assessment_ready', 70)
+      }
+    })()
+
+    const insightsPromise = (async () => {
+      try {
+        const insight = await callClaudeJSONWithRetry<Record<string, string>>({
+          prompt: `You are Marketing Mentor. Return JSON only.\n\nWrite one concise but thorough paragraph (3–5 sentences) for EACH of these keys explaining what the user's onboarding answers suggest and the top opportunity to improve that dimension. Encouraging, specific, no fluff.\nKeys: overall, consistency, camera_comfort, planning, tech_comfort, audience_readiness, interest_breadth, experimentation.\n\nPERCENTAGES:\n${JSON.stringify(pctFromAnswers, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT (flat object with those exact keys):\n{"overall":"","consistency":"","camera_comfort":"","planning":"","tech_comfort":"","audience_readiness":"","interest_breadth":"","experimentation":""}`,
+          timeoutMs: 50_000,
+          maxTokens: 900,
+        }, 1)
+        if (insight && typeof insight === 'object') insightsObj = insight
+      } catch {
+        // fall back later
+      } finally {
+        await setProgress('insights_ready', 80)
+      }
+    })()
+
+    // Wait for all 3 to settle (no throw)
+    await Promise.allSettled([planPromise, assessmentPromise, insightsPromise])
 
     let plan = finalizePlan(raw, answers, fame);
 
-    // Add a one-time, thorough fame assessment paragraph based on onboarding + breakdown
-    await setProgress('assessment', 55)
-    try {
-      const breakdown = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
-      const pct: Record<string, number> = {
-        overall: Math.round(plan.fame_score ?? 0),
-      }
-      for (const b of breakdown) pct[b.key] = Math.round(Number(b.percent) || 0)
-      const assess = await callClaudeJSONWithRetry<{ assessment: string }>({
-        prompt: `You are Marketing Mentor, a social media growth expert. Return JSON only.\n\nWrite ONE thorough paragraph titled 'assessment' (3–7 sentences) that explains the creator's current strengths and weaknesses and the biggest opportunities ahead. Be encouraging and helpful with no fluff. Use the percentages as directional signals, not verdicts. Include 1–2 specific next steps.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT:\n{"assessment":"..."}`,
-        timeoutMs: 45000,
-        maxTokens: 500,
-      }, 1)
-      if (assess && typeof assess.assessment === 'string') {
-        (plan as any).fame_assessment = assess.assessment
-      }
-    } catch {
-      // simple fallback so UI never blocks
-      const overall = Math.round(plan.fame_score ?? 0)
+    // Attach assessment (or reasonable fallback)
+    if (assessmentText) {
+      ;(plan as any).fame_assessment = assessmentText
+    } else {
+      const overall = Math.round(plan.fame_score ?? fame ?? 0)
       ;(plan as any).fame_assessment = `You have solid raw potential (around ${overall}%). Lean on your strongest habits and formats, and shore up the weakest link in your weekly workflow. Keep your scope narrow for two weeks, post on a steady cadence, and run one small experiment per post. This combination compounds quickly.`
     }
 
-    // Per-section insights to show under each section on Fame Insights page
-    await setProgress('insights', 75)
-    try {
-      const breakdown = Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []
-      const pct: Record<string, number> = {
-        overall: Math.round(plan.fame_score ?? 0),
-      }
-      for (const b of breakdown) pct[b.key] = Math.round(Number(b.percent) || 0)
-      const insight = await callClaudeJSONWithRetry<Record<string, string>>({
-        prompt: `You are Marketing Mentor. Return JSON only.\n\nWrite one concise but thorough paragraph (3–5 sentences) for EACH of these keys explaining what the user's onboarding answers suggest and the top opportunity to improve that dimension. Encouraging, specific, no fluff.\nKeys: overall, consistency, camera_comfort, planning, tech_comfort, audience_readiness, interest_breadth, experimentation.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT (flat object with those exact keys):\n{"overall":"","consistency":"","camera_comfort":"","planning":"","tech_comfort":"","audience_readiness":"","interest_breadth":"","experimentation":""}`,
-        timeoutMs: 50000,
-        maxTokens: 900,
-      }, 1)
-      if (insight && typeof insight === 'object') {
-        (plan as any).fame_section_insights = insight
-      }
-    } catch {
+    // Attach insights (or safe defaults)
+    if (insightsObj) {
+      ;(plan as any).fame_section_insights = insightsObj
+    } else {
       const mk = (k: string) => `This area can move fast with one small weekly ritual focused on ${k.replace(/_/g,' ')}. Keep changes tiny and measurable for the next 14 days to build momentum.`
       ;(plan as any).fame_section_insights = {
         overall: mk('overall execution'),

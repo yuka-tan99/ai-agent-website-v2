@@ -63,7 +63,7 @@ export default function ReportSummary({ plan: planProp }: Props) {
   const [plan, setPlan] = React.useState<Plan | null>(planProp ?? null)
   const [loading, setLoading] = React.useState(!planProp)
   const [open, setOpen] = React.useState<null | string>(null) // <-- accordion state
-  const [openFame, setOpenFame] = React.useState(false)
+  const [openFame, setOpenFame] = React.useState(true)
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => { setMounted(true) }, [])
@@ -128,7 +128,7 @@ const S = normalizeAllSections(plan.sections || {})
                 <Breakdown items={Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []} />
               </div>
               <div className="mt-5 flex justify-center">
-                <a href="/dashboard/fame-insights" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</a>
+                <Link href="/dashboard/fame-insights" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
               </div>
             </>
           )}
@@ -144,6 +144,9 @@ const S = normalizeAllSections(plan.sections || {})
               <p className="text-gray-700 text-sm leading-6">{plan.main_problem_detail}</p>
             )}
           </div>
+          <div className="mt-2 text-center">
+            <Link href="/dashboard/learn/main-problem" className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+          </div>
         </section>
       </div>
 
@@ -156,7 +159,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="ai"
         extra={
           <div className="mt-5 flex justify-center">
-            <a href="/dashboard/ai-psych" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</a>
+            <Link href="/dashboard/ai-psych" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
           </div>
         }
       />
@@ -166,6 +169,11 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "fp" ? null : "fp")}
         section={S.foundational_psychology}
         icon="foundation"
+        extra={
+          <div className="mt-5 flex justify-center">
+            <Link href="/dashboard/learn/foundational-psych" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+          </div>
+        }
       />
       <Accordion
         title="platform-specific strategies"
@@ -176,6 +184,9 @@ const S = normalizeAllSections(plan.sections || {})
         extra={
           <div className="mt-4">
             <MiniDonut data={S.platform_specific_strategies?.charts?.platform_focus || []} />
+            <div className="mt-5 flex justify-center">
+              <Link href="/dashboard/learn/platform-strategies" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            </div>
           </div>
         }
       />
@@ -185,6 +196,11 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "cs" ? null : "cs")}
         section={S.content_strategy}
         icon="content"
+        extra={
+          <div className="mt-5 flex justify-center">
+            <Link href="/dashboard/learn/content-strategy" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+          </div>
+        }
       />
       <Accordion
         title="posting frequency"
@@ -192,6 +208,11 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "pf" ? null : "pf")}
         section={S.posting_frequency}
         icon="posting"
+        extra={
+          <div className="mt-5 flex justify-center">
+            <Link href="/dashboard/learn/posting-frequency" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+          </div>
+        }
       />
       <Accordion
         title="metrics & mindset"
@@ -199,6 +220,11 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "mm" ? null : "mm")}
         section={S.metrics_mindset}
         icon="metrics"
+        extra={
+          <div className="mt-5 flex justify-center">
+            <Link href="/dashboard/learn/metrics-mindset" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+          </div>
+        }
       />
       <Accordion
         title="mental health"
@@ -206,9 +232,14 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "mh" ? null : "mh")}
         section={S.mental_health}
         icon="mental"
+        extra={
+          <div className="mt-5 flex justify-center">
+            <Link href="/dashboard/learn/mental-health" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+          </div>
+        }
       />
 
-      <div className="flex justify-center mt-10">
+      <div className="flex flex-col items-center gap-3 mt-10">
         <button className="rounded-full px-8 py-4 bg-[var(--accent-grape)] text-white">download full report</button>
       </div>
     </div>

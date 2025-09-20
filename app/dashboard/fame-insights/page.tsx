@@ -34,7 +34,7 @@ export default async function FameInsightsPage() {
       <main className="container py-8">
         <FadeIn>
           <div className="mb-4">
-            <a href="/dashboard" className="inline-flex items-center h-11 px-2 rounded-md text-sm text-gray-600 hover:text-gray-900">&larr; Back</a>
+            <a href="/dashboard" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">← back</a>
           </div>
           <div className="dashboard-card p-6 text-center">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">no report yet</h2>
@@ -105,7 +105,7 @@ export default async function FameInsightsPage() {
     <main className="container py-8">
       <FadeIn>
         <div className="mb-4">
-          <a href="/dashboard" className="inline-flex items-center h-11 px-2 rounded-md text-sm text-gray-600 hover:text-gray-900">&larr; Back</a>
+          <a href="/dashboard" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">← back</a>
         </div>
         <div className="text-center mb-6">
           <h1 className="report-title">understand your fame potential score</h1>

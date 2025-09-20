@@ -47,13 +47,10 @@ export default async function DashboardPage() {
   if (rep?.plan) {
       return (
         <main className="container py-10">
-          <div className="sticky top-0 left-0 z-20 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/50">
-            <div className="max-w-5xl mx-auto px-4 py-3">
-              <Link href="/account" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors" aria-label="Back">
-                <span className="-ml-1">←</span>
-                back
-              </Link>
-            </div>
+          <div className="mb-4">
+            <Link href="/account" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">
+              ← back
+            </Link>
           </div>
           {DEV_BYPASS 
           // && (

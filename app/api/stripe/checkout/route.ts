@@ -66,16 +66,11 @@ export async function POST(req: Request) {
   }
   const redirectAfter = product === 'ai' ? '/account' : '/dashboard'
   const cancelPath = product === 'ai' ? '/paywall/ai' : '/paywall'
-  // For plan purchases, land directly on the preparing page (with session_id)
-  const successPath = product === 'plan'
-    ? `/dashboard/preparing?session_id={CHECKOUT_SESSION_ID}`
-    : `/success?session_id={CHECKOUT_SESSION_ID}&redirect=${encodeURIComponent(redirectAfter)}`
-
   const session = await stripe.checkout.sessions.create({
     mode,
     line_items: [{ price: chosenPrice, quantity: 1 }],
-    // Land on preparing (plan) or success (ai)
-    success_url: `${appUrl}${successPath}`,
+    // Land on /success to poll while webhook processes
+    success_url: `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}&redirect=${encodeURIComponent(redirectAfter)}`,
     cancel_url: `${appUrl}${cancelPath}`,
     client_reference_id: user.id,
     // Ensure metadata propagates to PaymentIntent/Subscription/Invoice for webhook correlation

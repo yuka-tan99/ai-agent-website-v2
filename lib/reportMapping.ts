@@ -5,26 +5,166 @@ const asArray = (v: any): string[] => (!v ? [] : Array.isArray(v) ? v : [v])
 
 /* ---------------- Normalize onboarding ---------------- */
 export function normalizeAnswers(p: Persona) {
+  // Support decision-tree answers (Q1..Q18) + __vars
+  const hasQ = Object.keys(p || {}).some(k => /^Q\d/.test(k)) || !!(p as any).__vars
+  if (hasQ) {
+    const v = ((p as any).__vars || {}) as Record<string, any>
+    const getArr = (k: string): string[] => {
+      const a = (p as any)[k]
+      return Array.isArray(a) ? a : typeof a === 'string' && a ? [a] : []
+    }
+    const mapPlatforms = () => {
+      const fromVars = [
+        v.platform_pref_tiktok ? 'TikTok' : null,
+        v.platform_pref_instagram ? 'Instagram' : null,
+        v.platform_pref_youtube ? 'YouTube' : null,
+        v.platform_pref_twitter ? 'Twitter/X' : null,
+        v.platform_pref_linkedin ? 'LinkedIn' : null,
+      ].filter(Boolean) as string[]
+      if (fromVars.length) return fromVars
+      const q = getArr('Q11')
+      const map: Record<string,string> = { tiktok:'TikTok', instagram:'Instagram', youtube:'YouTube', twitter:'Twitter/X', linkedin:'LinkedIn' }
+      return q.map((x)=> map[x] || x).slice(0,4)
+    }
+    const face = (() => {
+      const vis = String(v.visibility || '')
+      if (/face_on/.test(vis)) return 'yes'
+      if (/faceless/.test(vis)) return 'no'
+      return 'maybe'
+    })()
+    const camera = String(v.visibility || '')
+    const timeAvailable = (() => {
+      const t = String(v.time_mode || '')
+      if (/pro_daily|team/.test(t)) return '10+ hours'
+      if (/micro_daily/.test(t)) return '5-10 hours'
+      if (/batch_weekly/.test(t)) return '2-5 hours'
+      return ''
+    })()
+    const holdingBack = (() => {
+      const q = getArr('Q3')
+      const map: Record<string,string> = {
+        no_niche: "i don't know what to post",
+        inconsistent: "i can't stay consistent",
+        low_engagement: "my content isn't getting attention",
+        fear_judgment: "i'm afraid of judgment",
+        low_time: "i don't have much time",
+        inauthentic: 'i feel inauthentic',
+        overwhelm: "i'm overwhelmed by advice",
+        technical: 'technical stuff confuses me',
+        comparison: 'i compare myself to others',
+        stalled: 'my growth has completely stalled',
+      }
+      return q.map(x=> map[x] || x)
+    })()
+    const topics = (() => {
+      const raw = (p as any).Q10
+      if (Array.isArray(raw)) return raw.filter((s:any)=> typeof s === 'string' && s.trim()).map((s:string)=> s.trim())
+      const t = String(raw || '').trim()
+      if (!t) return []
+      return t.split(/[,\n]/).map(s=>s.trim()).filter(Boolean)
+    })()
+    const goals = (() => {
+      const q = getArr('Q4')
+      return q
+    })()
+
+    return {
+      creatingAs: v.identity || '',
+      identity: v.stage || '',
+      goals,
+      platforms: mapPlatforms(),
+      topics,
+      trends: [],
+      creativity: [],
+      reach: [],
+      face,
+      camera,
+      vibe: [],
+      planVsWing: '',
+      contentEnjoyMaking: [],
+      contentLoveWatching: [],
+      timeAvailable,
+      techComfort: '',
+      feedbackApproach: '',
+      holdingBack,
+      triedButDidntWork: [],
+      monetizationMethods: [],
+    }
+  }
+  // Backward-compat: support both legacy and new onboarding keys
+  const whyHere = p.whyHere as string | undefined
+  const journeyStage = p.journeyStage as string | undefined
+  const biggestChallenges = asArray((p as any).biggestChallenges)
+  const success6mo = asArray((p as any).success6mo)
+  const drivingForces = asArray((p as any).drivingForces)
+  const desiredFeeling = asArray((p as any).desiredFeeling)
+  const contentNatural = asArray((p as any).contentNatural)
+  const visibilityComfort = (p as any).visibilityComfort as string | undefined
+  const creationReality = (p as any).creationReality as string | undefined
+  const deepTopics = asArray((p as any).deepTopics)
+  const naturalPlatforms = asArray((p as any).naturalPlatforms)
+  const whoNeeds = asArray((p as any).whoNeeds)
+  const ageGroup = (p as any).ageGroup as string | undefined
+  const metricsAttitude = (p as any).metricsAttitude as string | undefined
+  const fears = asArray((p as any).fears)
+  const triedAlready = asArray((p as any).triedAlready)
+  const handleCriticism = (p as any).handleCriticism as string | undefined
+  const monetization = (p as any).monetization as string | undefined
+  const dreamPercent = (p as any).dreamPercent as string | undefined
+
+  const mapPlanWing = (s?: string) => {
+    if (!s) return ''
+    if (/batch|dedicate|team/i.test(s)) return 'plan-first'
+    if (/unpredictable|motivation/i.test(s)) return 'wing-it'
+    if (/15-30|min/i.test(s)) return 'hybrid'
+    return ''
+  }
+  const mapTime = (s?: string) => {
+    if (!s) return ''
+    if (/several hours daily|team/i.test(s)) return '10+ hours'
+    if (/15-30|min/i.test(s)) return '5-10 hours'
+    if (/batch create on weekends/i.test(s)) return '2-5 hours'
+    return ''
+  }
+  const facePref = (() => {
+    if (!visibilityComfort) return ''
+    if (/love being on camera/i.test(visibilityComfort)) return 'yes'
+    if (/stay completely behind/i.test(visibilityComfort)) return 'no'
+    return 'maybe'
+  })()
+
+  const goalsCombined = [
+    ...asArray(p.goal),
+    ...success6mo,
+    ...drivingForces,
+  ]
+
+  const reachCombined = [
+    ...asArray(p.reach),
+    ...whoNeeds,
+    ...(ageGroup ? [ageGroup] : []),
+  ]
+
   return {
-    creatingAs: p.creatingAs || "",
-    identity: p.identity || "",
-    goals: asArray(p.goal),
-    platforms: asArray(p.platforms || p.platformFocus || p.focusPlatforms),
-    topics: asArray(p.topics),
-    trends: asArray(p.trends),
-    creativity: asArray(p.creativity),
-    reach: asArray(p.reach),
-    face: Array.isArray(p.face) ? p.face.join(", ") : p.face || "",
-    camera: Array.isArray(p.camera) ? p.camera.join(", ") : p.camera || "",
-    vibe: asArray(p.vibe || p.friendsDescribe || p.personality),
-    planVsWing: p.planVsWing || "",
-    contentEnjoyMaking: asArray(p.contentEnjoyMaking),
+    creatingAs: p.creatingAs || whyHere || "",
+    identity: p.identity || journeyStage || "",
+    goals: goalsCombined,
+    platforms: asArray(p.platforms || p.platformFocus || p.focusPlatforms).length ? asArray(p.platforms || p.platformFocus || p.focusPlatforms) : naturalPlatforms,
+    topics: asArray(p.topics).length ? asArray(p.topics) : deepTopics,
+    trends: asArray(p.trends).length ? asArray(p.trends) : (contentNatural.some(s=>/trend/i.test(s)) ? ['trends'] : []),
+    creativity: asArray(p.creativity).length ? asArray(p.creativity) : contentNatural,
+    reach: reachCombined,
+    face: Array.isArray(p.face) ? p.face.join(", ") : (p.face || facePref || ""),
+    camera: Array.isArray(p.camera) ? p.camera.join(", ") : (p.camera || visibilityComfort || ""),
+    vibe: asArray(p.vibe || p.friendsDescribe || p.personality).length ? asArray(p.vibe || p.friendsDescribe || p.personality) : desiredFeeling,
+    planVsWing: p.planVsWing || mapPlanWing(creationReality),
+    contentEnjoyMaking: asArray(p.contentEnjoyMaking).length ? asArray(p.contentEnjoyMaking) : contentNatural,
     contentLoveWatching: asArray(p.contentLoveWatching),
-    timeAvailable: p.timeAvailable || "",
+    timeAvailable: p.timeAvailable || mapTime(creationReality),
     techComfort: p.techComfort || "",
-    feedbackApproach: p.feedbackApproach || "",
-    holdingBack: asArray(p.holdingBack),
-    triedButDidntWork: asArray(p.triedButDidntWork),
+    feedbackApproach: p.feedbackApproach || handleCriticism || "",
+    holdingBack: asArray(p.holdingBack).length ? asArray(p.holdingBack) : [...biggestChallenges, ...fears],
+    triedButDidntWork: asArray(p.triedButDidntWork).length ? asArray(p.triedButDidntWork) : triedAlready,
     monetizationMethods: asArray(p.monetizationMethods),
   }
 }
@@ -260,6 +400,7 @@ STRICT RULES:
 - Make every bullet a command or a concrete example.
 - Keep sentences short. Prefer verbs at the start.
 - Produce VALID JSON ONLY (no trailing commas, no comments, no extra keys). Do not include any text outside the JSON object. Escape internal quotes. Keep array items as simple strings without newlines.
+ - If OPTIONAL_KB is provided, prefer its content for relevant sections. Weave 1–2 concrete insights per relevant section and cite the source book title once in that section (e.g., "(Source: Title)").
 - Do not include any other keys than in the schema.
 `
 

@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({} as any));
-    const { persona: personaOverride, kbText = "", force = true, model } = body;
+    let { persona: personaOverride, kbText = "", force = true, model, kb_docs } = body as any;
     if (process.env.DEBUG_LOG === 'true') {
       console.log("[/api/report][POST] user:", user.id, "force:", !!force, "model:", model || '(default)', "personaOverride:", !!personaOverride);
     }
@@ -86,6 +86,37 @@ export async function POST(req: NextRequest) {
     }
 
     const persona = personaOverride ?? (ob.data?.answers ?? {});
+
+    // If specific knowledge-base documents are requested by title, stitch their chunks as context
+    if (Array.isArray(kb_docs) && kb_docs.length) {
+      try {
+        const titles: string[] = kb_docs.filter((s: any) => typeof s === 'string' && s.trim()).slice(0, 8);
+        if (titles.length) {
+          const { data: docs } = await admin.from('kb_documents').select('id,title').in('title', titles);
+          const idByTitle = new Map<string, string>();
+          (docs || []).forEach(d => idByTitle.set(d.title, d.id));
+          let assembled = '';
+          for (const t of titles) {
+            const id = idByTitle.get(t);
+            if (!id) continue;
+            const { data: chunks } = await admin
+              .from('kb_chunks')
+              .select('content, chunk_idx')
+              .eq('document_id', id)
+              .order('chunk_idx', { ascending: true })
+              .limit(12);
+            const text = (chunks || []).map(c => c.content).join('\n');
+            if (text) {
+              assembled += `\n\n=== SOURCE: ${t} ===\n${text.slice(0, 8000)}`; // cap per source
+            }
+          }
+          if (assembled) kbText = `${kbText}\n${assembled}`.trim();
+        }
+      } catch (e) {
+        console.warn('[/api/report] kb_docs assembly failed:', (e as any)?.message || e);
+      }
+    }
+
     const { prompt, fame, answers } = prepareReportInputs(persona, kbText);
 
     await setProgress('generating_plan', 25)

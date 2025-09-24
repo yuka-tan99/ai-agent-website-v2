@@ -50,9 +50,12 @@ export async function POST(req: Request) {
     if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 })
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-    const service = process.env.SUPABASE_SERVICE_KEY as string
-    if (!url || !service) {
-      return NextResponse.json({ error: "Supabase not configured" }, { status: 500 })
+    const service = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY) as string
+    if (!url) {
+      return NextResponse.json({ error: "Supabase not configured: missing NEXT_PUBLIC_SUPABASE_URL" }, { status: 500 })
+    }
+    if (!service) {
+      return NextResponse.json({ error: "Supabase not configured: missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_KEY)" }, { status: 500 })
     }
 
     const ab = await file.arrayBuffer()

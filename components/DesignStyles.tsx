@@ -111,6 +111,24 @@ export default function DesignStyles() {
         [data-mentor-ui] .pulse-gentle { animation: none !important; }
       }
 
+      /* Onboarding continue button + page fade transitions */
+      [data-mentor-ui] .continue-btn {
+        transition: transform .26s cubic-bezier(.22,1,.36,1), box-shadow .26s ease, opacity .26s ease;
+        will-change: transform, box-shadow, opacity;
+      }
+      [data-mentor-ui] .continue-btn.is-pressed {
+        transform: scale(1.06);
+        box-shadow: 0 14px 40px color-mix(in oklab, var(--accent-grape) 35%, transparent);
+      }
+      [data-mentor-ui] .onb-wrap {
+        transition: opacity .28s ease, transform .28s ease;
+        will-change: opacity, transform;
+      }
+      [data-mentor-ui] .onb-wrap.is-fading {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+
       /* ===== Password modal ===== */
       [data-mentor-ui] .pw-modal { position: fixed; inset: 0; z-index: 100; }
       [data-mentor-ui] .pw-backdrop { position: absolute; inset: 0; background: rgba(17,24,39,.45); backdrop-filter: blur(2px); }

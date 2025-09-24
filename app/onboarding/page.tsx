@@ -25,7 +25,7 @@ type Question = BaseQ & {
 const Button = ({ label, active, onClick }: any) => (
   <button
     onClick={onClick}
-    className={`px-6 py-3.5 rounded-full min-w-[240px] text-base font-medium transition text-center
+    className={`px-6 py-3.5 rounded-full min-w-[240px] text-lg font-medium transition text-center
       ${active ? 'bg-[#D9B8E3] text-black border border-transparent' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'}`}
   >
     {label}
@@ -47,270 +47,248 @@ const OtherInput = ({
 
 /** -------------------- QUESTIONS -------------------- */
 const questions: Question[] = [
+  // 1. Identity & Starting Point
   {
-    id: 'creatingAs',
-    text: 'are you creating as?',
+    id: 'whyHere',
+    text: 'what brings you here today?',
     multiple: false,
     options: [
-      'a personal brand (influencer, artist, creator)',
-      'a business or product brand',
-      'a public figure (musician, coach, expert)',
-      'a hobbyist sharing for fun',
-      'not sure yet',
+      'I want to grow my personal brand',
+      'I need to market my business/product',
+      "I'm an artist/creator seeking visibility",
+      'I want to monetize my existing following',
+      "I'm stuck and need a breakthrough",
+      "Just exploring what's possible",
     ],
-    sub: {
-      'not sure yet': {
-        id: 'creatingAs_explore',
-        text: 'what best describes your situation?',
-        multiple: true,
-        options: ['exploring options', 'need help defining'],
-      },
-    },
   },
   {
-    id: 'identity',
-    text: 'who are you now..?',
+    id: 'journeyStage',
+    text: 'where are you on your journey?',
     multiple: false,
     options: [
-      'starting from basically zero',
-      'have a small but engaged following',
-      'have a following but feel stuck',
-      'have a large following but want more engagement',
-      'looking to pivot or redefine my brand',
+      'Starting from scratch (< 100 followers)',
+      'Building momentum (100-1K followers)',
+      'Growing steadily (1K-10K followers)',
+      'Established but plateauing (10K-50K followers)',
+      'Large following seeking optimization (50K+ followers)',
+      'Had success before, starting fresh',
     ],
-    sub: {
-      id: 'stuckReason',
-      text: 'what does "stuck" feel like?',
-      multiple: true,
-      options: ['my growth has plateaued', 'not sure what content to make next', 'my engagement is dropping', 'feeling uninspired'],
-    },
   },
   {
-    id: 'goal',
-    text: 'what are your main goals?',
+    id: 'biggestChallenges',
+    text: "what's your biggest challenge right now? (select up to 3)",
     multiple: true,
     options: [
-      'build community and express creativity',
-      'monetize with brand deals',
-      'promote music or art',
-      'sell a service | product',
-      'become a recognized expert | authority',
-      'share my journey | life authentically',
-      'drive traffic to my website | business',
+      "I don't know what to post about",
+      "I can't stay consistent",
+      'My content gets no engagement',
+      'I\'m afraid of being judged',
+      "I don't have enough time",
+      'I feel inauthentic/fake',
+      "I'm overwhelmed by all the advice",
+      'Technical stuff confuses me',
+      'I compare myself to others constantly',
+      'My growth has completely stalled',
     ],
   },
+
+  // 2. Vision & Goals
   {
-    id: 'monetizationMethods',
-    text: 'how do you ideally want to make money from your content?',
-    multiple: true,
-    options: [
-      'brand deals | sponsorships',
-      'selling my own physical products',
-      'selling my own digital products (e.g., ebooks, courses)',
-      'selling my own services (e.g., coaching, consulting)',
-      'affiliate marketing',
-      'ad revenue (views, clicks)',
-      'crowdfunding (patreon, ko-fi)',
-      'live stream donations | tips',
-      "i'm open to any monetization method",
-    ],
-    when: (a) => Array.isArray(a.goal) && a.goal.some((g: string) => /monetize|sell|brand deals|service|product|revenue/i.test(g)),
-  },
-  {
-    id: 'face',
-    text: 'do you want to show your face in your content?',
-    multiple: false,
-    options: ['yes, I’m cool with that', 'no, I’d rather stay behind the scenes', 'maybe / I’m not sure yet'],
-    sub: { id: 'howOften', text: 'how often?', multiple: false, options: ['in all my videos', 'occasionally', 'in photos but not video', 'for live streams'] },
-  },
-  {
-    id: 'camera',
-    text: 'how do you feel about being on camera?',
-    multiple: false,
-    options: [
-      'love it - comfortable talking | performing',
-      'It’s okay - depends on the day | content',
-      'kinda awkward - prefer voiceovers | edits',
-      'no thanks - rather stay off-camera',
-    ],
-    sub: {
-      id: 'comfortable',
-      text: 'what makes you comfortable?',
-      multiple: true,
-      options: ['I’m a natural entertainer', 'I enjoy public speaking', 'I feel confident', 'I love connecting directly'],
-    },
-  },
-  {
-    id: 'topics',
-    text: 'what topics do you love talking about most?',
-    multiple: true,
-    options: [
-      'my passion | hobby',
-      'my expertise | job',
-      'my daily life',
-      'current events | trends',
-      'a specific product | service',
-      'art | music | creativity',
-      'education | giving tips',
-      'personal stories | experiences',
-      'comedy | entertainment',
-      'something else...',
-    ],
-    sub: {
-      id: 'trends',
-      text: 'what kind of trends?',
-      multiple: true,
-      options: ['pop culture commentary', 'news & politics', 'industry trends', 'viral challenges'],
-    },
-    sub2: {
-      id: 'creativity',
-      text: 'how do you share your creativity?',
-      multiple: true,
-      options: ['my creative process', 'tutorials & how-tos', 'critiques & reviews', 'artist showcases'],
-    },
-  },
-  {
-    id: 'reach',
-    text: 'who are you trying to reach?',
-    multiple: true,
-    options: [
-      'people with similar interests | hobbies',
-      'potential customers for my business',
-      'other creators | industry peers',
-      'a broad general audience',
-      'a specific age group',
-      'people in a specific location',
-      'I haven’t thought about this yet',
-    ],
-  },
-  {
-    id: 'platforms',
-    text: 'what platforms do you use or want to grow on?',
-    multiple: true,
-    allowOther: true,
-    options: ['instagram', 'tiktok', 'youtube', 'twitter/x', 'facebook', 'pinterest', 'linkedin', 'twitch', 'other'],
-  },
-  {
-    id: 'contentEnjoyMaking',
-    text: 'what kind of content do you enjoy making (or think you’d enjoy)?',
-    multiple: true,
-    options: [
-      'talking to the camera (vlogs, direct address)',
-      'writing (captions, tweets, posts)',
-      'visuals (design, aesthetics, photos, graphics)',
-      'funny or entertaining content (skits, memes)',
-      'teaching, giving tips or value',
-      'music or audio-based content',
-      'behind-the-scenes or casual vibes',
-      'live streaming | interactive q&as',
-      'storytelling | sharing personal journeys',
-    ],
-  },
-  {
-    id: 'vibe',
-    text: 'how would your friends describe your vibe?',
-    multiple: true,
-    options: [
-      'loud | high energy',
-      'chill and calm',
-      'funny | witty',
-      'deep | thoughtful',
-      'inspiring | motivational',
-      'creative | artsy',
-      'professional | serious',
-      'unique | edgy',
-      'approachable | friendly',
-    ],
-  },
-  {
-    id: 'planVsWing',
-    text: 'do you like planning things ahead or just winging it?',
-    multiple: false,
-    options: ['i like to plan content in advance', 'i prefer posting in the moment', 'a mix of both'],
-  },
-  {
-    id: 'contentLoveWatching',
-    text: 'what kind of content do you love watching?',
+    id: 'success6mo',
+    text: 'what does success look like for you in 6 months?',
     multiple: true,
     allowOther: true,
     options: [
-      'vlogs or day-in-the-life videos',
-      'quick tips or how-tos',
-      'entertaining | funny skits or memes',
-      'aesthetic visuals (design, fashion, photography)',
-      'deep or emotional content',
-      'music or performance content',
-      'storytime or personal shares',
-      'live content (streams, q&as)',
-      'raw, uncut, or honest moments',
-      'advice or motivational talk',
-      'reviews or unboxings',
-      'educational or thought-provoking content',
-      'trending or challenge content',
-      'niche-specific content related to my interests',
+      'Consistent posting without anxiety',
+      'A clear brand identity people recognize',
+      'Regular engagement from my community',
+      'First paying clients/customers',
+      'Brand deals and sponsorships',
+      'Selling my own products/services',
+      'Just feeling confident and authentic',
       'other',
     ],
   },
   {
-    id: 'holdingBack',
-    text: "what's holding you back right now?",
+    id: 'drivingForces',
+    text: "what's driving you? (select all that resonate)",
+    multiple: true,
+    options: [
+      'Financial freedom',
+      'Creative expression',
+      'Helping others with my knowledge',
+      'Building a legacy',
+      'Escaping traditional employment',
+      'Connecting with like-minded people',
+      'Proving something to myself/others',
+      'Having fun and experimenting',
+    ],
+  },
+  {
+    id: 'desiredFeeling',
+    text: 'how do you want people to feel after consuming your content?',
+    multiple: true,
+    options: [
+      'Inspired and motivated',
+      'Educated and informed',
+      'Entertained and amused',
+      'Comforted and understood',
+      'Challenged to think differently',
+      'Aesthetically pleased',
+      'Part of a community',
+      'Excited to take action',
+    ],
+  },
+
+  // 3. Content & Comfort Zone
+  {
+    id: 'contentNatural',
+    text: 'what type of content feels most natural to you?',
+    multiple: true,
+    options: [
+      'Teaching/explaining things I know',
+      'Sharing my daily life and experiences',
+      'Creating entertaining/funny content',
+      'Showcasing visual aesthetics',
+      'Having deep conversations',
+      'Documenting my process/journey',
+      'Reacting to trends/current events',
+      'Building/making things',
+    ],
+  },
+  {
+    id: 'visibilityComfort',
+    text: 'how do you feel about being visible?',
+    multiple: false,
+    options: [
+      'Love being on camera, very comfortable',
+      'OK with video but prefer edited/prepared content',
+      'Prefer voiceovers with visuals',
+      'Want to stay completely behind the scenes',
+      'Depends on my mood/topic',
+      'Want to work up to showing my face',
+    ],
+  },
+  {
+    id: 'creationReality',
+    text: "what's your content creation reality?",
+    multiple: false,
+    options: [
+      'I can batch create on weekends',
+      'I have 15-30 minutes daily',
+      'I can dedicate several hours daily',
+      'My schedule is unpredictable',
+      'I have help/team support',
+      "Time isn't an issue, motivation is",
+    ],
+  },
+  {
+    id: 'deepTopics',
+    text: 'what topics could you talk about for hours? (select or add your own)',
     multiple: true,
     allowOther: true,
     options: [
-      "i don't know what to post",
-      'i feel stuck or not confident',
-      "i can't stay consistent",
-      "my content isn't getting attention",
-      "i don't have much time",
-      "i'm not sure how to monetize effectively",
-      "i'm afraid of judgment or negative feedback",
-      'something else',
+      'professional expertise', 'life experiences', 'creative processes', 'industry insights', 'specific hobbies', 'other'
     ],
   },
+
+  // 4. Platform & Audience
   {
-    id: 'triedButDidntWork',
-    text: "what have you tried for growth that didn't work well?",
+    id: 'naturalPlatforms',
+    text: 'where do you naturally spend time online?',
     multiple: true,
     options: [
-      'posting more often',
-      'engaging with others in my niche',
-      'following viral trends',
-      'using specific hashtags | keywords',
-      'running paid ads',
-      'collaborating with others',
-      'changing my content format or style',
-      'posting at specific times',
-      "i haven't tried anything specific yet",
+      'TikTok (I love short videos)',
+      'Instagram (Visual storytelling is my thing)',
+      'YouTube (Long-form content consumer)',
+      'Twitter/X (Quick thoughts and conversations)',
+      'LinkedIn (Professional networking)',
+      'Multiple platforms equally',
+      'Mostly lurking, not participating yet',
     ],
   },
   {
-    id: 'timeAvailable',
-    text: 'how much time can you realistically spend on content creation and engagement each week?',
-    multiple: false,
-    options: ['less than 2 hours', '2-5 hours', '5-10 hours', '10+ hours'],
-  },
-  {
-    id: 'techComfort',
-    text: 'how comfortable are you with the technical side (editing, analytics)?',
-    multiple: false,
-    options: ['very comfortable', 'willing to learn', 'i can manage the basics but find it challenging', 'i prefer to delegate or avoid it'],
+    id: 'whoNeeds',
+    text: 'who needs what you have to offer?',
+    multiple: true,
+    options: [
+      'People starting where I once was',
+      'Professionals in my industry',
+      'People with similar interests/hobbies',
+      'Local community/geography specific',
+      'Specific age group',
+      'Anyone who resonates with my message',
+      "I honestly don't know yet",
+    ],
     sub: {
-      id: 'techGaps',
-      text: 'which areas do you want help with?',
-      multiple: true,
-      options: ['video editing', 'photo editing | design', 'using analytics', 'posting | scheduling'],
+      'Specific age group': {
+        id: 'ageGroup',
+        text: 'which age group?',
+        multiple: false,
+        options: ['Gen Z', 'Millennials', 'Gen X', 'Boomers'],
+      },
     },
   },
   {
-    id: 'feedbackApproach',
-    text: 'which statement best describes your approach to feedback or criticism?',
+    id: 'metricsAttitude',
+    text: "what's your relationship with data and metrics?",
     multiple: false,
     options: [
-      'i welcome constructive criticism to improve',
-      "i take feedback personally, it's hard to hear",
-      "i don't often receive feedback",
-      'i mostly ignore feedback unless it\'s consistent',
-      'i prefer data | analytics over personal feedback',
+      'I obsessively check stats',
+      "I look occasionally but don't stress",
+      'Numbers make me anxious',
+      'I ignore them completely',
+      'I want to learn to use them better',
+      'I prefer qualitative feedback',
+    ],
+  },
+
+  // 5. Barriers & History
+  {
+    id: 'fears',
+    text: 'what specific fears hold you back? (select all)',
+    multiple: true,
+    options: [
+      'Being cringy or embarrassing', 'Family/friends judging me', 'Strangers leaving mean comments', 'Not being good enough', 'Copying others/not being original', 'Technical mistakes', 'Cancel culture/saying wrong thing', 'Success changing me', 'No fears, just need direction'
+    ],
+  },
+  {
+    id: 'triedAlready',
+    text: 'what have you already tried?',
+    multiple: true,
+    options: [
+      'Posting consistently for a while', 'Following trends religiously', 'Expensive courses/coaching', 'Different content styles', 'Paid advertising', 'Nothing substantial yet', "Everything, I'm exhausted"
+    ],
+  },
+  {
+    id: 'handleCriticism',
+    text: 'how do you handle criticism?',
+    multiple: false,
+    options: [
+      'I use it to improve', 'It crushes me for days', 'I get defensive', 'I ignore it mostly', 'Depends who it\'s from', "Haven't faced much yet"
+    ],
+  },
+
+  // 6. Monetization & Growth
+  {
+    id: 'monetization',
+    text: 'when it comes to making money from this...',
+    multiple: false,
+    options: [
+      'I need income ASAP',
+      "I'm building long-term, no rush",
+      'I want multiple revenue streams',
+      'I just want to cover my costs',
+      "Money isn't the main goal",
+      "I'm already monetizing but want to scale",
+    ],
+  },
+  {
+    id: 'dreamPercent',
+    text: 'what percentage of your dream life requires social media success?',
+    multiple: false,
+    options: [
+      '100% - This IS my dream', '75% - It\'s a major component', '50% - It\'s important but not everything', '25% - It\'s just one piece', 'Just exploring possibilities'
     ],
   },
 ]
@@ -354,6 +332,13 @@ function computeProgress(answers: Record<string, any>) {
 /** ------------------- Onboarding flow ------------------- */
 
 export default function Onboarding() {
+  // New smart-branching flow (keeps UX style)
+  const Smart = require('@/components/onboarding/SmartOnboarding').default
+  return <Smart />
+}
+
+// Legacy flow kept below (unused)
+export function LegacyOnboarding() {
   const router = useRouter()
   const sb = supabaseBrowser()
 
@@ -373,6 +358,7 @@ export default function Onboarding() {
   const [holdOpen, setHoldOpen] = useState(false)
   const [holdTitle, setHoldTitle] = useState('clarity is kindness')
   const [holdText, setHoldText] = useState('')
+  const [transitioning, setTransitioning] = useState(false)
 
   // Reset “shown once” flags each visit
   useEffect(() => {
@@ -618,6 +604,9 @@ export default function Onboarding() {
   }
 
   const handleContinue = async () => {
+    // Animate: grow button + fade content slightly before advancing
+    setTransitioning(true)
+    await new Promise((r)=> setTimeout(r, 220))
     const mainQ = current as BaseQ
     const subQ = subQuestion as BaseQ | null
 
@@ -645,7 +634,7 @@ export default function Onboarding() {
       setStep(nextIdx)
       setShowSub(false)
     } else {
-      // Finalize onboarding and generate report
+      // Finalize onboarding and route to next steps (signin → paywall → generate)
       try { localStorage.setItem('onboarding', JSON.stringify(answers)) } catch {}
       await persistDraft({ answers })
 
@@ -659,6 +648,7 @@ export default function Onboarding() {
           body: JSON.stringify({ sessionId, answers }), cache: 'no-store'
         })
       } catch {}
+      setTransitioning(false)
       return router.push('/paywall')
     }
 
@@ -667,6 +657,8 @@ export default function Onboarding() {
     } else if (willShowHold) {
       void maybeShowHoldingTip(answers)
     }
+    // Reset transition state after moving to next question
+    setTimeout(()=> setTransitioning(false), 40)
   }
 
   return (
@@ -678,7 +670,7 @@ export default function Onboarding() {
         <div className="h-full bg-[var(--soft-purple)] transition-all duration-500" style={{ width: `${percent}%` }} />
       </div>
 
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in pb-24 md:pb-28">
+      <div className={["min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in pb-24 md:pb-28 onb-wrap", transitioning ? "is-fading" : ""].join(' ')}>
         <div className="w-full max-w-2xl">
           {/* Back to previous (fixed, aligned with title Y, left-aligned) */}
           {step > 0 && (
@@ -692,7 +684,7 @@ export default function Onboarding() {
               </button>
             </div>
           )}
-          <h2 className="text-3xl md:text-4xl font-bold mb-7 text-gray-900 slide-up">{(current as any).text}</h2>
+          <h2 className="text-4xl md:text-5xl font-bold mb-7 text-gray-900 slide-up">{(current as any).text}</h2>
 
           {(
             <>
@@ -719,7 +711,7 @@ export default function Onboarding() {
 
               {showSub && subQuestion && (
                 <>
-                  <p className="text-gray-500 text-xl mt-8 mb-4 slide-up">{subQuestion.text}</p>
+                  <p className="text-gray-600 text-2xl mt-8 mb-4 slide-up">{subQuestion.text}</p>
                   <div className="flex flex-wrap justify-center gap-3 mb-6 slide-up">
                     {subQuestion.options.map((opt: string) => (
                       <Button
@@ -745,15 +737,15 @@ export default function Onboarding() {
 
           <button
             onClick={handleContinue}
-            className="mt-7 mb-14 px-10 py-3 rounded-full text-lg bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition pulse-gentle"
+            className={["continue-btn mt-8 mb-16 px-12 py-4 rounded-full text-xl bg-[var(--accent-grape)] text-white hover:bg-[#874E95]", transitioning ? "is-pressed" : "", "pulse-gentle"].join(' ')}
           >
-            {/* Button text: use final label on last question */}
+            {/* Button text: keep flow (no auto-generate), match prior UX */}
             {(() => {
               // Determine if there are more applicable questions ahead
               let nextIdx = step + 1
               while (nextIdx < questions.length && questions[nextIdx].when && !questions[nextIdx].when!(answers)) nextIdx++
               const hasMore = nextIdx < questions.length
-              if (!hasMore) return 'finish & generate report'
+              if (!hasMore) return 'finish'
               return 'continue'
             })()}
           </button>

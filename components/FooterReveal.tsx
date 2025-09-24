@@ -49,6 +49,7 @@ export default function FooterReveal({ breadcrumb }: { breadcrumb?: Crumb }) {
                   <h3 className="text-sm font-semibold text-gray-900">Features</h3>
                   <div className="mt-4 flex flex-col gap-2">
                     <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">personalized report</a>
+                    <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">personalized learning class</a>
                     <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">ai mentor</a>
                     <a href="#" className="focus-ring w-fit rounded-lg bg-white px-4 py-2 text-sm text-gray-900/90 hover:bg-gray-50 transition">1:1 expert session</a>
                   </div>

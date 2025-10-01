@@ -338,7 +338,7 @@ export default function Onboarding() {
 }
 
 // Legacy flow kept below (unused)
-export function LegacyOnboarding() {
+function LegacyOnboarding() {
   const router = useRouter()
   const sb = supabaseBrowser()
 

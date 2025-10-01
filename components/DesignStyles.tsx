@@ -15,7 +15,10 @@ export default function DesignStyles() {
       /* -------- Color tokens pulled from your front_end.txt -------- */
       [data-mentor-ui] {
         --navH: 56px; /* TopNav height */
-        --accent-grape: #9E5DAB; /* Deep Orchid */
+        /* Dark orchid spectrum */
+        --accent-grape: #8A47A2;  /* primary */
+        --accent-grape-dark: #733988; /* hover */
+        --accent-grape-darker: #5B2D6C; /* active */
         --soft-purple: #CFA6D8;  /* light companion */
         --earth-green: #7A8471;
         --text-900: #111827;
@@ -60,9 +63,13 @@ export default function DesignStyles() {
         box-shadow: 0 8px 24px rgba(0,0,0,.06);
       }
 
+      /* Slightly larger type scale */
+      [data-mentor-ui] .report-page { font-size: 1.03rem; }
+      [data-mentor-ui] .dashboard-card { font-size: 1.02rem; }
+
       /* Report header style (thin, centered) */
       [data-mentor-ui] .report-title {
-        font-size: clamp(2rem, 2.6vw + 1rem, 3.25rem);
+        font-size: clamp(2.1rem, 2.8vw + 1rem, 3.4rem);
         font-weight: 300;
         color: var(--text-600);
         line-height: 1.15;
@@ -70,7 +77,7 @@ export default function DesignStyles() {
         margin: 0;
       }
       [data-mentor-ui] .report-subtitle {
-        font-size: .95rem;
+        font-size: 1rem;
         color: #9CA3AF;
         text-align: center;
         margin-top: .35rem;
@@ -84,8 +91,8 @@ export default function DesignStyles() {
       }
       [data-mentor-ui] .sect-panel[data-open="true"] { opacity: 1; }
       [data-mentor-ui] .sect-panel[data-open="false"] { opacity: 0; max-height: 0 !important; }
-      [data-mentor-ui] .sect-btn .plus { transition: transform .25s ease; }
-      [data-mentor-ui] .sect-btn[aria-expanded="true"] .plus { transform: rotate(45deg); }
+      /* Simple indicator (we render + / – in the markup) */
+      [data-mentor-ui] .sect-btn span { transition: transform .2s ease, opacity .2s ease; }
 
       /* Animations from front_end.txt */
       @keyframes fadeIn { from { opacity:0; transform: translateY(20px);} to { opacity:1; transform: translateY(0);} }
@@ -103,6 +110,40 @@ export default function DesignStyles() {
       [data-mentor-ui] a.rounded-xl:hover, [data-mentor-ui] button.rounded-xl:hover, [data-mentor-ui] .rounded-xl.px-5:hover, [data-mentor-ui] .rounded-xl.px-6:hover {
         transform: translateY(-1px);
         box-shadow: 0 8px 20px rgba(0,0,0,.06);
+      }
+
+      /* Bigger accent buttons + darken on click */
+      [data-mentor-ui] a[class*="bg-[var(--accent-grape)]"],
+      [data-mentor-ui] button[class*="bg-[var(--accent-grape)]"] {
+        padding: 0.9rem 1.6rem !important; /* larger */
+        font-size: 1.06rem !important;
+        background: var(--accent-grape) !important;
+        border-radius: 9999px;
+        transition: transform .22s cubic-bezier(.22,1,.36,1), background-color .22s ease, box-shadow .22s ease !important;
+        box-shadow: 0 10px 26px color-mix(in oklab, var(--accent-grape) 28%, transparent);
+      }
+      [data-mentor-ui] a[class*="bg-[var(--accent-grape)]"]:hover,
+      [data-mentor-ui] button[class*="bg-[var(--accent-grape)]"]:hover {
+        background: var(--accent-grape-dark) !important;
+        transform: scale(1.04);
+      }
+      [data-mentor-ui] a[class*="bg-[var(--accent-grape)]"]:active,
+      [data-mentor-ui] button[class*="bg-[var(--accent-grape)]"]:active {
+        background: var(--accent-grape-darker) !important;
+        transform: scale(1.06);
+      }
+
+      /* Generic rounded-full buttons feel larger and pressable */
+      [data-mentor-ui] a[class*="rounded-full"],
+      [data-mentor-ui] button[class*="rounded-full"] {
+        padding-block: 0.8rem;
+        padding-inline: 1.3rem;
+        font-size: 1.02rem;
+        transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s ease;
+      }
+      [data-mentor-ui] a[class*="rounded-full"]:active,
+      [data-mentor-ui] button[class*="rounded-full"]:active {
+        transform: scale(1.04);
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -247,13 +288,14 @@ export default function DesignStyles() {
 [data-mentor-ui] .report-title {
   color: #111827; /* darker for better readability */
   text-align: center;
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 500;
 }
 [data-mentor-ui] .report-subtitle {
   color: #6b7280; /* muted gray */
   text-align: center;
   margin-top: 0.25rem;
+  font-size: 1.05rem;
 }
 
 /* ---- Account shell, soft purple ---- */

@@ -385,6 +385,18 @@ STRICT RULES:
 /* -------------------- route -------------------- */
 export async function POST(req: Request) {
   try {
+    // Require auth and payment before any LLM work
+    const supa = await supabaseServer();
+    const { data: { user } } = await supa.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const { data: pay } = await supa
+      .from('onboarding_sessions')
+      .select('purchase_status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    const isPaid = pay?.purchase_status === 'paid';
+    if (!isPaid) return NextResponse.json({ error: 'Payment required' }, { status: 402 });
+
     const body = await req.json().catch(() => ({}));
     const persona: Persona = body.persona || {};
     const links: string[] = Array.isArray(body.links) ? body.links.filter(Boolean) : [];
@@ -587,8 +599,6 @@ ${links.length ? linkSummary : "(no links provided)"}
     }
     // Save report for signed-in user (idempotent)
     try {
-      const supa = await supabaseServer();
-      const { data: { user } } = await supa.auth.getUser();
       if (user) {
         await supa.from("reports").upsert({
           user_id: user.id,

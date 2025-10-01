@@ -60,7 +60,7 @@ export default function TopNav() {
   }, []);
 
   return (
-<header className="fixed top-0 left-0 right-0 z-40 h-14 bg-[#f9fafb]">
+    <header className="fixed top-0 left-0 right-0 z-40 h-14 bg-[#f9fafb]">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         {/* Brand (click → landing if logged out, /account if logged in) */}
         <Link
@@ -99,16 +99,25 @@ export default function TopNav() {
                 return pretty || 'friend';
               })()}`}
             </div>
+
+            {/* Avatar button */}
             <Link
               href="/account"
               aria-label="Go to account"
-              className="w-9 h-9 rounded-full border border-transparent bg-[#D7BFDC] hover:bg-[#C3A3CA] active:bg-[#B892C5] transition-colors flex items-center justify-center"
+              className="w-11 h-11 rounded-full border border-transparent bg-[#D7BFDC] hover:bg-[#C3A3CA] active:bg-[#B892C5] transition-colors flex items-center justify-center"
               title={email || undefined}
             >
-              {/* minimalist avatar glyph */}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M4 20c1.6-3.2 4.8-5 8-5s6.4 1.8 8 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              {/* User icon (Heroicons outline) inside light purple circle */}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={2.2}
+                stroke="#374151" /* gray-700 for stronger contrast */
+                className="w-8 h-8"
+                aria-hidden
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />
               </svg>
             </Link>
           </div>

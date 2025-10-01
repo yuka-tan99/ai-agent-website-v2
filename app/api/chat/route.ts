@@ -4,16 +4,20 @@ import { supabaseRoute } from "@/lib/supabaseServer"
 import { GoogleGenerativeAI } from "@google/generative-ai"
 import { redactPII } from "@/lib/redact"
 
-const MODEL = "gemini-1.5-flash" // fast & inexpensive
+// Allow overriding via env if some versions are not available to the project
+const DEFAULT_MODEL = process.env.LLM_CHAT_MODEL || "gemini-2.0-flash"
 
 export async function POST(req: NextRequest) {
   try {
+    const DEBUG = process.env.DEBUG_LOG === 'true'
+    const t0 = Date.now()
     const { messages = [], rag = {} } = await req.json()
 
     // Gate access to AI chat based on active grants
     const supa = supabaseRoute()
     const { data: { user } } = await supa.auth.getUser()
     if (!user) {
+      if (DEBUG) console.log('[chat] unauthenticated access')
       return NextResponse.json({ text: "Please sign in to chat." }, { status: 200 })
     }
     const now = new Date()
@@ -63,27 +67,40 @@ export async function POST(req: NextRequest) {
         if (new Date() <= ends) {
           // Allow access without writing (RLS-safe). Proceed to model call.
           diag.fallback = 'paid_within_3m'
+          if (DEBUG) console.log('[chat] access via fallback paid_within_3m', diag)
         } else {
           const payUrl = '/paywall/ai'
           const msg = `Looks like you don’t have access to your Marketing Mentor right now. Pay only $6/month to continue access.`
           diag.fallback = 'paid_expired'; diag.fallback_ended_at = ends.toISOString()
+          if (DEBUG) console.log('[chat] access expired', diag)
           return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl, diag }, { status: 200 })
         }
       } else {
         const payUrl = '/paywall/ai'
         const msg = `Looks like you don’t have access to your Marketing Mentor yet. Pay only $6/month to continue access.`
         diag.fallback = status === 'paid' ? 'paid_no_claimed_at' : 'not_paid'
+        if (DEBUG) console.log('[chat] access denied', diag)
         return NextResponse.json({ text: msg, reason: 'expired_access', paywall: payUrl, diag }, { status: 200 })
       }
     }
 
     const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY
     if (!apiKey) {
+      if (DEBUG) console.warn('[chat] missing GOOGLE_API_KEY/GEMINI_API_KEY')
       return NextResponse.json({ text: "Server missing Google API key." }, { status: 200 })
     }
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: MODEL })
+    // Some orgs/projects don't have access to specific point releases.
+    // Try a short list until one works.
+    const candidateModels = [
+      DEFAULT_MODEL,
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-pro',
+    ]
+    let selectedModelName = candidateModels[0]
+    let model = genAI.getGenerativeModel({ model: selectedModelName })
 
     // ✨ System prompt (conversational, readable, actionable) with optional RAG context
 const system = [
@@ -138,8 +155,53 @@ const system = [
       `User: ${userTurn}\nAssistant:`,
     ].join("\n")
 
-    const result = await model.generateContent(prompt)
-    const text = result.response.text() || "Let’s try that again with a bit more detail."
+    let text = ''
+    const promptChars = prompt.length
+    if (DEBUG) console.log('[chat] calling model', { model: selectedModelName, promptChars })
+    try {
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: 240,
+          temperature: 0.4,
+        },
+      })
+      text = (result?.response?.text?.() || '').toString()
+    } catch (e: any) {
+      // If 404 (model name not found), try alternative model names quickly
+      const msg = String(e?.message || '')
+      let triedFallback = false
+      if (/404|not found|was not found/i.test(msg)) {
+        for (let i = 1; i < candidateModels.length; i++) {
+          try {
+            selectedModelName = candidateModels[i]
+            model = genAI.getGenerativeModel({ model: selectedModelName })
+            if (DEBUG) console.warn('[chat] retrying with model', selectedModelName)
+            const resAlt = await model.generateContent({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+              generationConfig: { maxOutputTokens: 240, temperature: 0.4 },
+            })
+            text = (resAlt?.response?.text?.() || '').toString()
+            triedFallback = true
+            break
+          } catch (eAlt: any) {
+            if (DEBUG) console.warn('[chat] fallback model failed', selectedModelName, eAlt?.message || eAlt)
+          }
+        }
+      }
+      if (!triedFallback && !text) {
+        // Fall back to simple string call (SDK compatibility) and keep it short
+        try {
+          const result2: any = await (model as any).generateContent(prompt)
+          text = (result2?.response?.text?.() || '').toString()
+        } catch (e2: any) {
+          console.warn('[chat] model call failed twice', e2?.message || e2)
+          text = "I hit a hiccup generating that. Could you rephrase or ask a smaller question?"
+        }
+      }
+    }
+    if (!text) text = "Let’s try that again with a bit more detail."
+    if (DEBUG) console.log('[chat] model ok', { model: selectedModelName, ms: Date.now() - t0, outChars: text.length })
 
     // Persist sanitized chat logs (best-effort; ignore failures) and capture assistant message id
     let assistantMessageId: number | null = null
@@ -150,13 +212,13 @@ const system = [
         .from('chat_messages')
         .insert([
           { user_id: user.id, role: 'user', content: redUser, meta: { turns: userTurnsCount } },
-          { user_id: user.id, role: 'assistant', content: redAsst, meta: { model: MODEL } },
+          { user_id: user.id, role: 'assistant', content: redAsst, meta: { model: selectedModelName } },
         ])
         .select('id, role')
       const asst = (inserted || []).find((r: any) => r.role === 'assistant')
       if (asst?.id) assistantMessageId = asst.id as number
     } catch (e) {
-      console.warn('chat log persist failed (safe to ignore)', e)
+      if (DEBUG) console.warn('[chat] log persist failed (safe to ignore)', (e as any)?.message || e)
     }
 
     // Log usage estimates (tokens and optional cost)
@@ -175,15 +237,15 @@ const system = [
         tokens_input,
         tokens_output,
         cost_usd_micros: (inRate || outRate) ? costMicros : null,
-        meta: { model: MODEL },
+        meta: { model: selectedModelName },
       })
     } catch (e) {
-      console.warn('chat usage log failed (safe to ignore)', e)
+      if (DEBUG) console.warn('chat usage log failed (safe to ignore)', (e as any)?.message || e)
     }
 
     return NextResponse.json({ text, message_id: assistantMessageId })
   } catch (err) {
-    console.error("chat error", err)
+    console.error("[chat] fatal error", (err as any)?.message || err)
     return NextResponse.json(
       { text: "Sorry, I ran into an issue. Please try again." },
       { status: 200 },

@@ -14,9 +14,7 @@ export default function Paywall(){
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [planPreview, setPlanPreview] = useState<any>(null)
-  // Avoid hitting the LLM on paywall by default to reduce rate limit pressure
-  const PREVIEW_LLM = process.env.NEXT_PUBLIC_PAYWALL_PREVIEW_LLM === 'true'
+  // We do NOT hit any LLM on the paywall. Always use a static template.
 
   // Poll purchase_status to auto-unlock once paid
   useEffect(() => {
@@ -46,22 +44,7 @@ export default function Paywall(){
     return () => { cancel = true }
   }, [router])
 
-  useEffect(() => {
-    if (!PREVIEW_LLM) return; // show static blurred UI; skip LLM call
-    (async () => {
-      try {
-        const persona = JSON.parse(localStorage.getItem('onboarding') || '{}')
-        const res = await fetch('/api/plan', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ persona })
-        })
-        const data = await res.json()
-        setPlanPreview(data)
-      } catch {
-        // ignore preview errors
-      }
-    })()
-  }, [PREVIEW_LLM])
+  // Intentionally no preview generation here to avoid LLM costs before purchase.
 
   const checkout = async () => {
     setError(null)
@@ -88,7 +71,7 @@ export default function Paywall(){
   }
 
   // lightweight template plan if we skip LLM
-  const templatePlan = planPreview?.plan || {
+  const templatePlan = {
     fame_score: 62,
     fame_breakdown: [
       { key: 'consistency', label: 'Consistency', percent: 14 },
@@ -122,14 +105,14 @@ export default function Paywall(){
           </div>
         </div>
 
-        {/* Center CTA overlay */}
-        <div className="absolute inset-0 flex items-center justify-center p-4">
+        {/* Center CTA overlay (fixed so it stays centered while scrolling) */}
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
           <div className="max-w-md w-full text-center rounded-2xl bg-white/90 backdrop-blur-md border shadow-xl p-6">
             <h2 className="text-2xl font-semibold mb-2">unlock your full report</h2>
-            <p className="text-gray-600 mb-5">One-time $39. Instantly unblur and access your personalized strategy.</p>
+            <p className="text-gray-600 mb-5">One-Time Payment. Instantly unblur and access your personalized strategy.</p>
             <button
               onClick={checkout}
-              className="w-full px-6 py-3 rounded-xl bg-[var(--accent-grape)] text-white disabled:opacity-60 hover:bg-[#874E95]"
+              className="w-full px-7 py-3.5 rounded-full bg-[var(--accent-grape)] text-white disabled:opacity-60 hover:bg-[#874E95]"
               disabled={loading}
             >
               {loading ? 'Redirecting…' : 'unlock now'}

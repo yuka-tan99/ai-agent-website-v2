@@ -31,15 +31,15 @@ export default async function FameInsightsPage() {
     const access = await hasAccess(user.id)
     if (!access) redirect('/paywall')
     return (
-      <main className="container py-8">
+      <main className="container py-8 relative">
+        <div className="fixed top-[calc(var(--navH,56px)+8px)] left-6 z-40">
+          <a href="/dashboard/report-board" className="bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 inline-flex items-center justify-center text-gray-900 border border-gray-100" aria-label="Back to dashboard">←</a>
+        </div>
         <FadeIn>
-          <div className="mb-4">
-            <a href="/dashboard" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">← back</a>
-          </div>
           <div className="dashboard-card p-6 text-center">
             <h2 className="text-lg font-semibold text-gray-900 mb-2">no report yet</h2>
             <p className="text-sm text-gray-600 mb-4">We couldn’t find your plan on this session. Head back to your dashboard to generate or view it.</p>
-            <a href="/dashboard" className="inline-flex items-center justify-center rounded-full bg-[var(--accent-grape)] text-white px-5 py-2 hover:bg-[#874E95] transition">go to dashboard</a>
+            <a href="/dashboard/report-board" className="inline-flex items-center justify-center rounded-full bg-[var(--accent-grape)] text-white px-5 py-2 hover:bg-[#874E95] transition">go to dashboard</a>
           </div>
         </FadeIn>
       </main>
@@ -102,11 +102,11 @@ export default async function FameInsightsPage() {
   ]
 
   return (
-    <main className="container py-8">
+    <main className="container py-8 relative">
+      <div className="fixed top-[calc(var(--navH,56px)+8px)] left-6 z-40">
+        <a href="/dashboard/report-board" className="bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 inline-flex items-center justify-center text-gray-900 border border-gray-100" aria-label="Back to dashboard">←</a>
+      </div>
       <FadeIn>
-        <div className="mb-4">
-          <a href="/dashboard" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">← back</a>
-        </div>
         <div className="text-center mb-6">
           <h1 className="report-title">understand your fame potential score</h1>
           <div className="report-subtitle">a friendly breakdown of your strengths and simple next steps</div>

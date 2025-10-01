@@ -93,20 +93,17 @@ export async function callClaudeJSON<T = any>({
       .replace(/^```\s*/i, "")
       .replace(/```$/i, "");
 
-    // Optional debug logging of raw content (truncated)
-    if (process.env.DEBUG_LOG === 'true') {
+    // Optional debug logging of raw content (truncated). Guard behind DEBUG_LLM_PREVIEW
+    if (process.env.DEBUG_LOG === 'true' && process.env.DEBUG_LLM_PREVIEW === 'true') {
       const preview = cleaned.slice(0, 220).replace(/[\n\r\t]+/g, ' ').trim();
       console.log(`[Claude] model=${_model} took ${Date.now() - _t0}ms, len=${cleaned.length}, preview=`, preview);
+    } else if (process.env.DEBUG_LOG === 'true') {
+      console.log(`[Claude] model=${_model} took ${Date.now() - _t0}ms, len=${cleaned.length}`);
     }
 
-    // If response hit token cap, prefer to signal a specific error so caller can retry with more tokens
+    // If response hit token cap, try to parse anyway; only error if parsing fails
     const stopReason = (data?.stop_reason || data?.stopReason || '').toString();
-    if (stopReason.toLowerCase() === 'max_tokens') {
-      const err: any = new Error('Claude stopped due to max_tokens');
-      err.code = 'MAX_TOKENS';
-      err.stop = 'MAX_TOKENS';
-      throw err;
-    }
+    const hitMax = stopReason.toLowerCase() === 'max_tokens'
 
     // Parse JSON strictly, then with a tolerant fallback
     let parsed: T;
@@ -117,13 +114,24 @@ export async function callClaudeJSON<T = any>({
         parsed = parseJsonLoose<T>(cleaned);
         if (process.env.DEBUG_LOG === 'true') console.warn('[Claude] strict JSON.parse failed; recovered via parseJsonLoose');
       } catch (looseErr: any) {
+        // If we hit max_tokens and parsing failed, bubble a MAX_TOKENS error to allow caller to retry with a tighter prompt
+        if (hitMax) {
+          const err: any = new Error('Claude stopped due to max_tokens');
+          err.code = 'MAX_TOKENS';
+          throw err;
+        }
         const err: any = new Error(`Claude JSON parse failed: ${looseErr?.message || looseErr}`);
         err.code = 'JSON_PARSE';
         throw err;
       }
     }
+    const usageIn = Number(data?.usage?.input_tokens || 0);
+    const usageOut = Number(data?.usage?.output_tokens || 0);
     if (process.env.NODE_ENV !== "production") {
-      console.log(`[Claude] model=${_model} responded in ${Date.now() - _t0}ms`);
+      console.log(`[Claude] model=${_model} responded in ${Date.now() - _t0}ms; usage in=${usageIn} out=${usageOut}`);
+    }
+    if (process.env.DEBUG_LOG === 'true') {
+      console.log(`[Claude][usage] input_tokens=${usageIn} output_tokens=${usageOut}`);
     }
     return parsed;
   } catch (e: any) {
@@ -156,5 +164,83 @@ export async function callClaudeJSONWithRetry<T = any>(args: ClaudeArgs, retries
       console.warn('[Claude] retrying with', { nextTokens, nextTimeout, reason: e?.code || e?.message });
     }
     return await callClaudeJSONWithRetry<T>({ ...args, timeoutMs: nextTimeout, maxTokens: nextTokens }, retries - 1);
+  }
+}
+
+// New: explicit system + user channels
+export async function callClaudeJSONSystemUser<T = any>({
+  apiKey,
+  system,
+  user,
+  model,
+  timeoutMs = 60000,
+  maxTokens = 1400,
+}: { apiKey?: string; system: string; user: string; model?: string; timeoutMs?: number; maxTokens?: number; }): Promise<T> {
+  const key = apiKey || process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("Missing ANTHROPIC_API_KEY");
+
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  const _model = model || DEFAULT_MODEL;
+  const _t0 = Date.now();
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: _model,
+        max_tokens: maxTokens,
+        temperature: 0.4,
+        system,
+        messages: [{ role: "user", content: user }],
+      }),
+      signal: ctl.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const retryAfter = Number(res.headers.get('retry-after') || '0') || 0;
+      const err: any = new Error(`Claude error ${res.status}: ${text || res.statusText}`);
+      (err.code as any) = res.status;
+      (err.status as any) = res.status;
+      (err.retryAfter as any) = retryAfter;
+      throw err;
+    }
+    const data = await res.json();
+    const text = (data?.content?.[0]?.text ?? "").toString();
+    const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "");
+    let parsed: T;
+    try { parsed = JSON.parse(cleaned) as T } catch {
+      parsed = (function parseLoose<T>(input: string): T {
+        try { return JSON.parse(input) as T } catch {}
+        let s = input.trim();
+        s = s.replace(/[\u201C\u201D\u201E\u201F]/g, '"').replace(/[\u2018\u2019]/g, "'");
+        s = s.replace(/,\s*([}\]])/g, '$1');
+        const first = s.indexOf('{');
+        const last = s.lastIndexOf('}');
+        if (first !== -1 && last !== -1 && last > first) {
+          const body = s.slice(first, last + 1);
+          try { return JSON.parse(body) as T } catch {}
+        }
+        const openCurl = (s.match(/\{/g) || []).length;
+        const closeCurl = (s.match(/\}/g) || []).length;
+        if (openCurl > closeCurl) s = s + '}'.repeat(openCurl - closeCurl);
+        const openSq = (s.match(/\[/g) || []).length;
+        const closeSq = (s.match(/\]/g) || []).length;
+        if (openSq > closeSq) s = s + ']'.repeat(openSq - closeSq);
+        return JSON.parse(s) as T;
+      })(cleaned)
+    }
+    const usageIn = Number(data?.usage?.input_tokens || 0);
+    const usageOut = Number(data?.usage?.output_tokens || 0);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[Claude] system+user model=${_model} responded in ${Date.now() - _t0}ms; in=${usageIn} out=${usageOut}`);
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timer);
   }
 }

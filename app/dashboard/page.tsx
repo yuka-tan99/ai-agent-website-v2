@@ -3,19 +3,22 @@ export const dynamic = 'force-dynamic';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabaseServer';
-import ReportSummary from '@/components/report/ReportSummary';
+import ReportShellClient from '@/components/report/ReportShellClient';
 // No generation here; server redirects to /dashboard/preparing when needed
 
 const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === 'true';
 
 function isComplete(ob: any): boolean {
-  if (!ob) return false;
-  if (ob.claimed_at) return true;
+  // Consider onboarding complete if explicitly finalized OR if the user
+  // reached the last question (Q18) in the decision tree.
+  const claimed = !!(ob && ob.claimed_at)
   try {
-    const a = ob.answers || {};
-    return Object.keys(a).length >= 3; // “good enough” completion heuristic
+    const a = ob?.answers || {}
+    const q18 = a?.Q18
+    const hasQ18 = q18 !== undefined && q18 !== null && (Array.isArray(q18) ? q18.length > 0 : String(q18).length > 0)
+    return claimed || hasQ18
   } catch {
-    return false;
+    return claimed
   }
 }
 
@@ -45,11 +48,26 @@ export default async function DashboardPage() {
   }
 
   if (rep?.plan) {
+      if (process.env.DEBUG_LOG === 'true') {
+        try {
+          const p: any = rep.plan
+          const ai = p._ai_sections || 0
+          const fb = p._fallback_sections || 0
+          const meta = p._section_meta || {}
+          const gen = p._gen || {}
+          console.log('[dashboard] render plan: aiSections=', ai, 'fallbackSections=', fb, 'gen=', gen)
+          Object.keys(meta).forEach((k) => {
+            const m = meta[k]
+            console.log(`[dashboard] section ${k}: origin=${m?.origin} summaryLen=${m?.summaryLen} bullets=${m?.bullets}`)
+          })
+        } catch {}
+      }
       return (
-        <main className="container py-10">
-          <div className="mb-4">
-            <Link href="/account" className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors">
-              ← back
+        <main className="container py-10 relative">
+          {/* Fixed Back button */}
+          <div className="fixed top-[calc(var(--navH,56px)+8px)] left-6 z-40">
+            <Link href="/account" className="bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 inline-flex items-center justify-center text-gray-900 border border-gray-100" aria-label="Back to account">
+              <span className="text-xl leading-none">←</span>
             </Link>
           </div>
           {DEV_BYPASS 
@@ -59,29 +77,40 @@ export default async function DashboardPage() {
           //   </div>
           // )
           }
-          <ReportSummary plan={rep.plan} />
+          <ReportShellClient />
           
         </main>
       );
     }
 
-  // No report yet — require completed onboarding (per your schema)
+  // No report yet — get onboarding session
   const { data: ob } = await supa
     .from('onboarding_sessions')
     .select('answers, claimed_at')
     .eq('user_id', user.id)
     .maybeSingle();
 
-  if (!isComplete(ob)) {
-    if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] onboarding incomplete → redirect /onboarding');
+  const hasAnswers = !!(ob && ob.answers);
+  const paid = await hasPlanAccess(user.id);
+
+  // Routing rules when no report:
+  // - If no onboarding answers yet → go to onboarding
+  // - If there is any onboarding session (answers exist) but not paid → paywall
+  // - If paid but onboarding not finalized → onboarding to complete
+  // - If paid and onboarding complete → preparing (generation)
+  if (!hasAnswers) {
+    if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] no onboarding answers → redirect /onboarding');
     redirect('/onboarding');
   }
-
-  // Enforce paywall only if no report yet
-  if (!(await hasPlanAccess(user.id))) redirect('/paywall');
-
-  // Onboarding complete, no report yet -> redirect to preparing screen
-  if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] no report → redirect /dashboard/preparing');
+  if (!paid) {
+    if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] has onboarding session but unpaid → redirect /paywall');
+    redirect('/paywall');
+  }
+  if (!isComplete(ob)) {
+    if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] onboarding incomplete but paid → redirect /onboarding');
+    redirect('/onboarding');
+  }
+  if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] no report but ready → redirect /dashboard/preparing');
   redirect('/dashboard/preparing');
 }
 

@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabaseClient'
+import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession'
 import DesignStyles from '@/components/DesignStyles'
 import { LayoutDashboard, Gift, Users, User, DollarSign, LogOut, ChartColumnIncreasing, Contact } from "lucide-react";
 
@@ -27,6 +28,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
   const [email, setEmail] = useState('')
   const [access, setAccess] = useState<any | null>(null)
   const [accessLoading, setAccessLoading] = useState<boolean>(false)
+  const [myReportHref, setMyReportHref] = useState<string>('/dashboard')
 
   // Profile local UI state (no backend writes)
   const [displayName, setDisplayName] = useState('')
@@ -58,6 +60,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
         router.replace('/signin?mode=signin')
         return
       }
+      const uid = data.user.id
       setEmail(data.user.email || '')
       try {
         const meta: any = data.user.user_metadata || {}
@@ -86,7 +89,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
           }
         } catch {}
       }
-    })
+      })
 
     return () => {
       active = false
@@ -94,6 +97,74 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Decide where "My Report" should route based on onboarding + purchase/report status
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { data } = await sb.auth.getUser()
+        const user = data?.user
+        if (!user) { setMyReportHref('/onboarding'); return }
+        const uid = user.id
+        // Check onboarding completion by Q18 (last question)
+        let { data: ob } = await sb
+          .from('onboarding_sessions')
+          .select('answers, claimed_at')
+          .eq('user_id', uid)
+          .maybeSingle()
+        // If no row tied to user yet, try attaching current browser onboarding session id
+        if (!ob) {
+          try {
+            const sessionId = getOrCreateOnboardingSessionId()
+            if (sessionId) {
+              await fetch('/api/onboarding/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
+                body: JSON.stringify({ sessionId }),
+              })
+              const ref = await sb
+                .from('onboarding_sessions')
+                .select('answers, claimed_at')
+                .eq('user_id', uid)
+                .maybeSingle()
+              ob = ref.data
+            }
+          } catch {}
+        }
+        const answers: any = ob?.answers || {}
+        const hasAnswers = !!answers && Object.keys(answers).length > 0
+        const q18 = answers?.Q18
+        const hasQ18 = q18 !== undefined && q18 !== null && (Array.isArray(q18) ? q18.length > 0 : String(q18).trim().length > 0)
+        const claimed = !!ob?.claimed_at
+        const obComplete = claimed || hasQ18
+        if (!hasAnswers) { setMyReportHref('/onboarding'); return }
+        if (!obComplete) { setMyReportHref('/onboarding'); return }
+
+        // If a report already exists, go straight to dashboard
+        const rep = await sb
+          .from('reports')
+          .select('user_id')
+          .eq('user_id', uid)
+          .maybeSingle()
+        if (rep?.data) { setMyReportHref('/dashboard'); return }
+
+        // Otherwise, require paywall if not paid (dev bypass counts as paid)
+        if (process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === 'true') {
+          setMyReportHref('/dashboard/preparing')
+          return
+        }
+        const res = await fetch('/api/me/purchase-status', { cache: 'no-store', credentials: 'include' })
+        const j = await res.json().catch(()=>({}))
+        setMyReportHref(j?.purchase_status === 'paid' ? '/dashboard/preparing' : '/paywall')
+      } catch {
+        // fallback: show onboarding
+        setMyReportHref('/onboarding')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [sb])
 
   const title = useMemo(() => {
     switch (section) {
@@ -106,6 +177,12 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
   }, [section])
 
   const isActive = (href: string) => pathname === href
+  async function prefetchReportThenGo() {
+    if (myReportHref === '/dashboard') {
+      try { await fetch('/api/report', { cache: 'no-store', credentials: 'include' }) } catch {}
+    }
+    router.push(myReportHref)
+  }
 
   // Load AI access window for usage view
   useEffect(() => {
@@ -164,7 +241,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
           {/* LEFT RAIL — pinned; own scrollbar if needed */}
           <aside className="acc-rail hidden md:block rounded-lg p-3 h-full pr-1">
             <nav className="mt-2 space-y-1">
-              <Link href="/dashboard" className={`acc-link ${isActive('/dashboard') ? 'active' : ''}`}><LayoutDashboard className="w-5 h-5" /> My Report</Link>
+              <button onClick={prefetchReportThenGo} className={`acc-link w-full text-left ${isActive('/dashboard') ? 'active' : ''}`}><LayoutDashboard className="w-5 h-5" /> My Report</button>
               <Link href="/account" className={`acc-link ${isActive('/account') ? 'active' : ''}`}><ChartColumnIncreasing /> Usage</Link>
               <Link href="/account/rewards" className={`acc-link ${isActive('/account/rewards') ? 'active' : ''}`}><Gift className="w-5 h-5" /> Rewards</Link>
               <Link href="/account/referrals" className={`acc-link ${isActive('/account/referrals') ? 'active' : ''}`}><Users className="w-5 h-5" />Referrals</Link>

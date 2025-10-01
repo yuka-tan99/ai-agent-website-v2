@@ -1,6 +1,9 @@
 // lib/onboardingFlow.ts
 // Smart-branching onboarding flow: types, helpers, decision tree
 
+export const MIN_Q = 15;
+export const MAX_Q = 18;
+
 export type AnswerType = "single" | "multi" | "text";
 
 export interface Option {
@@ -53,44 +56,128 @@ function evalBool(expr: string, state: FlowState): boolean {
   }
 }
 
+// === Ask-guards ===============================================================
+const askGuards: Record<string, (state: FlowState) => boolean> = {
+  // Only if stage indicates plateau or large optimizing
+  Q2A_PLATEAU_CAUSE: (s) => {
+    const st = String((s.vars || {}).stage || '')
+    return st === 'plateauing' || st === 'large_optimizing'
+  },
+  // Q14: show if fear/inauthentic/comparison in Q3 OR confidence goal in Q4
+  Q14: (s) => {
+    const q3 = (s.answers?.Q3 || []) as string[]
+    const q4 = (s.answers?.Q4 || []) as string[]
+    return (Array.isArray(q3) && (q3.includes('fear_judgment') || q3.includes('inauthentic') || q3.includes('comparison')))
+      || (Array.isArray(q4) && q4.includes('confidence'))
+  },
+  // Q15: show if plateau stage OR stalled challenge
+  Q15: (s) => {
+    const stage = String((s.vars || {}).stage || '')
+    const q3 = (s.answers?.Q3 || []) as string[]
+    const plateau = stage === 'plateauing'
+    const stalled = Array.isArray(q3) && q3.includes('stalled')
+    return plateau || stalled
+  },
+  // Monetization preferences only when urgency is high/medium
+  Q17A_REVENUE_PREF: (s) => {
+    const u = String((s.vars || {}).monetization_urgency || '')
+    return u === 'high' || u === 'medium'
+  },
+  // Working revenue streams only when scaling
+  Q17B_WHAT_WORKS: (s) => String((s.vars || {}).monetization_urgency || '') === 'scale',
+  // Helper for unknown audience
+  Q12A_HELP_WITH: (s) => String((s.answers || {}).Q12 || '') === 'unknown',
+}
+
+export function shouldAsk(nodeId: string, state: FlowState): boolean {
+  const guard = askGuards[nodeId]
+  if (!guard) return true
+  try { return !!guard(state) } catch { return false }
+}
+
+// === Core router ==============================================================
 export function getNextNode(currentId: string, state: FlowState, tree: DecisionTree): string {
   const node = tree.nodes[currentId];
   if (!node) return tree.exit;
 
+  // rule routes first
   for (const route of node.onAnswer || []) {
     if (evalBool(route.when, state)) return route.next;
   }
 
+  // option-level next for "single"
   const ans = state.answers[currentId];
   if (node.type === "single" && ans && node.options) {
     const opt = node.options.find(o => o.value === ans);
     if (opt?.next) return opt.next;
   }
 
+  // numeric fallback: Q{n} → next askable Q
   const match = currentId.match(/^Q(\d+)[A-Z_]*$/);
   if (match) {
-    const n = parseInt(match[1], 10) + 1;
-    const guess = `Q${n}`;
-    if (tree.nodes[guess]) return guess;
+    let n = parseInt(match[1], 10) + 1;
+    const guard = n + 200; // hard cap to avoid infinite loops
+    while (n <= guard) {
+      const guess = `Q${n}`;
+      const exists = !!tree.nodes[guess]
+      if (!exists) break
+      if (shouldAsk(guess, state)) return guess
+      n++
+    }
   }
   return tree.exit;
 }
 
-export function onAnswerPersist(state: FlowState, nodeId: string, answer: any, tree: DecisionTree) {
-  state.answers[nodeId] = answer;
-  const node = tree.nodes[nodeId];
-  if (!node) return;
-  if (node.type === 'single' && node.options) {
-    const opt = node.options.find(o => o.value === answer);
-    if (opt?.setVars) Object.assign(state.vars, opt.setVars);
-  }
-  if (node.type === 'multi' && node.options && Array.isArray(answer)) {
-    for (const val of answer) {
-      const opt = node.options.find(o => o.value === val);
-      if (opt?.setVars) Object.assign(state.vars, opt.setVars);
-    }
-  }
+// === Padding strategy =========================================================
+// The padOrder should list "lightweight" universal Qs that:
+// 1) Don’t bias the main plan logic
+// 2) Are safe to ask if still unanswered
+// 3) Are useful signals for Claude if answered
+export const padOrder: string[] = [
+  'Q1E_EXCITES',       // open text interests
+  'Q12A_HELP_WITH',    // text helper for audience
+  'Q2A_PLATEAU_CAUSE', // multi (guarded; safe if allowed)
+  'Q10',               // topics text chips
+  'Q5',                // driving forces (multi)
+  'Q6',                // desired audience feeling (multi)
+  'Q15',               // what tried (multi; guarded)
+  'Q16',               // criticism attit. (single)
+];
+
+// list of all askable nodes (guards honored) in tree order
+export function listAskableNodes(state: FlowState, tree: DecisionTree): string[] {
+  return Object.keys(tree.nodes).filter(id => shouldAsk(id, state));
 }
+
+export function countAnswered(state: FlowState): number {
+  const a = state.answers || {};
+  return Object.keys(a).filter(k => {
+    const v = a[k];
+    if (v === undefined || v === null) return false;
+    if (Array.isArray(v)) return v.length > 0;
+    return String(v).length > 0;
+  }).length;
+}
+
+// Find the next pad question that is askable and unanswered
+export function nextPadNode(state: FlowState, tree: DecisionTree): string {
+  for (const id of padOrder) {
+    if (!tree.nodes[id]) continue;
+    if (!shouldAsk(id, state)) continue;
+    const v = state.answers[id];
+    const empty = v == null || (Array.isArray(v) ? v.length === 0 : String(v).length === 0);
+    if (empty) return id;
+  }
+  // fallback: scan any askable unanswered node
+  const askables = listAskableNodes(state, tree);
+  for (const id of askables) {
+    const v = state.answers[id];
+    const empty = v == null || (Array.isArray(v) ? v.length === 0 : String(v).length === 0);
+    if (empty) return id;
+  }
+  return tree.exit;
+}
+
 
 export const decisionTree: DecisionTree = {
   start: "Q1",
@@ -104,9 +191,9 @@ export const decisionTree: DecisionTree = {
         { label: "I want to grow my personal brand", value: "personal_brand", next: "Q2", setVars: { identity: "personal_brand" } },
         { label: "I need to market my business/product", value: "business_brand", next: "Q1B_BUSINESS_TYPE", setVars: { identity: "business" } },
         { label: "I'm an artist/creator seeking visibility", value: "artist_creator", next: "Q1C_ART_MEDIUM", setVars: { identity: "artist" } },
-        { label: "I want to monetize my existing following", value: "monetize_existing", next: "Q17", setVars: { already_monetizing_intent: true } },
-        { label: "I'm stuck and need a breakthrough", value: "stuck", next: "Q2", setVars: { stage_hint: "stuck" } },
-        { label: "Just exploring what's possible", value: "exploring", next: "Q1E_EXCITES", setVars: { exploring: true } }
+        { label: "I want to monetize my existing following", value: "monetize_existing", next: "Q2", setVars: { identity: "monetize_existing", already_monetizing_intent: true } },
+        { label: "I'm stuck and need a breakthrough", value: "stuck", next: "Q2", setVars: { identity: "stuck", stage_hint: "stuck" } },
+        { label: "Just exploring what's possible", value: "exploring", next: "Q1E_EXCITES", setVars: { identity: "exploring", exploring: true } }
       ]
     },
 
@@ -184,11 +271,6 @@ export const decisionTree: DecisionTree = {
         { label: "Technical stuff confuses me", value: "technical" },
         { label: "I compare myself to others constantly", value: "comparison" },
         { label: "My growth has completely stalled", value: "stalled" }
-      ],
-      onAnswer: [
-        { when: "includes('fear_judgment', answers.Q3)", next: "Q14" },
-        { when: "any([includes('inconsistent', answers.Q3), includes('low_time', answers.Q3), includes('overwhelm', answers.Q3)])", next: "Q9" },
-        { when: "any([includes('low_engagement', answers.Q3), includes('stalled', answers.Q3)])", next: "Q11" }
       ]
     },
 
@@ -205,10 +287,6 @@ export const decisionTree: DecisionTree = {
         { label: "Brand deals and sponsorships", value: "brand_deals" },
         { label: "Selling my own products/services", value: "sell_own" },
         { label: "Just feeling confident and authentic", value: "confidence" }
-      ],
-      onAnswer: [
-        { when: "includes('first_clients', answers.Q4) || includes('brand_deals', answers.Q4) || includes('sell_own', answers.Q4)", next: "Q17" },
-        { when: "includes('confidence', answers.Q4)", next: "Q8" }
       ]
     },
 
@@ -297,6 +375,7 @@ export const decisionTree: DecisionTree = {
       id: "Q10",
       question: "What topics could you talk about for hours?",
       type: "text",
+      maxSelect: 5,
       placeholder: "List 3–5 themes. We'll turn these into content pillars."
     },
 
@@ -466,3 +545,23 @@ export const decisionTree: DecisionTree = {
   }
 };
 
+// Persist helpers (unchanged)
+export function onAnswerPersist(state: FlowState, nodeId: string, answer: any, tree: DecisionTree) {
+  state.answers[nodeId] = answer;
+  const node = tree.nodes[nodeId];
+  if (!node) return;
+  if (node.type === 'single' && node.options) {
+    const opt = node.options.find(o => o.value === answer);
+    if (opt?.setVars) Object.assign(state.vars, opt.setVars);
+  }
+  if (node.type === 'multi' && node.options && Array.isArray(answer)) {
+    for (const val of answer) {
+      const opt = node.options.find(o => o.value === val);
+      if (opt?.setVars) Object.assign(state.vars, opt.setVars);
+    }
+  }
+}
+
+export function shouldAskNode(nodeId: string, state: FlowState) {
+  return shouldAsk(nodeId, state);
+}

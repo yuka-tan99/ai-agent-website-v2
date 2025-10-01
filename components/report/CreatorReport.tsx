@@ -253,17 +253,14 @@ async function downloadFullReportPdf() {
   <div data-mentor-ui className="report-page">
     <DesignStyles /> {/* visual styles only */}
       {authed ? (
-        <div className="sticky top-0 left-0 z-20 bg-[#f9fafb]/80 backdrop-blur supports-[backdrop-filter]:bg-[#f9fafb]/50">
-          <div className="max-w-5xl mx-auto px-4 py-3">
-            <button
-              onClick={() => router.push('/account')}
-              className="inline-flex items-center h-11 px-2 rounded-md gap-2 text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
-              aria-label="Back"
-            >
-              <span className="-ml-1">←</span>
-              back
-            </button>
-          </div>
+        <div className="fixed top-[calc(var(--navH,56px)+8px)] left-6 z-40">
+          <button
+            onClick={() => router.push('/dashboard/report-board')}
+            className="bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 inline-flex items-center justify-center text-gray-900 border border-gray-100"
+            aria-label="Back to account"
+          >
+            <span className="text-xl leading-none">←</span>
+          </button>
         </div>
       ) : null}
 

@@ -62,12 +62,13 @@ type Props = {
 export default function ReportSummary({ plan: planProp }: Props) {
   const [plan, setPlan] = React.useState<Plan | null>(planProp ?? null)
   const [loading, setLoading] = React.useState(!planProp)
-  const [open, setOpen] = React.useState<null | string>(null) // <-- accordion state
+  const [open, setOpen] = React.useState<null | string>(null) // accordion state
   const [openFame, setOpenFame] = React.useState(true)
-  const [mounted, setMounted] = React.useState(false)
+  const [hydrating, setHydrating] = React.useState(false)
+  const sseRef = React.useRef<EventSource | null>(null)
+  const fetchLockRef = React.useRef(false)
 
-  React.useEffect(() => { setMounted(true) }, [])
-
+  // If no plan was passed (e.g., legacy usage), fetch once client-side.
   React.useEffect(() => {
     if (planProp) return
     let cancel = false
@@ -80,12 +81,66 @@ export default function ReportSummary({ plan: planProp }: Props) {
         if (!cancel) setLoading(false)
       }
     })()
-    return () => {
-      cancel = true
-    }
+    return () => { cancel = true }
   }, [planProp])
 
-  if (loading) return <div className="text-sm text-gray-500">Loading…</div>
+  // Progressive hydration: if any section is empty, poll for updated plan
+  React.useEffect(() => {
+    let active = true
+    if (!plan) return
+    const sections: any = plan.sections || {}
+    const keys = ['ai_marketing_psychology','foundational_psychology','platform_specific_strategies','content_strategy','posting_frequency','metrics_mindset','mental_health']
+    const allReady = keys.every(k => Array.isArray(sections?.[k]?.bullets) && sections[k].bullets.length > 0)
+    if (allReady) { setHydrating(false); return }
+    setHydrating(true)
+
+    // Prefer SSE for live updates; fallback to polling if EventSource unavailable
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      if (sseRef.current) {
+        try { sseRef.current.close() } catch {}
+        sseRef.current = null
+      }
+      const es = new EventSource('/api/report/stream')
+      sseRef.current = es
+      const fetchPlan = async () => {
+        if (fetchLockRef.current) return
+        fetchLockRef.current = true
+        try {
+          const r = await fetch('/api/report', { cache: 'no-store' })
+          const j = await r.json().catch(()=>({}))
+          if (!active) return
+          if (j?.plan) setPlan(j.plan)
+        } catch {}
+        fetchLockRef.current = false
+      }
+      es.addEventListener('sections', () => { void fetchPlan() })
+      es.addEventListener('progress', () => {})
+      es.addEventListener('done', () => {
+        setHydrating(false)
+        try { es.close() } catch {}
+        sseRef.current = null
+      })
+      es.onerror = () => {
+        // fallback to polling if the stream drops
+        try { es.close() } catch {}
+        sseRef.current = null
+      }
+      return () => { active = false; try { es.close() } catch {}; sseRef.current = null }
+    } else {
+      const id = setInterval(async () => {
+        try {
+          const r = await fetch('/api/report', { cache: 'no-store' })
+          const j = await r.json().catch(()=>({}))
+          if (!active) return
+          if (j?.plan) setPlan(j.plan)
+        } catch {}
+      }, 1000)
+      return () => { active = false; clearInterval(id) }
+    }
+  }, [plan])
+
+  // Smoothly render once data exists; no explicit loading text
+  if (loading) return null
 if (!plan) {
   return (
     <div className="dashboard-card p-6 text-center">
@@ -95,7 +150,7 @@ if (!plan) {
       </p>
       <Link
         href="/onboarding"
-        className="inline-flex items-center justify-center rounded-full bg-black text-white px-5 py-2 hover:bg-gray-800 transition"
+        className="inline-flex items-center justify-center rounded-full bg-[var(--accent-grape)] text-white px-5 py-2 hover:bg-[#874E95] transition"
       >
         get started
       </Link>
@@ -105,7 +160,7 @@ if (!plan) {
 const S = normalizeAllSections(plan.sections || {})
 
   return (
-    <div className={["report-page", "report-fade", mounted ? "is-in" : ""].join(" ")}> 
+    <div className="report-page fade-in"> 
       {/* Title */}
       <div className="text-center mb-6">
         <h1 className="report-title">your personalized report</h1>
@@ -128,7 +183,7 @@ const S = normalizeAllSections(plan.sections || {})
                 <Breakdown items={Array.isArray(plan.fame_breakdown) ? plan.fame_breakdown : []} />
               </div>
               <div className="mt-5 flex justify-center">
-                <Link href="/dashboard/fame-insights" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+                <Link href="/dashboard/fame-insights" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
               </div>
             </>
           )}
@@ -145,7 +200,7 @@ const S = normalizeAllSections(plan.sections || {})
             )}
           </div>
           <div className="mt-2 text-center">
-            <Link href="/dashboard/learn/main-problem" className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/learn/main-problem" className="inline-flex items-center justify-center px-4 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         </section>
       </div>
@@ -159,7 +214,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="ai"
         extra={
           <div className="mt-5 flex justify-center">
-            <Link href="/dashboard/ai-psych" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/ai-psych" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         }
       />
@@ -171,7 +226,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="foundation"
         extra={
           <div className="mt-5 flex justify-center">
-            <Link href="/dashboard/learn/foundational-psych" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/learn/foundational-psych" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         }
       />
@@ -185,7 +240,7 @@ const S = normalizeAllSections(plan.sections || {})
           <div className="mt-4">
             <MiniDonut data={S.platform_specific_strategies?.charts?.platform_focus || []} />
             <div className="mt-5 flex justify-center">
-              <Link href="/dashboard/learn/platform-strategies" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+              <Link href="/dashboard/learn/platform-strategies" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
             </div>
           </div>
         }
@@ -198,7 +253,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="content"
         extra={
           <div className="mt-5 flex justify-center">
-            <Link href="/dashboard/learn/content-strategy" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/learn/content-strategy" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         }
       />
@@ -210,7 +265,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="posting"
         extra={
           <div className="mt-5 flex justify-center">
-            <Link href="/dashboard/learn/posting-frequency" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/learn/posting-frequency" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         }
       />
@@ -222,7 +277,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="metrics"
         extra={
           <div className="mt-5 flex justify-center">
-            <Link href="/dashboard/learn/metrics-mindset" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/learn/metrics-mindset" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         }
       />
@@ -234,7 +289,7 @@ const S = normalizeAllSections(plan.sections || {})
         icon="mental"
         extra={
           <div className="mt-5 flex justify-center">
-            <Link href="/dashboard/learn/mental-health" className="px-5 py-2 rounded-full bg-[var(--accent-grape)] text-white hover:bg-[#874E95] transition-colors">learn more</Link>
+            <Link href="/dashboard/learn/mental-health" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
           </div>
         }
       />
@@ -277,17 +332,82 @@ function Accordion({
       </button>
 
       <div className="sect-panel mt-3" style={{ maxHeight: open ? 1200 : 0 }} data-open={open ? "true" : "false"}>
-        {hasSummary && <p className="text-gray-700 mb-3">{section.summary}</p>}
-        {hasBullets && (
-          <ul className="list-disc pl-5 space-y-1 text-gray-800">
-            {section.bullets.map((b, i) => (
-              <li key={i}>{b}</li>
-            ))}
-          </ul>
+        {hasSummary ? (
+          <p className="text-gray-700 mb-3 transition-opacity duration-200">{section.summary}</p>
+        ) : (
+          <div className="animate-pulse h-4 bg-gray-200 rounded w-2/3 mb-3" />
+        )}
+        {hasBullets ? (
+          <TypewriterList items={section.bullets} onceKey={title} />
+        ) : (
+          <div className="animate-pulse space-y-2">
+            <div className="h-3 bg-gray-200 rounded" />
+            <div className="h-3 bg-gray-200 rounded w-11/12" />
+            <div className="h-3 bg-gray-200 rounded w-9/12" />
+          </div>
         )}
         {extra}
       </div>
     </section>
+  )
+}
+
+// Typewriter list that reveals bullets line by line with a subtle caret
+function TypewriterList({ items, onceKey }: { items: string[]; onceKey?: string }) {
+  const [visible, setVisible] = React.useState<string[]>([])
+  const playedRef = React.useRef<string | null>(null)
+
+  React.useEffect(() => {
+    if (!items?.length) return
+    // Skip typing if this device has already shown the typeout once
+    try {
+      if (localStorage.getItem('report_typed_v1') === 'done') {
+        setVisible(items)
+        return
+      }
+    } catch {}
+    if (onceKey && playedRef.current === onceKey) { setVisible(items); return }
+    let i = 0
+    setVisible([])
+    const id = setInterval(() => {
+      setVisible((v) => (i < items.length ? [...v, items[i++]] : v))
+      if (i >= items.length) {
+        clearInterval(id)
+        if (onceKey) playedRef.current = onceKey
+        try { localStorage.setItem('report_typed_v1', 'done') } catch {}
+      }
+    }, 200)
+    return () => clearInterval(id)
+  }, [items, onceKey])
+
+  return (
+    <ul className="list-disc pl-5 space-y-1 text-gray-800 transition-opacity duration-200">
+      {visible.map((t, idx) => (
+        <li key={idx} className="relative">
+          <TypeLine text={t} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function TypeLine({ text }: { text: string }) {
+  const [n, setN] = React.useState(0)
+  React.useEffect(() => {
+    let raf = 0
+    let i = 0
+    const step = () => {
+      i += Math.max(1, Math.round(text.length / 40)) // adaptive speed
+      setN((prev) => (i > text.length ? text.length : i))
+      if (i <= text.length) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [text])
+  return (
+    <span className="relative after:ml-0.5 after:inline-block after:h-[1em] after:w-[2px] after:bg-[#9B7EDE] after:align-middle after:animate-pulse">
+      {text.slice(0, n)}
+    </span>
   )
 }
 

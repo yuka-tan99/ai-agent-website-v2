@@ -108,7 +108,7 @@ export default function SignInClient() {
         } else {
           const { error } = await sb.auth.signInWithPassword({ phone: e164, password })
           if (error) throw error
-          router.replace('/account')
+          router.replace(nextParam || '/account')
           return
         }
       } else {
@@ -125,7 +125,7 @@ export default function SignInClient() {
         } else {
           const { error } = await sb.auth.signInWithPassword({ email, password })
           if (error) throw error
-          router.replace('/account')
+          router.replace(nextParam || '/account')
           return
         }
       }

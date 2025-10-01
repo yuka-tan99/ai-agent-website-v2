@@ -192,6 +192,12 @@ export function deriveSignals(a: ReturnType<typeof normalizeAnswers>) {
 
   return {
     stage,
+    stage_code: (
+      stage === 'new' || stage === 'early' ? 'starting_from_zero'
+      : stage === 'scaled' ? 'established_with_following'
+      : stage === 'stalled' || stage === 'pivot' ? 'stuck_or_plateauing'
+      : 'starting_from_zero'
+    ),
     wantsFace,
     cameraComfort,
     platforms,
@@ -368,40 +374,65 @@ export function buildPrompt(mapping: {
   kbText?: string
 }) {
   const DASHBOARD_PROMPT = `
-You are Marketing Mentor: a friendly, plain-spoken social growth coach. Be concise, human, and specific. No fluff.
+You are an expert AI marketing consultant specializing in helping users achieve fame and success through social media and digital marketing. Your knowledge synthesizes principles from marketing psychology, brand strategy, social media algorithms, and human behavior patterns. Be concise, human, and specific. Avoid fluff.
 
-WRITE CLEARLY FOR A 15-YEAR-OLD:
-- Short paragraphs (1–3 sentences).
-- Use tight bullet lists (max 6 bullets) only when useful.
-- Bold just a few **keywords** when it helps scanning.
+Primary directive: Create personalized, actionable marketing strategies that transform users from their current state to their desired level of social media success. Prioritize practical execution over theory, authenticity over perfection, and sustainable growth over viral tricks.
+
+Writing style:
+- Clear for a 15-year-old; short paragraphs (1–3 sentences).
+- Use tight bullet lists (max 6) when useful; start bullets with verbs.
 - Keep tone warm, direct, and actionable.
 
-PLATFORM LABELS (use EXACT strings once each if relevant):
+Platform labels (use EXACT strings if mentioned):
 YouTube, Instagram, TikTok, Twitter/X, LinkedIn, Facebook, Pinterest, Twitch
 
-OUTPUT (JSON ONLY; no markdown fences). MUST be STRICTLY parseable by JSON.parse (no trailing commas, no comments, no stray text, no line breaks inside strings). MUST match this schema exactly:
+Knowledge integration framework (no attributions in text):
+- Draw practical concepts implicitly from summaries of: Building a Personal Brand in the Social Media Era; Hook Point Strategy; How to Be an Imperfectionist; Marketing Magic; Marketing Strategy (1‑Page); Social Media Marketing Mastery (500+ Tips); How Brands Grow; The Luxury Strategy; lol...OMG!; Blue Ocean Strategy. Do not name sources in the output.
 
+Dynamic personalization engine:
+- Adapt every recommendation to user stage from DERIVED_SIGNALS.stage: starting_from_zero (new/early), established_with_following (scaled), stuck_or_plateauing (stalled/pivot).
+- Customize for preferred platforms and time/tech comfort. Use the provided platform mapping when giving specifics:
+  TikTok → content_type: raw_authentic_short; posting_frequency: 1–3x daily; key_metrics: completion_rate, shares; growth_hack: trend_surfing, original_sounds.
+  Instagram → content_type: visual_storytelling; posting_frequency: 1x daily + stories; key_metrics: saves, story_replies; growth_hack: carousel_hooks, reel_covers.
+  YouTube → content_type: long_form_value; posting_frequency: 1–2x weekly; key_metrics: watch_time, ctr; growth_hack: thumbnail_psychology, series_creation.
+
+Report generation structure:
+1) Primary obstacle resolution first (fear of judgment → imperfectionist tactics; lack of consistency → mini‑habits + binary metrics; no clear niche → superpower/pillars; low engagement → hook optimization + algorithm alignment).
+2) Strategic foundation by identity (personal brand vs business/product vs artist/luxury) with appropriate frameworks (brand diamond, pillars; mental/physical availability; scarcity/premium positioning).
+3) Platform‑specific tactics with 2–3 concrete examples per chosen platform (draw from “500+ tips” style knowledge without naming it).
+4) Content execution: batching, templates, trend participation, 80/20 creation principle.
+5) Mental health & sustainability: imperfectionist strategies, boundaries, relapse recovery.
+6) Monetization path mapping by follower tiers (0–1K, 1K–10K, 10K–100K, 100K+), aligned to goals.
+7) Success measurement framework: leading indicators (posts, streaks), engagement quality, growth velocity, business metrics.
+
+Interactive lesson architecture (produce fields for future UI, but keep Overview primary):
+- Report level (overview): 3–5 key insights per section with clear actions.
+- Learn more level (deep_dive): 3–5x detail, step‑by‑step guides, templates.
+- Elaborate level (elaborate): advanced techniques, troubleshooting, long‑term strategy.
+
+OUTPUT (JSON ONLY; no markdown fences). MUST be strictly parseable by JSON.parse (no trailing commas, no comments, no stray text). Use this schema; extra fields are allowed but keep at least these keys:
 {
-  "main_problem": "short noun phrase e.g. 'inconsistent posting'",
-  "main_problem_detail": "1-2 paragraphs that summarize the creator's biggest roadblocks and how to fix them",
+  "main_problem": "short noun phrase",
+  "main_problem_detail": "1–2 short paragraphs",
   "sections": {
-    "ai_marketing_psychology": { "summary": "", "bullets": [] },
-    "foundational_psychology": { "summary": "", "bullets": [] },
-    "platform_specific_strategies": { "summary": "", "bullets": [], "charts": { "platform_focus": [{ "name":"TikTok","value":40 }] } },
-    "content_strategy": { "summary": "", "bullets": [] },
-    "posting_frequency": { "summary": "", "bullets": [] },
-    "metrics_mindset": { "summary": "", "bullets": [] },
-    "mental_health": { "summary": "", "bullets": [] }
-  }
+    "ai_marketing_psychology": { "summary": "", "bullets": [], "troubleshooting": [], "examples": [], "deep_dive": "", "elaborate": "" },
+    "foundational_psychology": { "summary": "", "bullets": [], "troubleshooting": [], "examples": [], "deep_dive": "", "elaborate": "" },
+    "platform_specific_strategies": { "summary": "", "bullets": [], "examples": [], "platform_customizations": { "TikTok": [], "Instagram": [], "YouTube": [] }, "charts": { "platform_focus": [{ "name":"TikTok","value":40 }] }, "deep_dive": "", "elaborate": "" },
+    "content_strategy": { "summary": "", "bullets": [], "troubleshooting": [], "examples": [], "deep_dive": "", "elaborate": "" },
+    "posting_frequency": { "summary": "", "bullets": [], "troubleshooting": [], "examples": [], "deep_dive": "", "elaborate": "" },
+    "metrics_mindset": { "summary": "", "bullets": [], "troubleshooting": [], "examples": [], "deep_dive": "", "elaborate": "" },
+    "mental_health": { "summary": "", "bullets": [], "troubleshooting": [], "examples": [], "deep_dive": "", "elaborate": "" }
+  },
+  "monetization_path": ["…"],
+  "kpis": { "weekly_posts": 0, "target_view_rate_pct": 0, "target_followers_30d": 0 }
 }
 
-STRICT RULES:
-- Use the platform labels exactly as listed.
-- Make every bullet a command or a concrete example.
-- Keep sentences short. Prefer verbs at the start.
-- Produce VALID JSON ONLY (no trailing commas, no comments, no extra keys). Do not include any text outside the JSON object. Escape internal quotes. Keep array items as simple strings without newlines.
- - If OPTIONAL_KB is provided, prefer its content for relevant sections. Weave 1–2 concrete insights per relevant section and cite the source book title once in that section (e.g., "(Source: Title)").
-- Do not include any other keys than in the schema.
+Strict rules:
+- Use platform labels exactly as listed.
+- Make every bullet a command or a concrete example tailored to user stage.
+- Weave in imperfectionist troubleshooting where relevant (mini‑habits, binary success, mistake quota) without naming sources.
+- Prefer OPTIONAL_KB content when provided but do not attribute sources; synthesize concisely.
+- Produce VALID JSON ONLY; no trailing commas; escape quotes; no text outside the JSON.
 `
 
   return `${DASHBOARD_PROMPT}
@@ -586,7 +617,11 @@ function summarizeMainProblem(sig: ReturnType<typeof deriveSignals>, plan: any) 
 
 /* ---------------- Public API used by /api/report ---------------- */
 export function prepareReportInputs(persona: any, kbText = "") {
-  const answers = normalizeAnswers(persona || {})
+  // Unwrap onboarding.v2 payload shape if present
+  const p = (persona && typeof persona === 'object' && persona.version === 'onboarding.v2' && persona.answers)
+    ? persona.answers
+    : persona
+  const answers = normalizeAnswers(p || {})
   const signals = deriveSignals(answers)
   const seeds = chartSeeds(signals)
   const fame = computeFameScore(answers)
@@ -595,12 +630,19 @@ export function prepareReportInputs(persona: any, kbText = "") {
 }
 
 export function finalizePlan(rawFromLLM: any, personaOrAnswers: any, fameScore: number) {
-  const answers = normalizeAnswers(personaOrAnswers || {})
+  const p = (personaOrAnswers && typeof personaOrAnswers === 'object' && (personaOrAnswers as any).version === 'onboarding.v2' && (personaOrAnswers as any).answers)
+    ? (personaOrAnswers as any).answers
+    : personaOrAnswers
+  const answers = normalizeAnswers(p || {})
   const signals = deriveSignals(answers)
   const seeds = chartSeeds(signals)
 
   // Coerce to UI sections (never missing)
   let plan = coercePlanShape(rawFromLLM, seeds, fameScore)
+
+  // Track section provenance for diagnostics visible at render time
+  const _metaExisting = (plan as any)._section_meta
+  const sectionMeta: Record<string, { origin: 'llm' | 'fallback'; summaryLen: number; bullets: number }> = _metaExisting || ((plan as any)._section_meta = {})
 
   // Optional legacy enrichments (safe no-ops for your UI)
   plan = fillFromPersonaIfMissing(plan, personaOrAnswers || {})
@@ -619,7 +661,16 @@ export function finalizePlan(rawFromLLM: any, personaOrAnswers: any, fameScore: 
   // Fill empty sections with sensible defaults so UI never shows blanks
   const ensureSection = (sec: any, kind: string) => {
     const has = !!(sec?.summary) || (Array.isArray(sec?.bullets) && sec.bullets.length)
-    if (has) return sec
+    if (process.env.DEBUG_LOG === 'true') {
+      console.log(`[finalizePlan] section ${kind} hasLLM=${has} bullets=${Array.isArray(sec?.bullets) ? sec.bullets.length : 0}`)
+    }
+    if (has) {
+      try {
+        const bulletsLen = Array.isArray(sec?.bullets) ? sec.bullets.length : 0
+        sectionMeta[kind] = { origin: 'llm', summaryLen: (sec?.summary || '').length, bullets: bulletsLen }
+      } catch {}
+      return sec
+    }
     const bullets: string[] = []
     let summary = ''
     switch (kind) {
@@ -653,7 +704,14 @@ export function finalizePlan(rawFromLLM: any, personaOrAnswers: any, fameScore: 
         bullets.push('Set a 20‑minute publish window', 'Use templates to reduce friction', 'Celebrate streaks, not views')
         break
     }
-    return { ...(sec || {}), summary, bullets }
+    const filled = { ...(sec || {}), summary, bullets }
+    try {
+      sectionMeta[kind] = { origin: 'fallback', summaryLen: summary.length, bullets: bullets.length }
+    } catch {}
+    if (process.env.DEBUG_LOG === 'true') {
+      console.log(`[finalizePlan] section ${kind} used FALLBACK summaryLen=${summary.length} bullets=${bullets.length}`)
+    }
+    return filled
   }
 
   plan.sections.ai_marketing_psychology = ensureSection(plan.sections.ai_marketing_psychology, 'ai_marketing_psychology')
@@ -663,5 +721,10 @@ export function finalizePlan(rawFromLLM: any, personaOrAnswers: any, fameScore: 
   plan.sections.posting_frequency = ensureSection(plan.sections.posting_frequency, 'posting_frequency')
   plan.sections.metrics_mindset = ensureSection(plan.sections.metrics_mindset, 'metrics_mindset')
   plan.sections.mental_health = ensureSection(plan.sections.mental_health, 'mental_health')
+  try {
+    const origins = Object.values(sectionMeta).map(m => m.origin)
+    ;(plan as any)._ai_sections = origins.filter(o => o === 'llm').length
+    ;(plan as any)._fallback_sections = origins.filter(o => o === 'fallback').length
+  } catch {}
   return plan
 }

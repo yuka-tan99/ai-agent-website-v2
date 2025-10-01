@@ -42,12 +42,8 @@ export default function ChatGate() {
     pathname.startsWith("/signin") ||
     pathname.startsWith("/paywall")
 
-  // Report routes (no chat while viewing the report)
-  const isReport =
-    pathname === "/dashboard" ||              // your current report page
-    pathname.startsWith("/dashboard/")        // safety if you add subroutes later
-
-  if (isPublic || isReport) return null
+  // Keep chat on dashboard/report pages per new UX
+  if (isPublic) return null
 
   return <ChatWidget />
 }

@@ -639,7 +639,7 @@ export function LegacyOnboarding() {
       await persistDraft({ answers })
 
       if (!authed) {
-        const next = encodeURIComponent('/auth/signed-up?next=/paywall')
+        const next = encodeURIComponent('/paywall')
         return router.push(`/signin?next=${next}`)
       }
       try {
@@ -672,15 +672,15 @@ export function LegacyOnboarding() {
 
       <div className={["min-h-screen flex flex-col items-center justify-center bg-[#f9fafb] px-4 text-center fade-in pb-24 md:pb-28 onb-wrap", transitioning ? "is-fading" : ""].join(' ')}>
         <div className="w-full max-w-2xl">
-          {/* Back to previous (fixed, aligned with title Y, left-aligned) */}
+          {/* Back Button */}
           {step > 0 && (
-            <div className="fixed left-6 z-40" style={{ top: 'calc(var(--navH) + 12px)' }}>
+            <div className="fixed top-6 left-6 z-50">
               <button
                 onClick={handleBack}
-                className="inline-flex items-center h-11 px-2 rounded-md text-left text-sm md:text-base text-gray-700 hover:text-[var(--accent-grape)] hover:font-semibold transition-colors"
-                aria-label="Back to previous"
+                className="bg-white rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-110 inline-flex items-center justify-center text-gray-900 border border-gray-100"
+                aria-label="Back"
               >
-                &lt;- back
+                <span className="text-xl">←</span>
               </button>
             </div>
           )}

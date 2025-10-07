@@ -10,7 +10,8 @@ function isOnboardingComplete(answers: Record<string, any> | null | undefined): 
   if (!answers || typeof answers !== 'object') return false
   // SmartOnboarding (decision tree) signals
   if ((answers as any)?.__vars?.stage) return true
-  if (typeof (answers as any)?.Q2 === 'string' && (answers as any).Q2) return true
+  const q2 = (answers as any)?.Q2
+  if ((Array.isArray(q2) && q2.length > 0) || (typeof q2 === 'string' && q2)) return true
   const qCount = Object.keys(answers).filter(k => /^Q\d/.test(k)).filter(k => {
     const v: any = (answers as any)[k]
     return Array.isArray(v) ? v.length > 0 : (v != null && String(v).length > 0)

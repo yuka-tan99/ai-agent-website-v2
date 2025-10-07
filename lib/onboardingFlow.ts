@@ -86,7 +86,11 @@ const askGuards: Record<string, (state: FlowState) => boolean> = {
   // Working revenue streams only when scaling
   Q17B_WHAT_WORKS: (s) => String((s.vars || {}).monetization_urgency || '') === 'scale',
   // Helper for unknown audience
-  Q12A_HELP_WITH: (s) => String((s.answers || {}).Q12 || '') === 'unknown',
+  Q12A_HELP_WITH: (s) => {
+    const raw = (s.answers || {}).Q12
+    if (Array.isArray(raw)) return raw.includes('unknown')
+    return String(raw || '') === 'unknown'
+  },
 }
 
 export function shouldAsk(nodeId: string, state: FlowState): boolean {
@@ -105,11 +109,15 @@ export function getNextNode(currentId: string, state: FlowState, tree: DecisionT
     if (evalBool(route.when, state)) return route.next;
   }
 
-  // option-level next for "single"
+  // option-level next for selected values
   const ans = state.answers[currentId];
-  if (node.type === "single" && ans && node.options) {
-    const opt = node.options.find(o => o.value === ans);
-    if (opt?.next) return opt.next;
+  if (node.options) {
+    const selected = Array.isArray(ans) ? ans : (ans != null ? [ans] : []);
+    if (selected.length) {
+      for (const opt of node.options) {
+        if (selected.includes(opt.value) && opt.next) return opt.next;
+      }
+    }
   }
 
   // numeric fallback: Q{n} → next askable Q
@@ -186,7 +194,7 @@ export const decisionTree: DecisionTree = {
     Q1: {
       id: "Q1",
       question: "What brings you here today?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "I want to grow my personal brand", value: "personal_brand", next: "Q2", setVars: { identity: "personal_brand" } },
         { label: "I need to market my business/product", value: "business_brand", next: "Q1B_BUSINESS_TYPE", setVars: { identity: "business" } },
@@ -200,7 +208,7 @@ export const decisionTree: DecisionTree = {
     Q1B_BUSINESS_TYPE: {
       id: "Q1B_BUSINESS_TYPE",
       question: "What type of business/product?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "Digital product / course / coaching", value: "digital", next: "Q2", setVars: { biz_type: "digital" } },
         { label: "Service (agency/freelance/professional)", value: "service", next: "Q2", setVars: { biz_type: "service" } },
@@ -211,7 +219,7 @@ export const decisionTree: DecisionTree = {
     Q1C_ART_MEDIUM: {
       id: "Q1C_ART_MEDIUM",
       question: "What's your primary medium?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "Music / Audio", value: "music", next: "Q2", setVars: { art_medium: "music" } },
         { label: "Visual / Design / Photo", value: "visual", next: "Q2", setVars: { art_medium: "visual" } },
@@ -223,14 +231,23 @@ export const decisionTree: DecisionTree = {
     Q1E_EXCITES: {
       id: "Q1E_EXCITES",
       question: "What excites you most about social media right now?",
-      type: "text",
-      placeholder: "e.g., building community, creative expression, career opportunities"
+      type: "multi",
+      options: [
+        { label: "Connecting with a community", value: "community_connection" },
+        { label: "Expressing my creativity", value: "creative_expression" },
+        { label: "Sharing my story and experiences", value: "story_sharing" },
+        { label: "Helping people with my expertise", value: "helping_others" },
+        { label: "Experimenting with new formats", value: "experimenting_formats" },
+        { label: "Collaborating with other creators", value: "collaboration" },
+        { label: "Building income opportunities", value: "income_opportunities" },
+        { label: "Spotting trends before others", value: "trendspotting" }
+      ]
     },
 
     Q2: {
       id: "Q2",
       question: "Where are you on your journey?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "Starting from scratch (< 100)", value: "lt_100", setVars: { stage: "starting_from_zero" } },
         { label: "Building momentum (100–1K)", value: "100_1k", setVars: { stage: "early_momentum" } },
@@ -245,7 +262,6 @@ export const decisionTree: DecisionTree = {
       id: "Q2A_PLATEAU_CAUSE",
       question: "What do you think caused the plateau?",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "Content got repetitive", value: "repetitive" },
         { label: "Algorithm changes", value: "algo" },
@@ -259,7 +275,6 @@ export const decisionTree: DecisionTree = {
       id: "Q3",
       question: "What's your biggest challenge right now? (Select up to 3)",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "I don't know what to post about", value: "no_niche" },
         { label: "I can't stay consistent", value: "inconsistent" },
@@ -278,7 +293,6 @@ export const decisionTree: DecisionTree = {
       id: "Q4",
       question: "What does success look like for you in 6 months?",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "Consistent posting without anxiety", value: "consistency_relief" },
         { label: "A clear brand identity people recognize", value: "brand_clarity" },
@@ -294,7 +308,6 @@ export const decisionTree: DecisionTree = {
       id: "Q5",
       question: "What's driving you? (Select all that resonate)",
       type: "multi",
-      maxSelect: 4,
       options: [
         { label: "Financial freedom", value: "money" },
         { label: "Creative expression", value: "creative" },
@@ -311,7 +324,6 @@ export const decisionTree: DecisionTree = {
       id: "Q6",
       question: "How do you want people to feel after consuming your content?",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "Inspired and motivated", value: "inspired" },
         { label: "Educated and informed", value: "educated" },
@@ -343,24 +355,21 @@ export const decisionTree: DecisionTree = {
     Q8: {
       id: "Q8",
       question: "How do you feel about being visible?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "Love being on camera, very comfortable", value: "cam_comfort", setVars: { visibility: "face_on" }, next: "Q11" },
-        { label: "OK with video but prefer edited/prepared", value: "edited", setVars: { visibility: "scripted" } },
+        { label: "OK with video but prefer edited/prepared", value: "edited", setVars: { visibility: "scripted" }, next: "Q11" },
         { label: "Prefer voiceovers with visuals", value: "voiceover", setVars: { visibility: "voiceover" }, next: "Q11" },
         { label: "Want to stay completely behind the scenes", value: "faceless", setVars: { visibility: "faceless" }, next: "Q11" },
-        { label: "Depends on my mood/topic", value: "depends", setVars: { visibility: "variable" } },
-        { label: "Want to work up to showing my face", value: "work_up", setVars: { visibility: "work_up" } }
-      ],
-      onAnswer: [
-        { when: "answers.Q8 === 'edited' || answers.Q8 === 'depends' || answers.Q8 === 'work_up'", next: "Q11" }
+        { label: "Depends on my mood/topic", value: "depends", setVars: { visibility: "variable" }, next: "Q11" },
+        { label: "Want to work up to showing my face", value: "work_up", setVars: { visibility: "work_up" }, next: "Q11" }
       ]
     },
 
     Q9: {
       id: "Q9",
       question: "What's your content creation reality?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "I can batch create on weekends", value: "batch_weekends", setVars: { time_mode: "batch_weekly" } },
         { label: "I have 15–30 minutes daily", value: "micro_daily", setVars: { time_mode: "micro_daily" } },
@@ -374,16 +383,25 @@ export const decisionTree: DecisionTree = {
     Q10: {
       id: "Q10",
       question: "What topics could you talk about for hours?",
-      type: "text",
-      maxSelect: 5,
-      placeholder: "List 3–5 themes. We'll turn these into content pillars."
+      type: "multi",
+      options: [
+        { label: "My professional expertise", value: "professional_expertise" },
+        { label: "Life experiences and lessons", value: "life_experiences" },
+        { label: "Creative process or craft", value: "creative_process" },
+        { label: "Industry trends and insights", value: "industry_trends" },
+        { label: "Mindset and motivation", value: "mindset_motivation" },
+        { label: "Lifestyle and routines", value: "lifestyle_routines" },
+        { label: "Behind-the-scenes journey", value: "behind_the_scenes" },
+        { label: "Specific hobbies or fandoms", value: "specific_hobbies" },
+        { label: "How-to tips and tutorials", value: "how_to_tutorials" },
+        { label: "Other signature topics", value: "other_signature_topics" }
+      ]
     },
 
     Q11: {
       id: "Q11",
       question: "Where do you naturally spend time online?",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "TikTok", value: "tiktok", setVars: { platform_pref_tiktok: true } },
         { label: "Instagram", value: "instagram", setVars: { platform_pref_instagram: true } },
@@ -398,7 +416,7 @@ export const decisionTree: DecisionTree = {
     Q12: {
       id: "Q12",
       question: "Who needs what you have to offer?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "People starting where I once was", value: "past_self", setVars: { audience_frame: "past_self" } },
         { label: "Professionals in my industry", value: "industry", setVars: { audience_frame: "industry" } },
@@ -413,14 +431,23 @@ export const decisionTree: DecisionTree = {
     Q12A_HELP_WITH: {
       id: "Q12A_HELP_WITH",
       question: "What do people often ask you for help with?",
-      type: "text",
-      placeholder: "e.g., tech tips, fitness advice, career moves"
+      type: "multi",
+      options: [
+        { label: "Tech or tools setup", value: "tech_tools" },
+        { label: "Strategy and planning", value: "strategy_planning" },
+        { label: "Mindset and confidence", value: "mindset_confidence" },
+        { label: "Creative ideas and brainstorming", value: "creative_ideas" },
+        { label: "Career or business decisions", value: "career_business" },
+        { label: "Habit or productivity systems", value: "habits_productivity" },
+        { label: "Lifestyle or wellness advice", value: "lifestyle_wellness" },
+        { label: "Other specialized support", value: "other_support" }
+      ]
     },
 
     Q13: {
       id: "Q13",
       question: "What's your relationship with data and metrics?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "I obsessively check stats", value: "obsessive", setVars: { metric_style: "high" } },
         { label: "I look occasionally", value: "casual", setVars: { metric_style: "medium" } },
@@ -435,7 +462,6 @@ export const decisionTree: DecisionTree = {
       id: "Q14",
       question: "What specific fears hold you back? (Select all)",
       type: "multi",
-      maxSelect: 5,
       options: [
         { label: "Being cringy or embarrassing", value: "cringe" },
         { label: "Family/friends judging me", value: "friends_judging" },
@@ -453,7 +479,6 @@ export const decisionTree: DecisionTree = {
       id: "Q15",
       question: "What have you already tried?",
       type: "multi",
-      maxSelect: 4,
       options: [
         { label: "Posting consistently for a while", value: "post_consistent" },
         { label: "Following trends religiously", value: "trend_follow" },
@@ -468,7 +493,7 @@ export const decisionTree: DecisionTree = {
     Q16: {
       id: "Q16",
       question: "How do you handle criticism?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "I use it to improve", value: "improve" },
         { label: "It crushes me for days", value: "crushes" },
@@ -482,7 +507,7 @@ export const decisionTree: DecisionTree = {
     Q17: {
       id: "Q17",
       question: "When it comes to making money from this...",
-      type: "single",
+      type: "multi",
       options: [
         { label: "I need income ASAP", value: "asap", setVars: { monetization_urgency: "high" }, next: "Q17A_REVENUE_PREF" },
         { label: "I'm building long-term, no rush", value: "long_term", setVars: { monetization_urgency: "low" } },
@@ -497,7 +522,6 @@ export const decisionTree: DecisionTree = {
       id: "Q17A_REVENUE_PREF",
       question: "Which monetization paths interest you most? (Pick up to 3)",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "Coaching / consulting", value: "coaching" },
         { label: "UGC / brand deals", value: "ugc_brand" },
@@ -512,7 +536,6 @@ export const decisionTree: DecisionTree = {
       id: "Q17B_WHAT_WORKS",
       question: "Which revenue streams are working best now?",
       type: "multi",
-      maxSelect: 3,
       options: [
         { label: "Brand deals", value: "brand_deals" },
         { label: "Services", value: "services" },
@@ -526,7 +549,7 @@ export const decisionTree: DecisionTree = {
     Q18: {
       id: "Q18",
       question: "What percentage of your dream life requires social media success?",
-      type: "single",
+      type: "multi",
       options: [
         { label: "100% - This IS my dream", value: "100" },
         { label: "75% - It's a major component", value: "75" },
@@ -549,17 +572,26 @@ export const decisionTree: DecisionTree = {
 export function onAnswerPersist(state: FlowState, nodeId: string, answer: any, tree: DecisionTree) {
   state.answers[nodeId] = answer;
   const node = tree.nodes[nodeId];
-  if (!node) return;
-  if (node.type === 'single' && node.options) {
-    const opt = node.options.find(o => o.value === answer);
-    if (opt?.setVars) Object.assign(state.vars, opt.setVars);
+  if (!node || !node.options) return;
+
+  const selected = Array.isArray(answer) ? answer : (answer != null ? [answer] : []);
+  const keys = new Set<string>();
+  for (const opt of node.options) {
+    if (!opt?.setVars) continue;
+    Object.keys(opt.setVars).forEach((k) => keys.add(k));
   }
-  if (node.type === 'multi' && node.options && Array.isArray(answer)) {
-    for (const val of answer) {
-      const opt = node.options.find(o => o.value === val);
-      if (opt?.setVars) Object.assign(state.vars, opt.setVars);
+  for (const key of keys) {
+    if (key in state.vars) delete state.vars[key];
+  }
+  const assignments: Record<string, any> = {};
+  for (const val of selected) {
+    const opt = node.options.find(o => o.value === val);
+    if (!opt?.setVars) continue;
+    for (const [k, v] of Object.entries(opt.setVars)) {
+      if (!(k in assignments)) assignments[k] = v;
     }
   }
+  Object.assign(state.vars, assignments);
 }
 
 export function shouldAskNode(nodeId: string, state: FlowState) {

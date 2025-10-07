@@ -16,7 +16,8 @@ function isComplete(ob: any): boolean {
     const a = ob?.answers || {}
     if (a?.__vars?.stage) return true
     if (typeof a?.stage === 'string' && a.stage.trim().length > 0) return true
-    if (typeof a?.Q2 === 'string' && a.Q2) return true
+    const q2 = a?.Q2
+    if ((Array.isArray(q2) && q2.length > 0) || (typeof q2 === 'string' && q2)) return true
     if (typeof a?.identity === 'string' && a.identity.trim().length > 0 && Array.isArray(a?.biggest_challenges) && a.biggest_challenges.length > 0) return true
     const qCount = Object.keys(a).filter(k => /^Q\d/.test(k)).filter(k => {
       const v: any = (a as any)[k]

@@ -48,7 +48,6 @@ export default function SmartOnboarding() {
   const [state, setState] = useState<FlowState>({ vars: {}, answers: {} })
   const [nodeId, setNodeId] = useState<string>(decisionTree.start)
   const [history, setHistory] = useState<string[]>([])
-  const [textDraft, setTextDraft] = useState('')
   const [transitioning, setTransitioning] = useState(false)
 
   useEffect(() => {
@@ -109,25 +108,32 @@ export default function SmartOnboarding() {
 
   const node: Node | undefined = decisionTree.nodes[nodeId]
 
+  const normalizeAnswer = React.useCallback((value: any): string[] => {
+    if (Array.isArray(value)) return value.filter(Boolean).map((v) => String(v))
+    if (value == null) return []
+    const str = String(value).trim()
+    return str ? [str] : []
+  }, [])
+
   // === Progress calculation (dynamic, respects branching) =====================
   const askedCount = useMemo(() => countAnswered(state), [state])
   const isCurrentAnswered = useMemo(() => {
     if (!node) return false
     const sel = state.answers[nodeId]
-    if (node.type === 'single') return !!sel
-    if (node.type === 'multi') return Array.isArray(sel) && sel.length > 0
-    if (node.type === 'text') return Array.isArray(sel) && sel.length > 0
-    return false
+    if (Array.isArray(sel)) return sel.length > 0
+    if (sel == null) return false
+    const str = typeof sel === 'string' ? sel : String(sel)
+    return str.trim().length > 0
   }, [node, nodeId, state.answers])
 
   // Predict next natural node (without padding), then we’ll enforce min/max
   const predictedNextId = useMemo(() => {
     if (!node) return ''
     const tmp: FlowState = { vars: { ...state.vars }, answers: { ...state.answers }, lastNodeId: nodeId }
-    const sel = state.answers[nodeId]
-    onAnswerPersist(tmp, nodeId, sel ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : '')), decisionTree)
+    const sel = normalizeAnswer(state.answers[nodeId])
+    onAnswerPersist(tmp, nodeId, sel, decisionTree)
     return getNextNode(nodeId, tmp, decisionTree)
-  }, [node, nodeId, state.vars, state.answers])
+  }, [node, nodeId, state.vars, state.answers, normalizeAnswer])
 
   // Show progress as % of target path (cap at MAX_Q)
   // Compute a user-specific target length (respect branching) within [MIN_Q, MAX_Q]
@@ -142,12 +148,12 @@ export default function SmartOnboarding() {
   const willExitNext = useMemo(() => {
     if (!node || !isCurrentAnswered) return false
     const snapshot: FlowState = { vars: { ...state.vars }, answers: { ...state.answers } }
-    const sel = snapshot.answers[nodeId] ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : ''))
+    const sel = normalizeAnswer(snapshot.answers[nodeId])
     onAnswerPersist(snapshot, nodeId, sel, decisionTree)
     const naturalNext = getNextNode(nodeId, snapshot, decisionTree)
     const nextId = chooseNextId(nodeId, naturalNext, snapshot)
     return nextId === decisionTree.exit
-  }, [node, nodeId, state.vars, state.answers, isCurrentAnswered])
+  }, [node, nodeId, state.vars, state.answers, isCurrentAnswered, normalizeAnswer])
 
   const pct = useMemo(() => {
     if (willExitNext) return 100
@@ -161,12 +167,12 @@ export default function SmartOnboarding() {
     if (!isCurrentAnswered) return 'continue'
     // Build the post-answer snapshot and route
     const snapshot: FlowState = { vars: { ...state.vars }, answers: { ...state.answers } }
-    const sel = snapshot.answers[nodeId] ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : ''))
+    const sel = normalizeAnswer(snapshot.answers[nodeId])
     onAnswerPersist(snapshot, nodeId, sel, decisionTree)
     const naturalNext = getNextNode(nodeId, snapshot, decisionTree)
     const nextId = chooseNextId(nodeId, naturalNext, snapshot)
     return nextId === decisionTree.exit ? 'finish & generate report' : 'continue'
-  }, [node, nodeId, state.vars, state.answers, isCurrentAnswered])
+  }, [node, nodeId, state.vars, state.answers, isCurrentAnswered, normalizeAnswer])
 
   // === Navigation core: apply pad/cap guarantees =================================
   function chooseNextId(afterCurrentId: string, nextNaturalId: string, snapshot: FlowState): string {
@@ -186,13 +192,14 @@ export default function SmartOnboarding() {
   }
 
   // === UI Interaction handlers ===================================================
-  const selectSingle = (val: string) => {
-    setState((s)=> ({ ...s, answers: { ...s.answers, [nodeId]: val } }))
-  }
-
-  const toggleMulti = (val: string) => {
-    const cur = state.answers[nodeId]
-    const next = Array.isArray(cur) ? (cur.includes(val) ? cur.filter((x:string)=>x!==val) : [...cur, val]) : [val]
+  const toggleOption = (val: string) => {
+    if (!node) return
+    const currentRaw = state.answers[nodeId]
+    const current = normalizeAnswer(currentRaw)
+    const limit = Number.isFinite(node.maxSelect ?? NaN) ? (node.maxSelect as number) : undefined
+    const exists = current.includes(val)
+    const next = exists ? current.filter((x: string) => x !== val) : [...current, val]
+    if (!exists && limit !== undefined && next.length > limit) return
     setState((s)=> ({ ...s, answers: { ...s.answers, [nodeId]: next } }))
   }
 
@@ -203,7 +210,7 @@ export default function SmartOnboarding() {
 
     // 1) Build the post-answer snapshot (mutates derived vars)
     const nextState: FlowState = { vars: { ...state.vars }, answers: { ...state.answers } }
-    const sel = nextState.answers[nodeId] ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : ''))
+    const sel = normalizeAnswer(nextState.answers[nodeId])
     onAnswerPersist(nextState, nodeId, sel, decisionTree)
 
     // 2) Decide the natural next id
@@ -220,23 +227,10 @@ export default function SmartOnboarding() {
     setState(nextState)
     setHistory((h)=> [...h, nodeId])
     setNodeId(nextId)
-    setTextDraft('')
 
     if (nextId === decisionTree.exit) { await finalizeSubmit(nextState); return }
     setTimeout(()=> setTransitioning(false), 20)
   }
-
-  // Text add-as-chips input
-  const addTextChip = () => {
-    const token = textDraft.trim()
-    if (!token) return
-    const arr = Array.isArray(state.answers[nodeId]) ? (state.answers[nodeId] as string[]) : []
-    const limit = node?.maxSelect || 5
-    if (arr.length >= limit) return
-    setState(s=> ({ ...s, answers: { ...s.answers, [nodeId]: [...arr, token] } }))
-    setTextDraft('')
-  }
-
   const goBack = () => {
     const last = history[history.length - 1]
     if (!last) return
@@ -252,28 +246,30 @@ export default function SmartOnboarding() {
 
     // Identity
     const identity: string | undefined = (() => {
-      const q1 = a.Q1
-      if (q1 === 'personal_brand') return 'personal_brand'
-      if (q1 === 'business_brand') return 'business'
-      if (q1 === 'artist_creator') return 'artist'
-      if (q1 === 'monetize_existing') return 'monetize_existing'
-      if (q1 === 'stuck') return 'stuck'
-      if (q1 === 'exploring') return 'exploring'
+      for (const q1 of arr(a.Q1)) {
+        if (q1 === 'personal_brand') return 'personal_brand'
+        if (q1 === 'business_brand') return 'business'
+        if (q1 === 'artist_creator') return 'artist'
+        if (q1 === 'monetize_existing') return 'monetize_existing'
+        if (q1 === 'stuck') return 'stuck'
+        if (q1 === 'exploring') return 'exploring'
+      }
       return undefined
     })()
-    const business_type = a.Q1B_BUSINESS_TYPE || undefined // 'digital' | 'service' | 'physical'
-    const art_medium = a.Q1C_ART_MEDIUM || undefined        // 'music' | 'visual' | 'writing' | 'other'
+    const business_type = arr(a.Q1B_BUSINESS_TYPE)[0] || undefined // 'digital' | 'service' | 'physical'
+    const art_medium = arr(a.Q1C_ART_MEDIUM)[0] || undefined        // 'music' | 'visual' | 'writing' | 'other'
     const exploring_excite = (arr(a.Q1E_EXCITES).join(', ')) || undefined
 
     // Stage
     const stage: string | undefined = (() => {
-      const v = a.Q2
-      if (v === 'lt_100') return 'starting'
-      if (v === '100_1k') return 'early_momentum'
-      if (v === '1k_10k') return 'growing'
-      if (v === '10k_50k') return 'plateauing'
-      if (v === '50k_plus') return 'large_optimizing'
-      if (v === 'restart') return 'restart'
+      for (const v of arr(a.Q2)) {
+        if (v === 'lt_100') return 'starting'
+        if (v === '100_1k') return 'early_momentum'
+        if (v === '1k_10k') return 'growing'
+        if (v === '10k_50k') return 'plateauing'
+        if (v === '50k_plus') return 'large_optimizing'
+        if (v === 'restart') return 'restart'
+      }
       return undefined
     })()
     const plateau_causes = arr(a.Q2A_PLATEAU_CAUSE).map((v) => ({
@@ -315,32 +311,63 @@ export default function SmartOnboarding() {
     const audience_feelings = arr(a.Q6).map(v => (v === 'action' ? 'action_oriented' : v))
 
     // Content & comfort
-    const content_natural = ({ teaching:'teach_explain', lifestyle:'share_life', entertaining:'entertain_funny', visual:'visual_aesthetic', conversations:'deep_conversations', document:'document_journey', react:'react_trends', building:'build_make' } as Record<string,string>)[a.Q7] || undefined
-    const visibility_comfort = ({ cam_comfort:'love_camera', edited:'ok_prepared_video', voiceover:'prefer_voiceover', faceless:'behind_scenes', depends:'depends_mood', work_up:'work_up_to_face' } as Record<string,string>)[a.Q8] || undefined
-    const time_capacity = ({ batch_weekends:'batch_weekends', micro_daily:'daily_15_30', hours_daily:'daily_hours', chaotic:'unpredictable', team:'team_support', motivation:'time_ok_motivation_low' } as Record<string,string>)[a.Q9] || undefined
-    const endless_topics = (Array.isArray(a.Q10) ? a.Q10.join(', ') : undefined)
+    const content_natural = (() => {
+      const map = { teaching:'teach_explain', lifestyle:'share_life', entertaining:'entertain_funny', visual:'visual_aesthetic', conversations:'deep_conversations', document:'document_journey', react:'react_trends', building:'build_make' } as Record<string,string>
+      for (const v of arr(a.Q7)) {
+        if (map[v]) return map[v]
+      }
+      return undefined
+    })()
+    const visibility_comfort = (() => {
+      const map = { cam_comfort:'love_camera', edited:'ok_prepared_video', voiceover:'prefer_voiceover', faceless:'behind_scenes', depends:'depends_mood', work_up:'work_up_to_face' } as Record<string,string>
+      for (const v of arr(a.Q8)) {
+        if (map[v]) return map[v]
+      }
+      return undefined
+    })()
+    const time_capacity = (() => {
+      const map = { batch_weekends:'batch_weekends', micro_daily:'daily_15_30', hours_daily:'daily_hours', chaotic:'unpredictable', team:'team_support', motivation:'time_ok_motivation_low' } as Record<string,string>
+      for (const v of arr(a.Q9)) {
+        if (map[v]) return map[v]
+      }
+      return undefined
+    })()
+    const endless_topics = arr(a.Q10).join(', ') || undefined
 
     // Platform & audience
     const natural_platforms = arr(a.Q11).map(v => ({ twitter:'twitter_x', multi:'multi_equal' } as Record<string,string>)[v] || v)
     const who_needs_you = (() => {
-      const v = a.Q12
-      if (!v) return undefined
-      const norm = ({ past_self:'people_starting_where_i_was', industry:'professionals_in_industry', hobbies:'similar_interests', local:'local', age_group:'specific_age_group', broad:'anyone_resonates', unknown:'dont_know' } as Record<string,string>)[v] || v
-      return norm
+      const map = { past_self:'people_starting_where_i_was', industry:'professionals_in_industry', hobbies:'similar_interests', local:'local', age_group:'specific_age_group', broad:'anyone_resonates', unknown:'dont_know' } as Record<string,string>
+      for (const v of arr(a.Q12)) {
+        if (map[v]) return map[v]
+      }
+      return undefined
     })()
     const who_needs_help_with = (arr(a.Q12A_HELP_WITH).join(', ')) || undefined
-    const metrics_relationship = ({ obsessive:'obsessive', casual:'casual', anxious:'anxious', ignore:'ignore', learn:'want_to_learn', qualitative:'prefer_qualitative' } as Record<string,string>)[a.Q13] || undefined
+    const metrics_relationship = (() => {
+      const map = { obsessive:'obsessive', casual:'casual', anxious:'anxious', ignore:'ignore', learn:'want_to_learn', qualitative:'prefer_qualitative' } as Record<string,string>
+      for (const v of arr(a.Q13)) {
+        if (map[v]) return map[v]
+      }
+      return undefined
+    })()
 
     // Barriers & history
     const fears = arr(a.Q14).map(v => ({ cringe:'cringe', friends_judging:'family_judging', mean_comments:'mean_comments', not_good_enough:'not_good_enough', copying:'not_original', tech_mistakes:'tech_mistakes', cancel:'cancel_culture', success_change:'success_changes_me', no_fear:'no_fears' } as Record<string,string>)[v] || v)
     const already_tried = arr(a.Q15).map(v => ({ post_consistent:'posting_consistent', trend_follow:'follow_trends', courses:'expensive_courses', style_mix:'style_experiments', paid_ads:'paid_ads', nothing:'nothing_yet', exhausted:'everything_exhausted' } as Record<string,string>)[v] || v)
-    const handle_criticism = a.Q16 || undefined
+    const handle_criticism = arr(a.Q16)[0] || undefined
 
     // Monetization & growth
-    const monetization_approach = ({ asap:'income_asap', long_term:'building_long_term', multiple:'multiple_streams', break_even:'cover_costs', not_main:'not_main_goal', scale:'already_monetizing_scale' } as Record<string,string>)[a.Q17] || undefined
+    const monetization_approach = (() => {
+      const map = { asap:'income_asap', long_term:'building_long_term', multiple:'multiple_streams', break_even:'cover_costs', not_main:'not_main_goal', scale:'already_monetizing_scale' } as Record<string,string>
+      for (const v of arr(a.Q17)) {
+        if (map[v]) return map[v]
+      }
+      return undefined
+    })()
     const monetization_interests = arr(a.Q17A_REVENUE_PREF).map(v => ({ coaching:'coaching', ugc_brand:'ugc_brand', digital_products:'digital_products', services:'services', affiliate:'affiliate', membership:'membership' } as Record<string,string>)[v] || v)
     const monetization_current = arr(a.Q17B_WHAT_WORKS).map(v => ({ brand_deals:'brand_deals', services:'services', digital_products:'digital_products', coaching:'coaching', affiliate:'affiliate', other:'other' } as Record<string,string>)[v] || v)
-    const dream_weight = a.Q18 || undefined
+    const dream_weight = arr(a.Q18)[0] || undefined
 
     // Derived
     const vis = visibility_comfort || ''
@@ -410,8 +437,9 @@ export default function SmartOnboarding() {
 
   // === Render ==================================================================
   const sel = state.answers[nodeId]
-  const isMulti = node.type === 'multi'
-  const maxSel = node.maxSelect || 99
+  const selectedValues = normalizeAnswer(sel)
+  const limit = node && Number.isFinite(node.maxSelect ?? NaN) ? node.maxSelect : undefined
+  const selectionCount = selectedValues.length
 
   if (guarding) return null
 
@@ -446,78 +474,32 @@ export default function SmartOnboarding() {
           </div>
           {node.helperText && <p className="text-sm text-gray-600 mb-4">{node.helperText}</p>}
 
-          {/* single */}
-          {node.type === 'single' && (
-            <>
-              <div className="grid sm:grid-cols-2 gap-3 mt-4 justify-center">
-                {node.options?.map((opt) => (
-                  <Button key={opt.value} label={opt.label} active={sel === opt.value} onClick={() => selectSingle(opt.value)} />
-                ))}
-              </div>
-              <div className="mt-6 flex items-center justify-center">
-                <button
-                  onClick={commitAndAdvance}
-                  disabled={!sel}
-                  className={["continue-btn px-12 py-4 rounded-full text-xl bg-[var(--accent-grape)] text-white hover:bg-[#874E95]", !sel ? "opacity-60 cursor-not-allowed" : "", "pulse-gentle"].join(' ')}
-                >
-                  {primaryCta}
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* multi */}
-          {node.type === 'multi' && (
+          {Array.isArray(node.options) && node.options.length > 0 && (
             <div className="mt-4">
               <div className="grid sm:grid-cols-2 gap-3">
                 {node.options?.map((opt) => {
-                  const active = Array.isArray(sel) && sel.includes(opt.value)
-                  const disabled = !active && Array.isArray(sel) && sel.length >= maxSel
+                  const active = selectedValues.includes(opt.value)
+                  const disabled = !active && limit !== undefined && selectionCount >= limit
                   return (
-                    <button key={opt.value} onClick={() => !disabled && toggleMulti(opt.value)}
+                    <button
+                      key={opt.value}
+                      onClick={() => !disabled && toggleOption(opt.value)}
                       className={`px-6 py-3.5 rounded-full min-w-[240px] text-base font-medium transition text-center border ${active ? 'bg-[#D9B8E3] text-black border-transparent' : disabled ? 'opacity-60 cursor-not-allowed bg-white text-gray-400 border-gray-200' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'}`}
                     >{opt.label}</button>
                   )
                 })}
               </div>
               <div className="mt-6 flex items-center justify-center gap-3">
-                <button onClick={commitAndAdvance} className={["continue-btn px-12 py-4 rounded-full text-xl bg-[var(--accent-grape)] text-white hover:bg-[#874E95]", transitioning ? "is-pressed" : "", "pulse-gentle"].join(' ')}>{primaryCta}</button>
-                <span className="text-sm text-gray-500">{Array.isArray(sel) ? sel.length : 0}/{maxSel} selected</span>
-              </div>
-            </div>
-          )}
-
-          {/* text (chips) */}
-          {node.type === 'text' && (
-            <div className="mt-4">
-              <p className="text-sm text-gray-600 mb-2">Type a word or short phrase and press Enter. Each becomes a tag. Click × to remove; click next to the tags to add more.</p>
-              <div
-                className="flex flex-wrap items-center gap-2 border rounded-2xl px-3 py-2 bg-white max-w-2xl mx-auto"
-                onClick={()=>{ document.getElementById('chip-input')?.focus() }}
-              >
-                {(Array.isArray(sel) ? sel : []).map((t:string, i:number)=> (
-                  <span key={i} className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm bg-[#EAD7F0] text-[#4B1F57]">
-                    {t}
-                    <button aria-label="Remove" className="text-[#4B1F57]/70 hover:text-[#4B1F57]" onClick={()=>{
-                      const next = (sel as string[]).filter((_:string, idx:number)=> idx!==i)
-                      setState(s=> ({ ...s, answers: { ...s.answers, [nodeId]: next } }))
-                    }}>×</button>
-                  </span>
-                ))}
-                <input
-                  id="chip-input"
-                  value={textDraft}
-                  onChange={(e)=> setTextDraft(e.target.value)}
-                  onKeyDown={(e)=>{
-                    if (e.key === 'Enter') { e.preventDefault(); addTextChip(); }
-                  }}
-                  placeholder={node.placeholder || 'add a word or phrase and press Enter'}
-                  className="flex-1 min-w-[160px] py-2 outline-none text-base bg-transparent"
-                />
-              </div>
-              <div className="mt-2 text-xs text-gray-500">{(Array.isArray(sel) ? sel.length : 0)}/{node.maxSelect || 5} tags</div>
-              <div className="mt-6 flex items-center justify-center">
-                <button onClick={commitAndAdvance} className={["continue-btn px-12 py-4 rounded-full text-xl bg-[var(--accent-grape)] text-white hover:bg-[#874E95]", transitioning ? "is-pressed" : "", "pulse-gentle"].join(' ')}>{primaryCta}</button>
+                <button
+                  onClick={commitAndAdvance}
+                  disabled={selectionCount === 0}
+                  className={["continue-btn px-12 py-4 rounded-full text-xl bg-[var(--accent-grape)] text-white hover:bg-[#874E95]", selectionCount === 0 ? "opacity-60 cursor-not-allowed" : "", transitioning ? "is-pressed" : "", "pulse-gentle"].join(' ')}
+                >
+                  {primaryCta}
+                </button>
+                <span className="text-sm text-gray-500">
+                  {limit !== undefined ? `${selectionCount}/${limit} selected` : `${selectionCount} selected`}
+                </span>
               </div>
             </div>
           )}

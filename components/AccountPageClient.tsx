@@ -54,7 +54,8 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
     try {
       if (answers?.__vars?.stage) return true
       if (typeof answers?.stage === 'string' && answers.stage.trim().length > 0) return true
-      if (typeof answers?.Q2 === 'string' && answers.Q2) return true
+      const q2 = answers?.Q2
+      if ((Array.isArray(q2) && q2.length > 0) || (typeof q2 === 'string' && q2)) return true
       if (typeof answers?.identity === 'string' && answers.identity.trim().length > 0 && Array.isArray(answers?.biggest_challenges) && answers.biggest_challenges.length > 0) return true
       const completed = Object.keys(answers)
         .filter((k) => /^Q\d/.test(k))

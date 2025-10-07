@@ -473,7 +473,7 @@ ${links.length ? linkSummary : "(no links provided)"}
 
     let raw = '';
     try {
-      const obj = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 60000, maxTokens: 1400 }, 1);
+      const obj = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 90000, maxTokens: 2000 }, 2);
       raw = JSON.stringify(obj);
     } catch (e: any) {
       console.warn("[api/plan] llm error:", e?.message || e);

@@ -67,7 +67,7 @@ export async function callClaudeJSON<T = any>({
       body: JSON.stringify({
         model: _model,
         max_tokens: maxTokens,
-        temperature: 0.4,
+        temperature: 0.3,
         system: "Return JSON only. No prose outside JSON. Keep it concise, clear, and actionable.",
         messages: [{ role: "user", content: prompt }],
       }),
@@ -194,7 +194,7 @@ export async function callClaudeJSONSystemUser<T = any>({
       body: JSON.stringify({
         model: _model,
         max_tokens: maxTokens,
-        temperature: 0.4,
+        temperature: 0.3,
         system,
         messages: [{ role: "user", content: user }],
       }),

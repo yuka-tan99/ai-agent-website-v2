@@ -143,6 +143,20 @@ export async function GET(req: NextRequest) {
         status: 'active',
       })
 
+      const reportStart = new Date(now)
+      const reportEnd = new Date(reportStart)
+      reportEnd.setFullYear(reportEnd.getFullYear() + 5)
+      await sb.from('access_grants').insert({
+        user_id,
+        product_key: 'report',
+        source: 'bundle_with_plan_manual',
+        access_starts_at: reportStart.toISOString(),
+        access_ends_at: reportEnd.toISOString(),
+        payment_id,
+        grant_reason: 'Manual confirm: Report entitlement',
+        status: 'active',
+      })
+
       // Best-effort background report generation
       try {
         const { data: rep } = await sb
@@ -163,7 +177,7 @@ export async function GET(req: NextRequest) {
             const { prompt, fame, answers } = prepareReportInputs(persona, '')
             let raw: any = {}
             try {
-              raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 45000, maxTokens: 1200 }, 1)
+              raw = await callClaudeJSONWithRetry<any>({ prompt, timeoutMs: 70_000, maxTokens: 1900 }, 2)
               if (process.env.DEBUG_LOG === 'true') console.log('[confirm] background LLM ok')
             } catch (e: any) {
               console.warn('[confirm] background LLM failed:', e?.message || e)
@@ -177,14 +191,14 @@ export async function GET(req: NextRequest) {
               const [assessRes, insightRes] = await Promise.allSettled([
                 callClaudeJSONWithRetry<{ assessment: string }>({
                   prompt: `You are Marketing Mentor, a social media growth expert. Return JSON only.\n\nWrite ONE thorough paragraph titled 'assessment' (3–7 sentences) that explains the creator's current strengths and weaknesses and the biggest opportunities ahead. Be encouraging and helpful with no fluff. Use the percentages as directional signals, not verdicts. Include 1–2 specific next steps.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT:\n{"assessment":"..."}`,
-                  timeoutMs: 45_000,
-                  maxTokens: 500,
-                }, 1),
+                  timeoutMs: 60_000,
+                  maxTokens: 700,
+                }, 2),
                 callClaudeJSONWithRetry<Record<string, string>>({
                   prompt: `You are Marketing Mentor. Return JSON only.\n\nWrite one concise but thorough paragraph (3–5 sentences) for EACH of these keys explaining what the user's onboarding answers suggest and the top opportunity to improve that dimension. Encouraging, specific, no fluff.\nKeys: overall, consistency, camera_comfort, planning, tech_comfort, audience_readiness, interest_breadth, experimentation.\n\nPERCENTAGES:\n${JSON.stringify(pct, null, 2)}\n\nONBOARDING_ANSWERS:\n${JSON.stringify(answers, null, 2)}\n\nOUTPUT (flat object with those exact keys):\n{"overall":"","consistency":"","camera_comfort":"","planning":"","tech_comfort":"","audience_readiness":"","interest_breadth":"","experimentation":""}`,
-                  timeoutMs: 50_000,
-                  maxTokens: 900,
-                }, 1),
+                  timeoutMs: 65_000,
+                  maxTokens: 1100,
+                }, 2),
               ])
               if (assessRes.status === 'fulfilled' && assessRes.value?.assessment) {
                 plan.fame_assessment = assessRes.value.assessment

@@ -16,6 +16,7 @@ import {
   countAnswered,
   nextPadNode
 } from '@/lib/onboardingFlow'
+import { listAskableNodes } from '@/lib/onboardingFlow'
 import DesignStyles from '@/components/DesignStyles'
 
 const Button = ({ label, active, onClick }: any) => (
@@ -73,7 +74,7 @@ export default function SmartOnboarding() {
             const r2 = await fetch('/api/me/purchase-status', { cache: 'no-store', credentials: 'include' })
             const j2 = await r2.json().catch(() => ({}))
             if (cancelled) return
-            if (j2?.purchase_status === 'paid') { router.replace('/dashboard/preparing'); return }
+            if (j2?.purchase_status === 'paid') { router.replace('/dashboard/preparing?force=true'); return }
           } catch {}
           router.replace('/paywall');
           return
@@ -123,16 +124,49 @@ export default function SmartOnboarding() {
   const predictedNextId = useMemo(() => {
     if (!node) return ''
     const tmp: FlowState = { vars: { ...state.vars }, answers: { ...state.answers }, lastNodeId: nodeId }
-    // Apply the current selection (if any) to route properly
     const sel = state.answers[nodeId]
     onAnswerPersist(tmp, nodeId, sel ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : '')), decisionTree)
     return getNextNode(nodeId, tmp, decisionTree)
   }, [node, nodeId, state.vars, state.answers])
 
   // Show progress as % of target path (cap at MAX_Q)
-  const pct = Math.min(100, Math.round((Math.min(askedCount + (isCurrentAnswered ? 1 : 0), MAX_Q) / MAX_Q) * 100))
-  const nearingFinish = (askedCount >= MIN_Q - 1) // after answering current, could finish
-  const primaryCta = (nearingFinish && (predictedNextId === decisionTree.exit || askedCount >= MAX_Q - 1)) ? 'finish & generate report' : 'continue'
+  // Compute a user-specific target length (respect branching) within [MIN_Q, MAX_Q]
+  const targetTotal = useMemo(() => {
+    try {
+      const askables = listAskableNodes(state, decisionTree)
+      return Math.max(MIN_Q, Math.min(MAX_Q, askables.length || MIN_Q))
+    } catch { return MAX_Q }
+  }, [state])
+
+  // Will the next step exit?
+  const willExitNext = useMemo(() => {
+    if (!node || !isCurrentAnswered) return false
+    const snapshot: FlowState = { vars: { ...state.vars }, answers: { ...state.answers } }
+    const sel = snapshot.answers[nodeId] ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : ''))
+    onAnswerPersist(snapshot, nodeId, sel, decisionTree)
+    const naturalNext = getNextNode(nodeId, snapshot, decisionTree)
+    const nextId = chooseNextId(nodeId, naturalNext, snapshot)
+    return nextId === decisionTree.exit
+  }, [node, nodeId, state.vars, state.answers, isCurrentAnswered])
+
+  const pct = useMemo(() => {
+    if (willExitNext) return 100
+    const done = Math.min(askedCount + (isCurrentAnswered ? 1 : 0), targetTotal)
+    const p = Math.round((done / targetTotal) * 100)
+    return Math.max(0, Math.min(99, p))
+  }, [askedCount, isCurrentAnswered, targetTotal, willExitNext])
+  // Compute CTA based on the actual next route if the current node is answered.
+  const primaryCta = React.useMemo(() => {
+    if (!node) return 'continue'
+    if (!isCurrentAnswered) return 'continue'
+    // Build the post-answer snapshot and route
+    const snapshot: FlowState = { vars: { ...state.vars }, answers: { ...state.answers } }
+    const sel = snapshot.answers[nodeId] ?? (node.type === 'text' ? [] : (node.type === 'multi' ? [] : ''))
+    onAnswerPersist(snapshot, nodeId, sel, decisionTree)
+    const naturalNext = getNextNode(nodeId, snapshot, decisionTree)
+    const nextId = chooseNextId(nodeId, naturalNext, snapshot)
+    return nextId === decisionTree.exit ? 'finish & generate report' : 'continue'
+  }, [node, nodeId, state.vars, state.answers, isCurrentAnswered])
 
   // === Navigation core: apply pad/cap guarantees =================================
   function chooseNextId(afterCurrentId: string, nextNaturalId: string, snapshot: FlowState): string {

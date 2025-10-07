@@ -20,20 +20,32 @@ export default function PreparingPage() {
   const [simPct, setSimPct] = useState(5)
   const startedRef = useState<number>(() => Date.now())[0]
   const sseRef = useRef<EventSource | null>(null)
-  // Configurable gate: require N sections ready before navigating
   const gateReady = (() => {
     const n = Number(search.get('min_ready') || 1)
     if (Number.isFinite(n) && n >= 1 && n <= 5) return n
-    // Default: navigate when at least one section is ready
     return 1
   })()
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      // Kick off generation and handle common redirects (no onboarding / unpaid)
       try {
         const forceFlag = (search.get('force') || '').toLowerCase() === 'true'
+        if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DEBUG_LOG === 'true') {
+          console.log('[preparing] starting generation', { forceFlag, source: search.get('source') || null })
+        }
+        if (!forceFlag) {
+          try {
+            const existingRes = await fetch('/api/report', { cache: 'no-store', credentials: 'include' })
+            if (!cancelled && existingRes.ok) {
+              const existingJson = await existingRes.json().catch(() => ({}))
+              if (existingJson?.plan) {
+                router.replace('/dashboard')
+                return
+              }
+            }
+          } catch {}
+        }
         const res = await fetch('/api/report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -45,28 +57,24 @@ export default function PreparingPage() {
         if (!res.ok) {
           if (res.status === 400) { router.replace('/onboarding'); return }
           if (res.status === 402) { router.replace('/paywall'); return }
+          if (!cancelled) setError('Failed to start generation. Refresh to retry.')
         }
-      } catch {}
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Failed to start generation')
+      }
     })()
     return () => { cancelled = true }
-  }, [])
+  }, [router, search])
 
-  // Prefetch target route for a snappier transition
   useEffect(() => {
-    try {
-      // @ts-ignore app router may expose prefetch
-      router.prefetch?.('/dashboard')
-    } catch {}
+    try { router.prefetch?.('/dashboard') } catch {}
   }, [router])
 
-  // Rotate status phrases with a soft fade every 2s
   useEffect(() => {
     let mounted = true
-    // Rotate roughly every ~2.4s (slightly slower than 2s)
     const id = setInterval(() => {
       if (!mounted) return
       setFade(true)
-      // swap text after fade-out
       setTimeout(() => {
         if (!mounted) return
         setIdx((i) => (i + 1) % phrases.length)
@@ -76,8 +84,6 @@ export default function PreparingPage() {
     return () => { mounted = false; clearInterval(id) }
   }, [])
 
-  // Simulated progress while waiting for server (cap at 85%)
-  // Combine real backend polling with a gentle time-based simulation
   useEffect(() => {
     let active = true
     const tick = async () => {
@@ -87,24 +93,15 @@ export default function PreparingPage() {
         if (!active) return
         const pctNum = Number(j?.pct)
         if (Number.isFinite(pctNum)) {
-          // While we haven't met the gate, avoid hitting 100% to prevent a stuck look
           const capped = (j?.sections && Object.values(j.sections).filter(Boolean).length < gateReady)
             ? Math.min(94, pctNum)
             : pctNum
           setPct((p) => Math.max(p, Math.min(100, capped)))
         }
 
-        // Navigate when gate met (or when fully done as fallback)
         const readyCount = j?.sections ? Object.values(j.sections as Record<string, boolean>).filter(Boolean).length : 0
         const gateMet = readyCount >= gateReady
         if (gateMet || j?.done || j?.phase === 'done') {
-          try {
-            const r2 = await fetch('/api/report/board', { cache: 'no-store', credentials: 'include' })
-            const j2: any = await r2.json().catch(() => null)
-            if (j2 && Array.isArray(j2.cards) && j2.cards.length > 0) {
-              try { localStorage.setItem('board_cards_v1', JSON.stringify(j2.cards)) } catch {}
-            }
-          } catch {}
           setPct(100)
           setTimeout(() => router.replace('/dashboard'), 250)
           return
@@ -114,21 +111,19 @@ export default function PreparingPage() {
     }
     tick()
     return () => { active = false }
-  }, [])
+  }, [gateReady, router])
 
-  // Time-based smoothing: drift towards 85% over ~45s if server is quiet
   useEffect(() => {
     let mounted = true
     const id = setInterval(() => {
       if (!mounted) return
-      const elapsed = (Date.now() - startedRef) / 1000 // seconds
+      const elapsed = (Date.now() - startedRef) / 1000
       const target = Math.min(85, Math.round((elapsed / 45) * 85))
       setSimPct((prev) => Math.max(prev, Math.min(85, target)))
     }, 1000)
     return () => { mounted = false; clearInterval(id) }
   }, [startedRef])
 
-  // Prefer SSE for progress + readiness; fallback to existing polling block below
   useEffect(() => {
     if (typeof window === 'undefined' || !('EventSource' in window)) return
     const es = new EventSource('/api/report/stream')
@@ -136,7 +131,6 @@ export default function PreparingPage() {
     let navigated = false
     const maybeNavigate = async () => {
       if (navigated) return
-      // Navigate to report board as soon as gate is met
       navigated = true
       router.replace('/dashboard')
     }
@@ -167,13 +161,13 @@ export default function PreparingPage() {
       try { es.close() } catch {}
       sseRef.current = null
     }
-  }, [router])
+  }, [router, gateReady])
 
   const percent = Math.max(pct, simPct)
+
   return (
     <main className="container min-h-screen flex items-start justify-center pt-[18vh] md:pt-[20vh]">
       <div className="text-center will-change-transform">
-        {/* Rotating circle loader with percentage inside (larger, centered) */}
         <div className="relative mx-auto h-40 w-40 mb-4" role="status" aria-label="Generating your report">
           <div className="absolute inset-0 rounded-full border-[6px] border-[rgba(155,126,222,.22)] border-t-[#9B7EDE] animate-spin shadow-[inset_0_0_0_6px_rgba(155,126,222,.08)]" />
           <div className="absolute inset-0 flex items-center justify-center text-2xl md:text-3xl font-semibold text-gray-800">

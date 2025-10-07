@@ -28,7 +28,7 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
   const [email, setEmail] = useState('')
   const [access, setAccess] = useState<any | null>(null)
   const [accessLoading, setAccessLoading] = useState<boolean>(false)
-  const [myReportHref, setMyReportHref] = useState<string>('/dashboard')
+  const [myReportHref, setMyReportHref] = useState<string>('/dashboard/preparing')
 
   // Profile local UI state (no backend writes)
   const [displayName, setDisplayName] = useState('')
@@ -47,6 +47,29 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
     const id = requestAnimationFrame(() => setSectionVisible(true))
     return () => cancelAnimationFrame(id)
   }, [section])
+
+  const onboardingComplete = (session: { answers?: any; claimed_at?: string | null } | null): boolean => {
+    const answers = session?.answers || {}
+    const claimed = !!session?.claimed_at
+    try {
+      if (answers?.__vars?.stage) return true
+      if (typeof answers?.stage === 'string' && answers.stage.trim().length > 0) return true
+      if (typeof answers?.Q2 === 'string' && answers.Q2) return true
+      if (typeof answers?.identity === 'string' && answers.identity.trim().length > 0 && Array.isArray(answers?.biggest_challenges) && answers.biggest_challenges.length > 0) return true
+      const completed = Object.keys(answers)
+        .filter((k) => /^Q\d/.test(k))
+        .filter((k) => {
+          const value: any = (answers as any)[k]
+          return Array.isArray(value) ? value.length > 0 : (value != null && String(value).trim().length > 0)
+        }).length
+      if (completed >= 4) return true
+      const q18 = answers?.Q18
+      const hasQ18 = q18 != null && (Array.isArray(q18) ? q18.length > 0 : String(q18).trim().length > 0)
+      return claimed || hasQ18
+    } catch {
+      return claimed
+    }
+  }
 
   // Auth guard (silent redirect, no blocking loaders)
   useEffect(() => {
@@ -105,9 +128,22 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
       try {
         const { data } = await sb.auth.getUser()
         const user = data?.user
-        if (!user) { setMyReportHref('/onboarding'); return }
+        if (!user) {
+          if (!cancelled) setMyReportHref('/onboarding')
+          return
+        }
         const uid = user.id
-        // Check onboarding completion by Q18 (last question)
+        try {
+          const planRes = await fetch('/api/report', { cache: 'no-store', credentials: 'include' })
+          if (planRes.ok) {
+            const planJson = await planRes.json().catch(() => ({}))
+            if (!cancelled && planJson?.plan) {
+              setMyReportHref('/dashboard')
+              return
+            }
+          }
+        } catch {}
+        // Check onboarding completion via latest answers
         let { data: ob } = await sb
           .from('onboarding_sessions')
           .select('answers, claimed_at')
@@ -133,34 +169,33 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
             }
           } catch {}
         }
-        const answers: any = ob?.answers || {}
-        const hasAnswers = !!answers && Object.keys(answers).length > 0
-        const q18 = answers?.Q18
-        const hasQ18 = q18 !== undefined && q18 !== null && (Array.isArray(q18) ? q18.length > 0 : String(q18).trim().length > 0)
-        const claimed = !!ob?.claimed_at
-        const obComplete = claimed || hasQ18
-        if (!hasAnswers) { setMyReportHref('/onboarding'); return }
-        if (!obComplete) { setMyReportHref('/onboarding'); return }
-
-        // If a report already exists, go straight to dashboard
-        const rep = await sb
-          .from('reports')
-          .select('user_id')
-          .eq('user_id', uid)
-          .maybeSingle()
-        if (rep?.data) { setMyReportHref('/dashboard'); return }
-
-        // Otherwise, require paywall if not paid (dev bypass counts as paid)
-        if (process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === 'true') {
-          setMyReportHref('/dashboard/preparing')
+        const complete = onboardingComplete(ob || null)
+        if (!complete) {
+          if (!cancelled) setMyReportHref('/onboarding')
           return
         }
-        const res = await fetch('/api/me/purchase-status', { cache: 'no-store', credentials: 'include' })
-        const j = await res.json().catch(()=>({}))
-        setMyReportHref(j?.purchase_status === 'paid' ? '/dashboard/preparing' : '/paywall')
+
+        const devBypass = process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === 'true'
+        if (devBypass) {
+          if (!cancelled) setMyReportHref('/dashboard/preparing')
+          return
+        }
+
+        try {
+          const res = await fetch('/api/me/access?product=report', { cache: 'no-store', credentials: 'include' })
+          const info = await res.json().catch(() => ({}))
+          if (!cancelled) {
+            if (res.ok && info?.active) {
+              setMyReportHref('/dashboard/preparing')
+            } else {
+              setMyReportHref('/paywall')
+            }
+          }
+        } catch {
+          if (!cancelled) setMyReportHref('/paywall')
+        }
       } catch {
-        // fallback: show onboarding
-        setMyReportHref('/onboarding')
+        if (!cancelled) setMyReportHref('/onboarding')
       }
     })()
     return () => { cancelled = true }
@@ -178,8 +213,10 @@ export default function AccountPageClient({ section = 'usage' }: Props) {
 
   const isActive = (href: string) => pathname === href
   async function prefetchReportThenGo() {
-    if (myReportHref === '/dashboard') {
+    if (myReportHref.startsWith('/dashboard/preparing')) {
       try { await fetch('/api/report', { cache: 'no-store', credentials: 'include' }) } catch {}
+    } else if (myReportHref === '/dashboard') {
+      try { router.prefetch?.('/dashboard') } catch {}
     }
     router.push(myReportHref)
   }

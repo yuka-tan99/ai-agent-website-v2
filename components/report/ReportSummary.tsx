@@ -10,6 +10,12 @@ type Section = {
   charts?: { platform_focus?: { name: string; value: number }[] }
 }
 
+type SectionMeta = {
+  origin?: 'llm' | 'fallback'
+  summaryLen?: number
+  bullets?: number
+}
+
 function normalizeSection(s?: Partial<Section> | null): Section {
   return {
     summary: (s?.summary ?? '').toString(),
@@ -52,6 +58,7 @@ type Plan = {
     metrics_mindset: Section
     mental_health: Section
   }
+  _section_meta?: Record<string, SectionMeta>
 }
 
 type Props = {
@@ -86,15 +93,38 @@ export default function ReportSummary({ plan: planProp }: Props) {
 
   // Progressive hydration: if any section is empty, poll for updated plan
   React.useEffect(() => {
-    let active = true
     if (!plan) return
     const sections: any = plan.sections || {}
-    const keys = ['ai_marketing_psychology','foundational_psychology','platform_specific_strategies','content_strategy','posting_frequency','metrics_mindset','mental_health']
-    const allReady = keys.every(k => Array.isArray(sections?.[k]?.bullets) && sections[k].bullets.length > 0)
-    if (allReady) { setHydrating(false); return }
-    setHydrating(true)
+    const meta = (plan as any)?._section_meta || {}
+    const sectionKeys = ['ai_marketing_psychology','foundational_psychology','platform_specific_strategies','content_strategy','posting_frequency','metrics_mindset','mental_health']
+    const bulletsReady = sectionKeys.every((k) => Array.isArray(sections?.[k]?.bullets) && sections[k].bullets.length > 0)
+    const metaReady = sectionKeys.every((k) => meta?.[k]?.origin !== 'fallback')
+    const stillHydrating = !(bulletsReady && metaReady)
 
-    // Prefer SSE for live updates; fallback to polling if EventSource unavailable
+    if (!stillHydrating) {
+      setHydrating(false)
+      if (sseRef.current) {
+        try { sseRef.current.close() } catch {}
+        sseRef.current = null
+      }
+      return
+    }
+
+    setHydrating(true)
+    let active = true
+
+    const fetchPlan = async () => {
+      if (fetchLockRef.current) return
+      fetchLockRef.current = true
+      try {
+        const r = await fetch('/api/report', { cache: 'no-store' })
+        const j = await r.json().catch(()=>({}))
+        if (!active) return
+        if (j?.plan) setPlan(j.plan)
+      } catch {}
+      fetchLockRef.current = false
+    }
+
     if (typeof window !== 'undefined' && 'EventSource' in window) {
       if (sseRef.current) {
         try { sseRef.current.close() } catch {}
@@ -102,41 +132,23 @@ export default function ReportSummary({ plan: planProp }: Props) {
       }
       const es = new EventSource('/api/report/stream')
       sseRef.current = es
-      const fetchPlan = async () => {
-        if (fetchLockRef.current) return
-        fetchLockRef.current = true
-        try {
-          const r = await fetch('/api/report', { cache: 'no-store' })
-          const j = await r.json().catch(()=>({}))
-          if (!active) return
-          if (j?.plan) setPlan(j.plan)
-        } catch {}
-        fetchLockRef.current = false
-      }
       es.addEventListener('sections', () => { void fetchPlan() })
       es.addEventListener('progress', () => {})
       es.addEventListener('done', () => {
+        void fetchPlan()
         setHydrating(false)
         try { es.close() } catch {}
         sseRef.current = null
       })
       es.onerror = () => {
-        // fallback to polling if the stream drops
         try { es.close() } catch {}
         sseRef.current = null
       }
       return () => { active = false; try { es.close() } catch {}; sseRef.current = null }
-    } else {
-      const id = setInterval(async () => {
-        try {
-          const r = await fetch('/api/report', { cache: 'no-store' })
-          const j = await r.json().catch(()=>({}))
-          if (!active) return
-          if (j?.plan) setPlan(j.plan)
-        } catch {}
-      }, 1000)
-      return () => { active = false; clearInterval(id) }
     }
+
+    const id = setInterval(() => { void fetchPlan() }, 1200)
+    return () => { active = false; clearInterval(id) }
   }, [plan])
 
   // Smoothly render once data exists; no explicit loading text
@@ -158,6 +170,21 @@ if (!plan) {
   )
 }
 const S = normalizeAllSections(plan.sections || {})
+const meta = plan._section_meta || {}
+const sectionReady = (key: string) => {
+  const m = meta?.[key]
+  if (!m) return true
+  return m.origin !== 'fallback'
+}
+const readyMap = {
+  ai: sectionReady('ai_marketing_psychology'),
+  foundational: sectionReady('foundational_psychology'),
+  platform: sectionReady('platform_specific_strategies'),
+  content: sectionReady('content_strategy'),
+  posting: sectionReady('posting_frequency'),
+  metrics: sectionReady('metrics_mindset'),
+  mental: sectionReady('mental_health'),
+}
 
   return (
     <div className="report-page fade-in"> 
@@ -212,6 +239,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "ai" ? null : "ai")}
         section={S.ai_marketing_psychology}
         icon="ai"
+        ready={readyMap.ai}
         extra={
           <div className="mt-5 flex justify-center">
             <Link href="/dashboard/ai-psych" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
@@ -224,6 +252,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "fp" ? null : "fp")}
         section={S.foundational_psychology}
         icon="foundation"
+        ready={readyMap.foundational}
         extra={
           <div className="mt-5 flex justify-center">
             <Link href="/dashboard/learn/foundational-psych" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
@@ -236,6 +265,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "pss" ? null : "pss")}
         section={S.platform_specific_strategies}
         icon="platforms"
+        ready={readyMap.platform}
         extra={
           <div className="mt-4">
             <MiniDonut data={S.platform_specific_strategies?.charts?.platform_focus || []} />
@@ -251,6 +281,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "cs" ? null : "cs")}
         section={S.content_strategy}
         icon="content"
+        ready={readyMap.content}
         extra={
           <div className="mt-5 flex justify-center">
             <Link href="/dashboard/learn/content-strategy" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
@@ -263,6 +294,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "pf" ? null : "pf")}
         section={S.posting_frequency}
         icon="posting"
+        ready={readyMap.posting}
         extra={
           <div className="mt-5 flex justify-center">
             <Link href="/dashboard/learn/posting-frequency" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
@@ -275,6 +307,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "mm" ? null : "mm")}
         section={S.metrics_mindset}
         icon="metrics"
+        ready={readyMap.metrics}
         extra={
           <div className="mt-5 flex justify-center">
             <Link href="/dashboard/learn/metrics-mindset" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
@@ -287,6 +320,7 @@ const S = normalizeAllSections(plan.sections || {})
         onToggle={() => setOpen(open === "mh" ? null : "mh")}
         section={S.mental_health}
         icon="mental"
+        ready={readyMap.mental}
         extra={
           <div className="mt-5 flex justify-center">
             <Link href="/dashboard/learn/mental-health" className="px-5 py-2 rounded-full text-white transition transform hover:scale-[1.02]" style={{ background: '#9E5DAB' }}>learn more</Link>
@@ -310,6 +344,7 @@ function Accordion({
   section,
   extra,
   icon,
+  ready = true,
 }: {
   title: string
   open: boolean
@@ -317,6 +352,7 @@ function Accordion({
   section: Section
   extra?: React.ReactNode
   icon?: string
+  ready?: boolean
 }) {
   const hasBullets = Array.isArray(section?.bullets) && section.bullets.length > 0
   const hasSummary = !!section?.summary
@@ -328,25 +364,40 @@ function Accordion({
           <IconBadge kind={icon} />
           <span className="text-lg font-medium">{title}</span>
         </div>
-        <span className="text-xl">{open ? "–" : "+"}</span>
+        <div className="flex items-center gap-3">
+          {!ready && (
+            <span
+              className="inline-block h-4 w-4 rounded-full border-2 border-[rgba(155,126,222,.22)] border-t-[var(--accent-grape)] animate-spin"
+              aria-hidden
+            />
+          )}
+          <span className="text-xl">{open ? "–" : "+"}</span>
+        </div>
       </button>
 
       <div className="sect-panel mt-3" style={{ maxHeight: open ? 1200 : 0 }} data-open={open ? "true" : "false"}>
-        {hasSummary ? (
-          <p className="text-gray-700 mb-3 transition-opacity duration-200">{section.summary}</p>
-        ) : (
-          <div className="animate-pulse h-4 bg-gray-200 rounded w-2/3 mb-3" />
-        )}
-        {hasBullets ? (
-          <TypewriterList items={section.bullets} onceKey={title} />
-        ) : (
-          <div className="animate-pulse space-y-2">
-            <div className="h-3 bg-gray-200 rounded" />
-            <div className="h-3 bg-gray-200 rounded w-11/12" />
-            <div className="h-3 bg-gray-200 rounded w-9/12" />
+        {!ready ? (
+          <div className="py-8 flex items-center justify-center" aria-live="polite">
+            <span
+              className="inline-block h-8 w-8 rounded-full border-4 border-[rgba(155,126,222,.22)] border-t-[var(--accent-grape)] animate-spin"
+              role="status"
+              aria-label="Generating section content"
+            />
           </div>
+        ) : (
+          <>
+            {hasSummary ? (
+              <p className="text-gray-700 mb-3 transition-opacity duration-200">{section.summary}</p>
+            ) : null}
+            {hasBullets ? (
+              <TypewriterList items={section.bullets} onceKey={title} />
+            ) : null}
+            {!hasSummary && !hasBullets ? (
+              <p className="text-sm text-gray-500">No insights available yet.</p>
+            ) : null}
+            {extra}
+          </>
         )}
-        {extra}
       </div>
     </section>
   )

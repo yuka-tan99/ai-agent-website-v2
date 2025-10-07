@@ -4,7 +4,17 @@ export type Blocker = "fear_of_judgment" | "lack_of_consistency" | "no_niche" | 
 export type PlatformKey = "tiktok" | "instagram" | "youtube";
 
 export type QuickTactic = { label: string; how: string };
-export type ReportSection = { title: string; bullets: string[]; quickWins?: QuickTactic[] };
+export type ReportSection = {
+  title: string;
+  bullets: string[];
+  /** Optional rich narrative paragraph returned by the LLM */
+  paragraph?: string;
+  /** Short summary (often matches LayerGroup.summary) */
+  summary?: string;
+  /** Canonical add-to-plan tasks from the LLM; mirrored into bullets for UI compatibility */
+  addToYourPlan?: string[];
+  quickWins?: QuickTactic[];
+};
 export type DeepDive = {
   context: string;
   framework: { name: string; steps: string[] };
@@ -48,9 +58,13 @@ export type LayersV2 = {
   sections: {
     primaryObstacle: LayerGroup;
     strategicFoundation: LayerGroup;
-    personalBrand: LayerGroup;           // new: distinct personal brand development
-    monetizationPath: LayerGroup;
-    mentalHealth: LayerGroup;
-    successMeasurement: LayerGroup;
+    personalBrand: LayerGroup;           // personal brand development
+    marketingStrategy: LayerGroup;       // marketing strategy development
+    platformTactics: LayerGroup;         // platform-specific tactics
+    contentExecution: LayerGroup;        // content creation & execution
+    mentalHealth: LayerGroup;            // mental health & sustainability
+    // Back-compat (legacy keys may still exist in old plans)
+    monetizationPath?: LayerGroup;
+    successMeasurement?: LayerGroup;
   };
 };

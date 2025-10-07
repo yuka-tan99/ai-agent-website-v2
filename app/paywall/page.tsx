@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { redirect, useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabaseClient'
 import ReportSummary from '@/components/report/ReportSummary'
+import { getOrCreateOnboardingSessionId } from '@/lib/onboardingSession'
 
 const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === "true";
 if (DEV_BYPASS) {
@@ -24,16 +25,33 @@ export default function Paywall(){
       const { data: { user } } = await sb.auth.getUser()
       const uid = user?.id
       if (!uid) return
+      async function claimAndContinue() {
+        try {
+          const sessionId = getOrCreateOnboardingSessionId()
+          if (sessionId) {
+            await fetch('/api/onboarding/claim', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              cache: 'no-store',
+              credentials: 'include',
+              body: JSON.stringify({ sessionId }),
+            })
+          }
+        } catch {}
+        router.replace('/dashboard/preparing?force=true&source=paywall')
+      }
+
       async function checkOnce() {
         try {
-          const { data } = await sb
-            .from('onboarding_sessions')
-            .select('purchase_status')
-            .eq('user_id', uid)
-            .maybeSingle()
-          if (!cancel && data?.purchase_status === 'paid') {
-            router.replace('/dashboard')
+          const planRes = await fetch('/api/report', { cache: 'no-store', credentials: 'include' })
+          const planJson = await planRes.json().catch(() => ({}))
+          if (!cancel && planJson?.plan) {
+            await claimAndContinue()
+            return
           }
+          const res = await fetch('/api/me/access?product=report', { cache: 'no-store', credentials: 'include' })
+          const info = await res.json().catch(() => ({}))
+          if (!cancel && res.ok && info?.active) await claimAndContinue()
         } catch {}
       }
       await checkOnce()
@@ -118,7 +136,7 @@ export default function Paywall(){
               {loading ? 'Redirecting…' : 'unlock now'}
             </button>
             {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
-            <div className="mt-3 text-xs text-gray-500">Already purchased? <Link className="underline" href="/dashboard">Go to dashboard</Link></div>
+            <div className="mt-3 text-xs text-gray-500">Already purchased? <Link className="underline" href="/dashboard/preparing?force=true">Go to your report</Link></div>
           </div>
         </div>
       </div>

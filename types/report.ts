@@ -78,5 +78,34 @@ export type ReportCard = {
   };
 };
 
-export type LessonPack = { /* unchanged from your file */ };
-export type SourceChunk = { /* unchanged from your file */ };
+export type LessonPack = {
+  sectionId: ReportSectionId;
+  depthLevel: 2 | 3;
+  overview: string;
+  frameworks: string[];
+  stepByStep: string[];
+  templates: { title: string; content: string }[];
+  troubleshooting: string[];
+  examples: string[];
+  checkpoints: string[];
+  references: { book: string; sections: string[] }[];
+
+  // depthLevel=3 (Elaborate/Mastery) — optional fields
+  advancedTechniques?: string[];     // novel or expert moves
+  edgeCases?: string[];              // rare/gnarly scenarios
+  failureModes?: string[];           // common ways users fail + fixes
+  longTermStrategy?: string[];       // durable, compounding plans
+  sourceContextNotes?: string[];     // pulled context from source chunks
+};
+
+export type SourceChunk = {
+  id: string;
+  book: string;
+  section: string;
+  tags?: string[];
+  platforms?: string[];
+  problem_types?: string[];
+  passage: string;
+  weight?: number;
+  metadata?: Record<string, any>;
+};

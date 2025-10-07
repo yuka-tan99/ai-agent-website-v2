@@ -4,16 +4,25 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabaseServer';
 import ReportShellClient from '@/components/report/ReportShellClient';
-// No generation here; server redirects to /dashboard/preparing when needed
+// No generation here; server redirects to report loader when needed
 
 const DEV_BYPASS = process.env.NEXT_PUBLIC_DEV_BYPASS_PLAN === 'true';
 
 function isComplete(ob: any): boolean {
   // Consider onboarding complete if explicitly finalized OR if the user
-  // reached the last question (Q18) in the decision tree.
+  // answered core decision-tree fields (SmartOnboarding) sufficiently.
   const claimed = !!(ob && ob.claimed_at)
   try {
     const a = ob?.answers || {}
+    if (a?.__vars?.stage) return true
+    if (typeof a?.stage === 'string' && a.stage.trim().length > 0) return true
+    if (typeof a?.Q2 === 'string' && a.Q2) return true
+    if (typeof a?.identity === 'string' && a.identity.trim().length > 0 && Array.isArray(a?.biggest_challenges) && a.biggest_challenges.length > 0) return true
+    const qCount = Object.keys(a).filter(k => /^Q\d/.test(k)).filter(k => {
+      const v: any = (a as any)[k]
+      return Array.isArray(v) ? v.length > 0 : (v != null && String(v).length > 0)
+    }).length
+    if (qCount >= 4) return true
     const q18 = a?.Q18
     const hasQ18 = q18 !== undefined && q18 !== null && (Array.isArray(q18) ? q18.length > 0 : String(q18).length > 0)
     return claimed || hasQ18
@@ -90,23 +99,26 @@ export default async function DashboardPage() {
     .eq('user_id', user.id)
     .maybeSingle();
 
-  const hasAnswers = !!(ob && ob.answers);
   const paid = await hasPlanAccess(user.id);
+  const completed = isComplete(ob);
+  if (process.env.DEBUG_LOG === 'true') {
+    console.log('[dashboard] onboarding session status', {
+      hasSession: !!ob,
+      completed,
+      claimed_at: ob?.claimed_at || null,
+    });
+  }
 
   // Routing rules when no report:
-  // - If no onboarding answers yet → go to onboarding
-  // - If there is any onboarding session (answers exist) but not paid → paywall
+  // - If no onboarding session yet → go to onboarding
+  // - If session exists but not paid → paywall
   // - If paid but onboarding not finalized → onboarding to complete
   // - If paid and onboarding complete → preparing (generation)
-  if (!hasAnswers) {
-    if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] no onboarding answers → redirect /onboarding');
-    redirect('/onboarding');
-  }
   if (!paid) {
     if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] has onboarding session but unpaid → redirect /paywall');
     redirect('/paywall');
   }
-  if (!isComplete(ob)) {
+  if (!completed) {
     if (process.env.DEBUG_LOG === 'true') console.log('[dashboard] onboarding incomplete but paid → redirect /onboarding');
     redirect('/onboarding');
   }

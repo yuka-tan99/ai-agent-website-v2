@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, Landmark, Wallet2, HeartPulse, BarChart3, Sparkles } from 'lucide-react'
+import { isLayeredFallbackSection } from '@/lib/reportFallbacks'
 
 /**
  * ReportShell.tsx
@@ -47,7 +48,10 @@ export type QuickTactic = { label: string; how: string };
 
 export type ReportSection = {
   title: string;
-  bullets: string[]; // 3–5 key insights
+  bullets: string[]; // 3–5 key insights (mirrors addToYourPlan when present)
+  paragraph?: string; // 120–150 word narrative overview
+  summary?: string; // 1-sentence essence
+  addToYourPlan?: string[]; // canonical 3-task list from the model
   quickWins?: QuickTactic[]; // 1–3 quick win tactics
 };
 
@@ -80,9 +84,10 @@ export interface ReportData {
     primaryObstacle: LayerGroup;
     strategicFoundation: LayerGroup;
     personalBrand: LayerGroup;
-    monetizationPath: LayerGroup;
+    marketingStrategy: LayerGroup;
+    platformTactics: LayerGroup;
+    contentExecution: LayerGroup;
     mentalHealth: LayerGroup;
-    successMeasurement: LayerGroup;
   };
   personalization: PersonalizationVars;
   platformStrategies: Record<PlatformKey, PlatformStrategy>;
@@ -95,6 +100,7 @@ export interface ReportShellProps {
   onPlatformChange?: (p: PlatformKey) => void;
   onElaborate?: (sectionKey: keyof ReportData["sections"]) => void; // hook to RAG agent
   typewriterKey?: string; // when set, play typewriter once per user/key
+  sectionReadiness?: Partial<Record<keyof ReportData['sections'], boolean>>;
 }
 
 // ---------- Helpers ----------
@@ -162,12 +168,20 @@ function QuickWins({ wins }: { wins?: QuickTactic[] }) {
 }
 
 // Generic layered panel with tabs (Report / Learn More / Elaborate)
-function LayeredPanel({ group, onElaborate, iconLabel, typewriterKey, headerTitle, sectionSlug }: { group: LayerGroup | undefined; onElaborate?: () => void; iconLabel?: React.ReactNode; typewriterKey?: string; headerTitle?: string; sectionSlug: string }) {
+function LayeredPanel({ group, onElaborate, iconLabel, typewriterKey, headerTitle, sectionSlug, ready, sectionKey }: { group: LayerGroup | undefined; onElaborate?: () => void; iconLabel?: React.ReactNode; typewriterKey?: string; headerTitle?: string; sectionSlug: string; ready?: boolean; sectionKey: keyof ReportData['sections'] }) {
   const [open, setOpen] = useState(true)
   const safeGroup: LayerGroup = React.useMemo(() => {
     if (group && typeof group === 'object') return group
     return { report: { title: '', bullets: [] }, learnMore: { context: '', framework: { name: '', steps: [] } }, elaborate: {} }
   }, [group])
+  const fallback = isLayeredFallbackSection(sectionKey, safeGroup)
+  const isReady = ready !== false && !fallback
+  const planItems = Array.isArray(safeGroup.report?.addToYourPlan) && safeGroup.report.addToYourPlan.length
+    ? safeGroup.report.addToYourPlan
+    : safeGroup.report?.bullets
+  const listItems = Array.isArray(planItems) ? planItems : []
+  const hasContent = listItems.length > 0
+  const showContent = isReady && hasContent
 
   return (
     <Card className="fade-in">
@@ -180,18 +194,31 @@ function LayeredPanel({ group, onElaborate, iconLabel, typewriterKey, headerTitl
           {iconLabel}
           <h3 className="text-base font-semibold text-zinc-900">{headerTitle || safeGroup.report.title}</h3>
         </div>
-        <span className="text-xl leading-none" aria-hidden>{open ? '–' : '+'}</span>
+        <span className="flex items-center gap-3">
+          {!isReady && (
+            <span
+              className="inline-block h-4 w-4 rounded-full border-2 border-[rgba(158,93,171,.22)] border-t-[#9E5DAB] animate-spin"
+              aria-hidden
+            />
+          )}
+          <span className="text-xl leading-none" aria-hidden>{open ? '–' : '+'}</span>
+        </span>
       </button>
 
       <div className="sect-panel" data-open={open ? 'true' : 'false'}>
         {/* Overview content or loader */}
-        {Array.isArray(safeGroup.report?.bullets) && safeGroup.report.bullets.length > 0 ? (
+        {showContent ? (
           <div className="mt-2">
-            {safeGroup.learnMore?.context ? (
-              <p className="text-zinc-700 leading-relaxed fade-in">{safeGroup.learnMore.context}</p>
-            ) : null}
+            {(() => {
+              const paragraph = (safeGroup.report?.paragraph || '').trim()
+              const context = (safeGroup.learnMore?.context || '').trim()
+              const text = paragraph || context
+              return text ? (
+                <p className="text-zinc-700 leading-relaxed fade-in">{text}</p>
+              ) : null
+            })()}
             <div className="fade-in">
-              <TypewriterList items={safeGroup.report.bullets} onceKey={safeGroup.report.title} persistKey={typewriterKey} />
+              <TypewriterList items={listItems} onceKey={safeGroup.report.title} persistKey={typewriterKey} />
             </div>
             <div className="mt-5 rounded-xl bg-zinc-50 p-4 fade-in">
               <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Add to your plan</div>
@@ -215,10 +242,12 @@ function LayeredPanel({ group, onElaborate, iconLabel, typewriterKey, headerTitl
               </a>
             </div>
           </div>
-        ) : (
-          <div className="py-10 flex items-center justify-center">
-            <div className="h-10 w-10 rounded-full border-4 border-[rgba(158,93,171,.22)] border-t-[#9E5DAB] animate-spin" aria-label="Loading" />
+        ) : !isReady ? (
+          <div className="py-10 flex items-center justify-center" aria-live="polite">
+            <div className="h-10 w-10 rounded-full border-4 border-[rgba(158,93,171,.22)] border-t-[#9E5DAB] animate-spin" aria-label="Generating section" />
           </div>
+        ) : (
+          <div className="py-10 text-center text-sm text-zinc-500">No insights available yet.</div>
         )}
       </div>
     </Card>
@@ -226,8 +255,13 @@ function LayeredPanel({ group, onElaborate, iconLabel, typewriterKey, headerTitl
 }
 
 // ---------- Root Component ----------
-export default function ReportShell({ data, onPlatformChange, onElaborate, typewriterKey }: ReportShellProps) {
+export default function ReportShell({ data, onPlatformChange, onElaborate, typewriterKey, sectionReadiness }: ReportShellProps) {
   const [platform, setPlatform] = useState<PlatformKey>(data.primaryPlatform);
+  const isSectionReady = (key: keyof ReportData['sections']) => {
+    if (!sectionReadiness) return true
+    const value = sectionReadiness[key]
+    return value !== false
+  }
 
   // Defensive: ensure we always have platform strategies + a selected platform
   const defaultPlatformMap: Record<PlatformKey, PlatformStrategy> = {
@@ -298,80 +332,75 @@ export default function ReportShell({ data, onPlatformChange, onElaborate, typew
       <div className="grid grid-cols-1 gap-6">
         <LayeredPanel
           group={data.sections.primaryObstacle}
-          onElaborate={() => onElaborate?.("primaryObstacle")}
-          iconLabel={<GradientBadge><AlertTriangle className="w-6 h-6" color="white" /></GradientBadge>}
-          typewriterKey={typewriterKey}
-          sectionSlug={'primary_obstacle_resolution'}
-          headerTitle={'Section 1: Primary Obstacle Resolution'}
-        />
-        <LayeredPanel
-          group={data.sections.strategicFoundation}
-          onElaborate={() => onElaborate?.("personalBrand")}
-          iconLabel={<GradientBadge><Landmark className="w-6 h-6" color="white" /></GradientBadge>}
-          typewriterKey={typewriterKey}
-          sectionSlug={'strategic_foundation'}
-          headerTitle={'Section 2: Niche & Focus Discovery'}
-        />
-        {/* Section 3: Personal Brand Development */}
-        <LayeredPanel
-          group={data.sections.personalBrand}
-          onElaborate={() => onElaborate?.("strategicFoundation")}
-          iconLabel={<GradientBadge><Sparkles className="w-6 h-6" color="white" /></GradientBadge>}
-          typewriterKey={typewriterKey}
-          sectionSlug={'personal_brand_development'}
-          headerTitle={'Section 3: Personal Brand Development'}
-        />
-        {/* Section 5: Platform-Specific Tactics */}
-        <PlatformStrategyCard
-          title="Section 5: Platform-Specific Tactics"
-          content={{
-            content_type: humanize(ps.content_type),
-            posting_frequency: humanize(ps.posting_frequency),
-            key_metrics: humanize(ps.key_metrics),
-            growth_hack: humanize(ps.growth_hack),
-          }}
-          rightSlot={(
-            <div className="flex items-center gap-2">
-              {(["tiktok", "instagram", "youtube"] as PlatformKey[]).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => { setPlatform(p); onPlatformChange?.(p); }}
-                  className={`rounded-full px-3 py-1 text-sm font-medium transition ${
-                    p === platform ? "bg-zinc-900 text-white" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
-                  }`}
-                  aria-pressed={p === platform}
-                >
-                  {platformLabel[p]}
-                </button>
-              ))}
-            </div>
-          )}
-        />
-        {/* Platform Strategy as Section 5 */}
-        <LayeredPanel
-          group={data.sections.monetizationPath}
-          onElaborate={() => onElaborate?.("monetizationPath")}
-          iconLabel={<GradientBadge><Wallet2 className="w-6 h-6" color="white" /></GradientBadge>}
-          typewriterKey={typewriterKey}
-          sectionSlug={'marketing_strategy_development'}
-          headerTitle={'Section 4: Marketing Strategy Development'}
-        />
-        <LayeredPanel
-          group={data.sections.mentalHealth}
-          onElaborate={() => onElaborate?.("mentalHealth")}
-          iconLabel={<GradientBadge><HeartPulse className="w-6 h-6" color="white" /></GradientBadge>}
-          typewriterKey={typewriterKey}
-          sectionSlug={'mental_health_sustainability'}
-          headerTitle={'Section 7: Mental Health & Sustainability'}
-        />
-        <LayeredPanel
-          group={data.sections.successMeasurement}
-          onElaborate={() => onElaborate?.("successMeasurement")}
-          iconLabel={<GradientBadge><BarChart3 className="w-6 h-6" color="white" /></GradientBadge>}
-          typewriterKey={typewriterKey}
-          sectionSlug={'content_creation_execution'}
-          headerTitle={'Section 6: Content Creation & Execution'}
-        />
+        onElaborate={() => onElaborate?.("primaryObstacle")}
+        iconLabel={<GradientBadge><AlertTriangle className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('primaryObstacle')}
+        sectionSlug={'primary_obstacle_resolution'}
+        headerTitle={'Section 1: Primary Obstacle Resolution'}
+        sectionKey="primaryObstacle"
+      />
+      <LayeredPanel
+        group={data.sections.strategicFoundation}
+        onElaborate={() => onElaborate?.("personalBrand")}
+        iconLabel={<GradientBadge><Landmark className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('strategicFoundation')}
+        sectionSlug={'strategic_foundation'}
+        headerTitle={'Section 2: Niche & Focus Discovery'}
+        sectionKey="strategicFoundation"
+      />
+      {/* Section 3: Personal Brand Development */}
+      <LayeredPanel
+        group={data.sections.personalBrand}
+        onElaborate={() => onElaborate?.("strategicFoundation")}
+        iconLabel={<GradientBadge><Sparkles className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('personalBrand')}
+        sectionSlug={'personal_brand_development'}
+        headerTitle={'Section 3: Personal Brand Development'}
+        sectionKey="personalBrand"
+      />
+      <LayeredPanel
+        group={data.sections.marketingStrategy}
+        onElaborate={() => onElaborate?.("marketingStrategy")}
+        iconLabel={<GradientBadge><Wallet2 className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('marketingStrategy')}
+        sectionSlug={'marketing_strategy_development'}
+        headerTitle={'Section 4: Marketing Strategy Development'}
+        sectionKey="marketingStrategy"
+      />
+      <LayeredPanel
+        group={data.sections.platformTactics}
+        onElaborate={() => onElaborate?.("platformTactics")}
+        iconLabel={<GradientBadge><Landmark className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('platformTactics')}
+        sectionSlug={'platform_specific_tactics'}
+        headerTitle={'Section 5: Platform-Specific Tactics'}
+        sectionKey="platformTactics"
+      />
+      <LayeredPanel
+        group={data.sections.contentExecution}
+        onElaborate={() => onElaborate?.("contentExecution")}
+        iconLabel={<GradientBadge><BarChart3 className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('contentExecution')}
+        sectionSlug={'content_creation_execution'}
+        headerTitle={'Section 6: Content Creation & Execution'}
+        sectionKey="contentExecution"
+      />
+      <LayeredPanel
+        group={data.sections.mentalHealth}
+        onElaborate={() => onElaborate?.("mentalHealth")}
+        iconLabel={<GradientBadge><HeartPulse className="w-6 h-6" color="white" /></GradientBadge>}
+        typewriterKey={typewriterKey}
+        ready={isSectionReady('mentalHealth')}
+        sectionSlug={'mental_health_sustainability'}
+        headerTitle={'Section 7: Mental Health & Sustainability'}
+        sectionKey="mentalHealth"
+      />
       </div>
 
       {/* Footer CTA */}
@@ -481,7 +510,27 @@ export const MOCK_DATA: ReportData = {
         advanced: ["Intro a catchphrase & consistent shot framing"],
       },
     },
-    monetizationPath: {
+    personalBrand: {
+      report: {
+        title: "Sharpen Personal Brand",
+        bullets: [
+          "Codify a signature intro and sign-off.",
+          "Highlight proof stories that show transformation.",
+          "Use color + typography cues across channels.",
+        ],
+      },
+      learnMore: {
+        context: "Distinct stories and signals make you memorable fast.",
+        framework: { name: "Story Strip", steps: ["Origin", "Tension", "Resolution"] },
+      },
+      elaborate: {
+        advanced: ["Film a brand trailer for profile pin"],
+        troubleshooting: [
+          { symptom: "Audience can't explain you", fix: "Repeat your transformation promise at the end of posts." },
+        ],
+      },
+    },
+    marketingStrategy: {
       report: {
         title: "Stage‑Fit Monetization",
         bullets: [
@@ -497,6 +546,44 @@ export const MOCK_DATA: ReportData = {
       elaborate: {
         advanced: ["Price testing via A/B checkout links"],
         longTerm: ["Move to cohort course or community at 10K+"],
+      },
+    },
+    platformTactics: {
+      report: {
+        title: "Platform-Specific Tactics",
+        bullets: [
+          "Optimize the first two seconds for hooks.",
+          "Use each platform's native feature weekly.",
+          "Schedule duet/remix replies to trending clips.",
+        ],
+      },
+      learnMore: {
+        context: "Each platform rewards different viewer behavior; tailor format and cadence.",
+        framework: { name: "Pick-1-Platform", steps: ["Choose pillar", "Match format", "Measure one metric"] },
+      },
+      elaborate: {
+        troubleshooting: [
+          { symptom: "Reels dropping reach", fix: "Refresh cover styles + test 3 new hooks." },
+        ],
+      },
+    },
+    contentExecution: {
+      report: {
+        title: "Content Creation & Execution",
+        bullets: [
+          "Batch three scripts every Sunday.",
+          "Record 3 takes per idea and pick the tightest cut.",
+          "Edit with a fixed template to stay under 45 minutes per post.",
+        ],
+      },
+      learnMore: {
+        context: "Execution systems reduce friction and increase publish reliability.",
+        framework: { name: "Ship-Loop", steps: ["Draft", "Polish", "Ship"] },
+        tools: ["B-roll template kit", "Hook swipe file"],
+      },
+      elaborate: {
+        advanced: ["Automate captions + repurposing via Zapier/Descript"],
+        longTerm: ["Review KPIs weekly; archive top-performing templates quarterly."],
       },
     },
     mentalHealth: {
@@ -516,24 +603,7 @@ export const MOCK_DATA: ReportData = {
         troubleshooting: [
           { symptom: "Anxiety before posting", fix: "Post with comments off; open later." },
         ],
-      },
-    },
-    successMeasurement: {
-      report: {
-        title: "Metrics That Matter",
-        bullets: [
-          "Track weekly output and meaningful interactions.",
-          "Monitor follower velocity (monthly).",
-          "Measure revenue per follower once offers live.",
-        ],
-      },
-      learnMore: {
-        context: "Leading indicators predict lagging outcomes.",
-        framework: { name: "Signal > Noise", steps: ["Define", "Instrument", "Review"] },
-        tools: ["Notion KPI board", "Simple UTM sheet"],
-      },
-      elaborate: {
-        advanced: ["Content cohort analysis by pillar"],
+        longTerm: ["Quarterly social sabbatical week to reset"],
       },
     },
   },
@@ -594,21 +664,39 @@ function TypeLine({ text }: { text: string }) {
 
 function makePlanAdds(group: LayerGroup): string[] {
   const tasks: string[] = []
+  const pushUnique = (value: string | undefined) => {
+    const v = (value || '').trim()
+    if (!v) return
+    if (!tasks.includes(v)) tasks.push(v)
+  }
   // 1) Valid quick wins (label + how)
   if (Array.isArray(group.report.quickWins)) {
     for (const q of group.report.quickWins) {
       const label = String((q as any)?.label || '').trim()
       const how = String((q as any)?.how || '').trim()
-      if (label && how) tasks.push(`${label}: ${how}`)
+      if (label && how) pushUnique(`${label}: ${how}`)
+      if (tasks.length >= 5) break
+    }
+  }
+  // 2) Model-supplied action bullets
+  if (Array.isArray(group.report.addToYourPlan)) {
+    for (const item of group.report.addToYourPlan) {
+      pushUnique(typeof item === 'string' ? item : '')
       if (tasks.length >= 5) break
     }
   }
   // 2) Framework steps
   const steps = (group.learnMore?.framework?.steps || []).filter(Boolean).map(String)
-  for (const s of steps) { if (tasks.length < 5) tasks.push(s) }
+  for (const s of steps) {
+    if (tasks.length >= 5) break
+    pushUnique(s)
+  }
   // 3) Report bullets
   const bullets = (group.report?.bullets || []).filter(Boolean).map(String)
-  for (const b of bullets) { if (tasks.length < 5) tasks.push(b) }
+  for (const b of bullets) {
+    if (tasks.length >= 5) break
+    pushUnique(b)
+  }
   return tasks.slice(0,5)
 }
 

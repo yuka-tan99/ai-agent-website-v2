@@ -64,11 +64,11 @@ export async function POST(req: Request) {
     }
     chosenPrice = oneTime
   }
-  const redirectAfter = product === 'ai' ? '/account' : '/dashboard'
+  const redirectAfter = product === 'ai' ? '/account' : '/dashboard/preparing?force=true'
   const cancelPath = product === 'ai' ? '/paywall/ai' : '/paywall'
   // For plan, land on preparing with redirect to the new report board
   const successUrl = product === 'plan'
-    ? `${appUrl}/dashboard/preparing?session_id={CHECKOUT_SESSION_ID}&redirect=${encodeURIComponent('/account/report-board')}`
+    ? `${appUrl}/dashboard/preparing?force=true&session_id={CHECKOUT_SESSION_ID}`
     : `${appUrl}/success?session_id={CHECKOUT_SESSION_ID}&redirect=${encodeURIComponent(redirectAfter)}`
   const session = await stripe.checkout.sessions.create({
     mode,

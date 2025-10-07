@@ -8,11 +8,21 @@ export const dynamic = 'force-dynamic'
 
 function isOnboardingComplete(answers: Record<string, any> | null | undefined): boolean {
   if (!answers || typeof answers !== 'object') return false
+  // SmartOnboarding (decision tree) signals
+  if ((answers as any)?.__vars?.stage) return true
+  if (typeof (answers as any)?.Q2 === 'string' && (answers as any).Q2) return true
+  const qCount = Object.keys(answers).filter(k => /^Q\d/.test(k)).filter(k => {
+    const v: any = (answers as any)[k]
+    return Array.isArray(v) ? v.length > 0 : (v != null && String(v).length > 0)
+  }).length
+  if (qCount >= 4) return true
+  // Legacy heuristic (old flat schema)
   const required = ["creatingAs", "identity", "goal", "platforms", "topics", "reach", "timeAvailable"]
-  return required.every((k) => {
+  const legacyOk = required.every((k) => {
     const v = (answers as any)[k]
     return Array.isArray(v) ? v.length > 0 : typeof v === 'string' ? v.trim().length > 0 : !!v
   })
+  return legacyOk
 }
 
 export async function GET(req: Request) {

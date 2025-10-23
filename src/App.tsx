@@ -526,9 +526,9 @@ export default function App({ initialView }: AppProps = {}) {
     } else {
       window.location.hash = '';
     }
-  }, []);
+  }, [changeView]);
 
-const defaultSections: SectionData[] = [
+  const defaultSections = useMemo<SectionData[]>(() => [
     {
       id: 1,
       title: "Main Problem | First Advice",
@@ -1116,7 +1116,7 @@ const defaultSections: SectionData[] = [
       },
       accentColor: "#D1A5DD"
     }
-];
+  ], []);
 
   const mergePlanWithDefaults = useCallback(
     (plan: GeneratedSectionPayload[]) => {
@@ -1322,6 +1322,7 @@ const defaultSections: SectionData[] = [
     generatePlan,
     currentView,
     setView,
+    pathname,
   ]);
 
   useEffect(() => {

@@ -161,7 +161,7 @@ export function SupportFormPage({ onBack }: SupportFormPageProps) {
             <h1>Contact Support</h1>
           </motion.div>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Have a question or need help? We're here for you. Fill out the form below and we'll get back to you within 24 hours.
+            Have a question or need help? We&apos;re here for you. Fill out the form below and we&apos;ll get back to you within 24 hours.
           </p>
         </motion.div>
 

@@ -161,7 +161,7 @@ export function TermsOfServicePage({ onBack }: TermsOfServicePageProps) {
                 <section>
                   <h3 style={{ color: '#9E5DAB' }}>7. Limitation of Liability</h3>
                   <p className="text-muted-foreground">
-                    We provide our services "as is." We are not liable for any indirect or consequential damages arising from your use of the platform.
+                    We provide our services &quot;as is.&quot; We are not liable for any indirect or consequential damages arising from your use of the platform.
                   </p>
                 </section>
 

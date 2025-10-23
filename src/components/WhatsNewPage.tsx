@@ -244,7 +244,7 @@ export function WhatsNewPage({ onBack }: WhatsNewPageProps) {
               backgroundClip: 'text',
             }}
           >
-            <h1>What's New</h1>
+            <h1>What&apos;s New</h1>
           </motion.div>
           <p className="text-muted-foreground max-w-2xl mx-auto">
             Stay up to date with the latest features, improvements, and updates to BecomeFamous.AI

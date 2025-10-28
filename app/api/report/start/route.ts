@@ -1,12 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { generateReportForUser } from "../../../../lib/report/generate";
+import {
+  generateReportForUser,
+  SECTION_TITLES,
+  type ReportPlan,
+  type ReportSection,
+} from "../../../../lib/report/generate";
 import { getProductByKey } from "@/lib/products";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 type StartReportPayload = {
   userId?: string;
 };
+
+const PLACEHOLDER_TEXT = "content is generating...";
+
+function isMeaningfulText(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return trimmed.toLowerCase() !== PLACEHOLDER_TEXT;
+}
+
+function isReportSectionComplete(section: ReportSection | undefined | null): boolean {
+  if (!section) return false;
+  if (!isMeaningfulText(section.content)) return false;
+  if (!Array.isArray(section.action_tips) || section.action_tips.length < 5) {
+    return false;
+  }
+  return section.action_tips.every((tip) => isMeaningfulText(tip));
+}
+
+function isReportPlanComplete(plan: unknown): plan is ReportPlan {
+  if (!plan || typeof plan !== "object") return false;
+  const typed = plan as ReportPlan;
+  if (!Array.isArray(typed.sections) || typed.sections.length === 0) return false;
+  return SECTION_TITLES.every((title) => {
+    const section = typed.sections.find((item) => item.title === title);
+    return isReportSectionComplete(section);
+  });
+}
+
+function isLegacySectionComplete(section: unknown): boolean {
+  if (!section || typeof section !== "object") return false;
+  const summary = (section as { summary?: unknown }).summary;
+  return isMeaningfulText(summary);
+}
+
+function isLegacyPlanComplete(plan: unknown): boolean {
+  if (!Array.isArray(plan) || plan.length === 0) return false;
+  return SECTION_TITLES.every((title, index) => {
+    const section = plan.find((item) => (item as { title?: string }).title === title)
+      ?? plan[index];
+    return isLegacySectionComplete(section);
+  });
+}
+
+function isExistingPlanComplete(plan: unknown): boolean {
+  if (isReportPlanComplete(plan)) return true;
+  if (isLegacyPlanComplete(plan)) return true;
+  return false;
+}
 
 function hasActiveReportAccess(grants: Array<Record<string, any>>): boolean {
   const now = Date.now();
@@ -91,9 +145,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (existing?.plan) {
-    console.info("[report/start] existing plan found", { userId });
-    return NextResponse.json({ status: "success", report: existing.plan });
+  const existingPlan = existing?.plan;
+  const planComplete = isExistingPlanComplete(existingPlan);
+
+  if (existingPlan && planComplete) {
+    console.info("[report/start] existing complete plan found", { userId });
+    return NextResponse.json({ status: "success", report: existingPlan });
+  }
+
+  if (existingPlan && !planComplete) {
+    console.info("[report/start] existing plan incomplete, regenerating", { userId });
   }
 
   try {

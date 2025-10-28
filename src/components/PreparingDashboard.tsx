@@ -1,10 +1,16 @@
+'use client';
+
 import { useState, useEffect } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { BecomeFamousLogo } from './BecomeFamousLogo';
 
+type PreparingStatus = 'idle' | 'pending' | 'in-progress' | 'complete';
+
 interface PreparingDashboardProps {
   onComplete: () => void;
+  progress: number;
+  status: PreparingStatus;
 }
 
 const motivationalMessages = [
@@ -18,35 +24,35 @@ const motivationalMessages = [
   "Finalizing your custom report..."
 ];
 
-export function PreparingDashboard({ onComplete }: PreparingDashboardProps) {
-  const [progress, setProgress] = useState(0);
+export function PreparingDashboard({ onComplete, progress, status }: PreparingDashboardProps) {
+  const [animatedProgress, setAnimatedProgress] = useState(progress);
   const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
-    // Progress bar animation
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          setTimeout(() => {
-            onComplete();
-          }, 500);
-          return 100;
-        }
-        return prev + 1;
-      });
-    }, 30); // 3 seconds total
-
     // Message rotation
     const messageInterval = setInterval(() => {
       setMessageIndex(prev => (prev + 1) % motivationalMessages.length);
     }, 400);
 
     return () => {
-      clearInterval(progressInterval);
       clearInterval(messageInterval);
     };
-  }, [onComplete]);
+  }, []);
+
+  useEffect(() => {
+    const clamped = Math.max(0, Math.min(progress, 100));
+    setAnimatedProgress(clamped);
+  }, [progress]);
+
+  useEffect(() => {
+    if (status !== 'complete') return;
+    const timeout = window.setTimeout(() => {
+      onComplete();
+    }, 600);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [status, onComplete]);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-6">
@@ -79,12 +85,12 @@ export function PreparingDashboard({ onComplete }: PreparingDashboardProps) {
 
         {/* Progress Bar */}
         <div className="mb-4">
-          <Progress value={progress} className="h-3" />
+          <Progress value={animatedProgress} className="h-3 transition-all duration-500" />
         </div>
 
         {/* Percentage */}
         <p className="text-muted-foreground">
-          {progress}%
+          {Math.round(animatedProgress)}%
         </p>
 
         {/* Additional Info */}

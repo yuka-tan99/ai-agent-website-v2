@@ -22,11 +22,36 @@ import {
 
 interface AnalyticsDashboardProps {
   sectionScores: { section: string; score: number; potential: number }[];
+  readinessData: { category: string; value: number; fullMark: number }[];
+  projectionData: { month: string; followers: number; projected: number }[];
+  consistencyData: { day: string; posts: number; target: number }[];
 }
 
-export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
-  // Growth projection data
-  const projectionData = [
+export function AnalyticsDashboard({
+  sectionScores,
+  readinessData,
+  projectionData,
+  consistencyData,
+}: AnalyticsDashboardProps) {
+  const fallbackSectionScores = [
+    { section: 'Niche', score: 40, potential: 85 },
+    { section: 'Execute', score: 35, potential: 80 },
+    { section: 'Brand', score: 55, potential: 88 },
+    { section: 'Marketing', score: 50, potential: 92 },
+    { section: 'Systems', score: 35, potential: 80 },
+    { section: 'Mental', score: 60, potential: 75 }
+  ];
+
+  const fallbackReadiness = [
+    { category: 'Content', value: 65, fullMark: 100 },
+    { category: 'Consistency', value: 45, fullMark: 100 },
+    { category: 'Niche', value: 40, fullMark: 100 },
+    { category: 'Brand', value: 55, fullMark: 100 },
+    { category: 'Marketing', value: 50, fullMark: 100 },
+    { category: 'Systems', value: 35, fullMark: 100 }
+  ];
+
+  const fallbackProjection = [
     { month: 'Now', followers: 0, projected: 0 },
     { month: 'Month 1', followers: 150, projected: 200 },
     { month: 'Month 2', followers: 450, projected: 600 },
@@ -36,18 +61,7 @@ export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
     { month: 'Month 6', followers: 10000, projected: 18000 }
   ];
 
-  // Readiness radar data
-  const readinessData = [
-    { category: 'Content', value: 65, fullMark: 100 },
-    { category: 'Consistency', value: 45, fullMark: 100 },
-    { category: 'Niche', value: 40, fullMark: 100 },
-    { category: 'Brand', value: 55, fullMark: 100 },
-    { category: 'Marketing', value: 50, fullMark: 100 },
-    { category: 'Systems', value: 35, fullMark: 100 }
-  ];
-
-  // Weekly consistency data
-  const consistencyData = [
+  const fallbackConsistency = [
     { day: 'Mon', posts: 2, target: 3 },
     { day: 'Tue', posts: 1, target: 3 },
     { day: 'Wed', posts: 3, target: 3 },
@@ -56,6 +70,11 @@ export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
     { day: 'Sat', posts: 1, target: 3 },
     { day: 'Sun', posts: 2, target: 3 }
   ];
+
+  const sectionScoreData = sectionScores.length ? sectionScores : fallbackSectionScores;
+  const readinessChartData = readinessData.length ? readinessData : fallbackReadiness;
+  const projectionChartData = projectionData.length ? projectionData : fallbackProjection;
+  const consistencyChartData = consistencyData.length ? consistencyData : fallbackConsistency;
 
   return (
     <div className="space-y-6">
@@ -70,7 +89,7 @@ export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
             <h3 className="mb-4">Section Readiness</h3>
             <p className="text-sm text-muted-foreground mb-4">Current vs. Potential scores</p>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={sectionScores}>
+              <BarChart data={sectionScoreData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                 <XAxis 
                   dataKey="section" 
@@ -106,7 +125,7 @@ export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
             <h3 className="mb-4">Platform Readiness</h3>
             <p className="text-sm text-muted-foreground mb-4">Your current strength across key areas</p>
             <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={readinessData}>
+              <RadarChart data={readinessChartData}>
                 <PolarGrid stroke="currentColor" opacity={0.2} />
                 <PolarAngleAxis 
                   dataKey="category" 
@@ -142,7 +161,7 @@ export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
             <h3 className="mb-4">Growth Projection</h3>
             <p className="text-sm text-muted-foreground mb-4">Expected vs. potential follower growth</p>
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={projectionData}>
+              <AreaChart data={projectionChartData}>
                 <defs>
                   <linearGradient id="colorFollowers" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#B481C0" stopOpacity={0.3}/>
@@ -203,7 +222,7 @@ export function AnalyticsDashboard({ sectionScores }: AnalyticsDashboardProps) {
             <h3 className="mb-4">Weekly Consistency</h3>
             <p className="text-sm text-muted-foreground mb-4">Posts per day vs. your target</p>
             <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={consistencyData}>
+              <LineChart data={consistencyChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.1} />
                 <XAxis 
                   dataKey="day" 

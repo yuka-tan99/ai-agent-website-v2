@@ -1,18 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+'use client';
+
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MessageCircle, 
   X, 
   Send, 
   Sparkles, 
-  Lightbulb,
-  Hash,
-  FileText,
   Mic,
   Pin,
   Trash2,
   TrendingUp,
-  Video,
   Bot,
   History,
   DollarSign,
@@ -28,6 +26,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { supabase } from '@/lib/supabaseClient';
 
 interface Message {
   id: string;
@@ -36,6 +35,7 @@ interface Message {
   timestamp: Date;
   isPinned?: boolean;
   suggestions?: string[];
+  isThinking?: boolean;
 }
 
 interface ChatSession {
@@ -54,12 +54,14 @@ interface AskVeeChatProps {
   isPaidUser?: boolean;
   creatorType?: string;
   onboardingAnswers?: OnboardingAnswer[];
+  userName?: string;
 }
 
 export function AskVeeChat({ 
   isPaidUser = false,
   creatorType = "content creator",
-  onboardingAnswers = []
+  onboardingAnswers = [],
+  userName = ''
 }: AskVeeChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -69,11 +71,20 @@ export function AskVeeChat({
   const [questionsUsed, setQuestionsUsed] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'pinned'>('chat');
+  const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const maxFreeQuestions = 3;
-  const questionsRemaining = isPaidUser ? Infinity : maxFreeQuestions - questionsUsed;
+  const questionsRemaining = isPaidUser
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, maxFreeQuestions - questionsUsed);
+
+  const displayName = useMemo(() => {
+    const trimmed = typeof userName === 'string' ? userName.trim() : '';
+    if (trimmed) return trimmed.split(' ')[0];
+    return 'friend';
+  }, [userName]);
 
   // Generate personalized suggestions based on onboarding
   const getPersonalizedSuggestions = (userMessage: string): string[] => {
@@ -112,25 +123,6 @@ export function AskVeeChat({
     return combined.slice(0, 4); // Return top 4 suggestions
   };
 
-  // Quick action buttons
-  const quickActions = [
-    { 
-      icon: <Video className="w-4 h-4" />, 
-      label: "Suggest a video idea",
-      prompt: "Can you suggest 3 video ideas for my content based on current trends?"
-    },
-    { 
-      icon: <FileText className="w-4 h-4" />, 
-      label: "Review my bio",
-      prompt: "Can you help me optimize my social media bio to attract more followers?"
-    },
-    { 
-      icon: <Hash className="w-4 h-4" />, 
-      label: "Optimize hashtags",
-      prompt: "What are the best hashtags I should be using for my niche?"
-    },
-  ];
-
   // Initialize with welcome message and session
   useEffect(() => {
     if (messages.length === 0 && isOpen) {
@@ -140,7 +132,7 @@ export function AskVeeChat({
       const welcomeMessage: Message = {
         id: 'welcome',
         role: 'assistant',
-        content: `Hey there! 👋 I'm Vee, your AI growth coach. I'm here to help you become the ${creatorType} you've always dreamed of being!\n\nI can help you with content ideas, strategy tips, platform optimization, and more. What would you like to work on today?`,
+        content: `Hey ${displayName}, how can I help you today? I'm Vee, your creative growth mentor. ✨ We can map content ideas, unlock growth, or tune your monetization—whatever feels most urgent.`,
         timestamp: new Date(),
         isPinned: false,
         suggestions: [
@@ -152,7 +144,7 @@ export function AskVeeChat({
       };
       setMessages([welcomeMessage]);
     }
-  }, [isOpen, messages.length, creatorType]);
+  }, [displayName, isOpen, messages.length]);
 
   // Save session when closing
   const handleCloseChat = () => {
@@ -195,65 +187,163 @@ export function AskVeeChat({
     }
   }, [messages]);
 
-  const handleSendMessage = (content: string = inputValue) => {
-    if (!content.trim()) return;
+  const handleSendMessage = async (content: string = inputValue) => {
+    if (isSending) return;
+    const trimmed = content.trim();
+    if (!trimmed) return;
 
-    // Check if user has questions remaining
     if (!isPaidUser && questionsUsed >= maxFreeQuestions) {
       return;
     }
 
+    const timestamp = new Date();
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: content.trim(),
-      timestamp: new Date(),
-      isPinned: false
+      content: trimmed,
+      timestamp,
+      isPinned: false,
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
-    setQuestionsUsed(prev => prev + 1);
+    const thinkingId = `thinking-${timestamp.getTime()}`;
+    const thinkingMessage: Message = {
+      id: thinkingId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isPinned: false,
+      isThinking: true,
+      suggestions: [],
+    };
 
-    // Simulate AI response (in real app, this would call your AI API)
-    setTimeout(() => {
-      const aiResponse: Message = {
+    const payloadMessages = [...messages, userMessage].map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }));
+
+    setMessages((prev) => [...prev, userMessage, thinkingMessage]);
+    setInputValue('');
+    setActiveTab('chat');
+    setIsSending(true);
+
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+
+      const accessToken = sessionData.session?.access_token ?? null;
+      if (!accessToken) {
+        const signInMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'You’ll need to sign in to keep chatting with me. Once you’re logged in, I can pick up right where we left off.',
+          timestamp: new Date(),
+          isPinned: false,
+          suggestions: [],
+        };
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === thinkingId ? signInMessage : msg)),
+        );
+        return;
+      }
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          messages: payloadMessages,
+          rag: {
+            persona: {
+              userName: displayName,
+              creatorType,
+              onboardingAnswers,
+            },
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Request failed');
+      }
+
+      const serverText = typeof data?.text === 'string' ? data.text : '';
+      const assistantContent = serverText.trim().length
+        ? serverText.trim()
+        : generateAIResponse(trimmed, questionsRemaining);
+
+      const requiresSignIn = /please\s+sign\s+in\s+to\s+chat/i.test(assistantContent);
+
+      const suggestionList: string[] = requiresSignIn
+        ? []
+        : Array.isArray(data?.suggestions) && data.suggestions.length
+          ? (data.suggestions as string[])
+          : getPersonalizedSuggestions(trimmed);
+
+      const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: generateAIResponse(content),
+        content: data?.reason === 'expired_access' ? (data.text ?? assistantContent) : assistantContent,
         timestamp: new Date(),
         isPinned: false,
-        suggestions: getPersonalizedSuggestions(content)
+        isThinking: false,
+        suggestions: data?.reason === 'expired_access' ? [] : suggestionList,
       };
-      setMessages(prev => [...prev, aiResponse]);
-    }, 1000);
+
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === thinkingId ? assistantMessage : msg)),
+      );
+
+      if (!isPaidUser && !data?.reason && !requiresSignIn) {
+        setQuestionsUsed((prev) => Math.min(maxFreeQuestions, prev + 1));
+      }
+      if (requiresSignIn) {
+        return;
+      }
+    } catch (error) {
+      const fallbackMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: generateAIResponse(trimmed, questionsRemaining),
+        timestamp: new Date(),
+        isPinned: false,
+        isThinking: false,
+        suggestions: getPersonalizedSuggestions(trimmed),
+      };
+
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === thinkingId ? fallbackMessage : msg)),
+      );
+    } finally {
+      setIsSending(false);
+    }
   };
 
-  const generateAIResponse = (userMessage: string): string => {
-    // Mock AI responses - in production, this would call your AI backend
+  const generateAIResponse = (userMessage: string, remaining: number): string => {
     const lowerMessage = userMessage.toLowerCase();
-    
-    if (lowerMessage.includes('video') || lowerMessage.includes('content') || lowerMessage.includes('idea')) {
-      return `Great question! Here are 3 video ideas tailored for you:\n\n1. **"5 Things I Wish I Knew Before..."** - Share your biggest lessons in your niche. These perform incredibly well because they're relatable and valuable.\n\n2. **Behind-the-scenes of your process** - People love seeing the "real" you. Show how you actually create content or organize your day.\n\n3. **Trend remix with your unique spin** - Take a trending audio or format and adapt it to your niche. This leverages algorithm momentum while showcasing your expertise.\n\nWant me to dive deeper into any of these?`;
-    }
-    
-    if (lowerMessage.includes('bio') || lowerMessage.includes('profile')) {
-      return `Let's optimize your bio! A great bio should answer three questions:\n\n✨ **Who are you?** (Your niche/specialty)\n💡 **What value do you provide?** (What transformation or benefit)\n🎯 **Who is it for?** (Your target audience)\n\nHere's a formula that works:\n"I help [target audience] achieve [specific result] through [your method/approach]"\n\nFor example: "I help busy creators grow their audience through 5-minute daily content strategies 🚀"\n\nWhat's your current bio? I can help you refine it!`;
-    }
-    
-    if (lowerMessage.includes('hashtag')) {
-      return `Hashtag strategy is crucial! Here's what I recommend:\n\n**The 3-Tier Approach:**\n\n🔥 High Competition (100K-1M posts): 2-3 hashtags\n- These give you a shot at massive reach\n\n⚡ Medium Competition (10K-100K posts): 4-5 hashtags\n- Your sweet spot for discoverability\n\n🎯 Niche Specific (<10K posts): 3-4 hashtags\n- Highly targeted audience, higher engagement\n\n**Pro tip:** Create 3 hashtag sets and rotate them. Don't use the exact same set every time!\n\nWhat's your niche? I can suggest specific hashtags for you.`;
-    }
-    
-    return `That's a great question! As your AI coach, I'm here to help you grow strategically. ${
-      isPaidUser 
-        ? 'Since you\'re a premium member, I have access to advanced strategies and can provide detailed, personalized advice.' 
-        : `You have ${questionsRemaining - 1} questions remaining this week. Upgrade to get unlimited access and saved conversation history!`
-    }\n\nCould you give me a bit more context about what you're trying to achieve? The more specific you are, the better I can help!`;
-  };
 
-  const handleQuickAction = (prompt: string) => {
-    handleSendMessage(prompt);
+    if (lowerMessage.includes('video') || lowerMessage.includes('content') || lowerMessage.includes('idea')) {
+      return `Here’s a quick trio to spark your feed:\n\n• **Mini lesson:** Share one myth your audience keeps believing and bust it in 45 seconds.\n• **Behind-the-scenes:** Show the messy middle of your process — people crave the honest view.\n• **Trend remix:** Grab a trending sound and add your take on why most ${creatorType}s miss the mark.\n\nWant me to help script one of those?`;
+    }
+
+    if (lowerMessage.includes('bio') || lowerMessage.includes('profile')) {
+      return `Let’s tidy your bio. Keep it to three beats:\n\n• Who you help\n• The transformation you unlock\n• A proof point or signature energy\n\nExample: “Helping busy creatives publish daily without burnout ✨”. Drop yours and I’ll remix it with punch.`;
+    }
+
+    if (lowerMessage.includes('hashtag')) {
+      return `Try a three-tier hashtag set every post:\n\n• 2 high-volume tags for reach (250k–1M posts)\n• 4 mid-volume tags for discoverability (50k–250k)\n• 3 niche tags under 20k so your content anchors in the right circles\n\nRotate two or three sets so the algorithm doesn’t tune you out. Want me to build a set for your niche?`;
+    }
+
+    const remainingCopy = isPaidUser
+      ? ''
+      : remaining === Number.POSITIVE_INFINITY
+        ? ''
+        : `You still have ${Math.max(0, remaining)} free questions today.`;
+
+    return `I’m still here with you. ${remainingCopy ? `${remainingCopy} ` : ''}Tell me a bit more about what you want to tackle next and I’ll map the first move.`;
   };
 
   const togglePin = (messageId: string) => {
@@ -623,44 +713,6 @@ export function AskVeeChat({
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              {messages.length === 1 && (
-                <div 
-                  className="px-4 py-3 border-b flex-shrink-0" 
-                  style={{ 
-                    background: '#FDFBFD',
-                    borderColor: '#EBD7DC50'
-                  }}
-                >
-                  <p className="text-xs mb-2" style={{ color: '#9E5DAB' }}>✨ Quick actions:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {quickActions.map((action, idx) => (
-                      <motion.div
-                        key={idx}
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                      >
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleQuickAction(action.prompt)}
-                          className="text-xs h-8 gap-1.5 rounded-full shadow-sm"
-                          style={{
-                            borderColor: '#EBD7DC',
-                            backgroundColor: '#FFFFFF',
-                            color: '#9E5DAB'
-                          }}
-                          disabled={!isPaidUser && questionsUsed >= maxFreeQuestions}
-                        >
-                          {action.icon}
-                          {action.label}
-                        </Button>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Pinned Messages */}
               {pinnedMessages.length > 0 && (
                 <div 
@@ -748,7 +800,21 @@ export function AskVeeChat({
                                 }
                           }
                         >
-                          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                          {message.isThinking ? (
+                            <div className="flex items-center gap-1.5">
+                              {[0, 1, 2].map((dot) => (
+                                <motion.span
+                                  key={dot}
+                                  className="inline-block w-2.5 h-2.5 rounded-full"
+                                  style={{ backgroundColor: message.role === 'user' ? '#FFFFFF' : '#9E5DAB' }}
+                                  animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
+                                  transition={{ duration: 1, repeat: Infinity, delay: dot * 0.15, ease: 'easeInOut' }}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                          )}
                           
                           {/* Message Pin Button - Visible on hover, always visible when pinned */}
                           {message.role === 'assistant' && (
@@ -831,14 +897,16 @@ export function AskVeeChat({
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleSendMessage(suggestion)}
+                                onClick={() => void handleSendMessage(suggestion)}
                                 className="text-xs h-7 rounded-full shadow-sm"
                                 style={{
                                   borderColor: '#EBD7DC',
                                   backgroundColor: '#FFFFFF',
                                   color: '#9E5DAB'
                                 }}
-                                disabled={!isPaidUser && questionsUsed >= maxFreeQuestions}
+                                disabled={(
+                                  !isPaidUser && questionsUsed >= maxFreeQuestions
+                                ) || isSending}
                               >
                                 <Sparkles className="w-3 h-3 mr-1" />
                                 {suggestion}
@@ -1024,13 +1092,18 @@ export function AskVeeChat({
                       ref={inputRef}
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendMessage();
+                        }
+                      }}
                       placeholder={
                         !isPaidUser && questionsUsed >= maxFreeQuestions
                           ? "Upgrade to continue chatting..."
                           : "Ask Vee anything... ✨"
                       }
-                      disabled={!isPaidUser && questionsUsed >= maxFreeQuestions}
+                      disabled={isSending || (!isPaidUser && questionsUsed >= maxFreeQuestions)}
                       className="pr-10 rounded-full border-2 shadow-sm"
                       style={{ 
                         borderColor: '#EBD7DC',
@@ -1045,7 +1118,7 @@ export function AskVeeChat({
                         variant="ghost"
                         size="icon"
                         onClick={toggleVoiceInput}
-                        disabled={!isPaidUser && questionsUsed >= maxFreeQuestions}
+                        disabled={!isPaidUser && questionsUsed >= maxFreeQuestions || isSending}
                         className={`absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full ${isListening ? 'text-red-400' : 'text-muted-foreground'}`}
                         style={isListening ? { backgroundColor: '#FFE5E5' } : {}}
                       >
@@ -1058,8 +1131,12 @@ export function AskVeeChat({
                     whileTap={{ scale: 0.95 }}
                   >
                     <Button
-                      onClick={() => handleSendMessage()}
-                      disabled={!inputValue.trim() || (!isPaidUser && questionsUsed >= maxFreeQuestions)}
+                      onClick={() => { void handleSendMessage(); }}
+                      disabled={
+                        isSending ||
+                        !inputValue.trim() ||
+                        (!isPaidUser && questionsUsed >= maxFreeQuestions)
+                      }
                       size="icon"
                       className="text-white shrink-0 rounded-full w-11 h-11 shadow-md"
                       style={{ background: 'linear-gradient(135deg, #9E5DAB 0%, #B481C0 100%)' }}

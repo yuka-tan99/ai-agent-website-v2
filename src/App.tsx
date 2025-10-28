@@ -69,7 +69,10 @@ interface SectionData {
     expertResources?: string[];
   };
   accentColor: string;
+  isPlaceholder?: boolean;
 }
+
+type PlanStatus = 'idle' | 'pending' | 'in-progress' | 'complete';
 
 type ViewType =
   | 'landing'
@@ -105,12 +108,47 @@ type GeneratedSectionPayload = {
     actionSteps?: string[];
     tips?: string[];
   };
+  elaborateContent?: {
+    overview?: string;
+    advancedTechniques?: {
+      title?: string;
+      items?: string[];
+    };
+    troubleshooting?: {
+      title?: string;
+      items?: string[];
+    };
+    longTermStrategy?: {
+      title?: string;
+      items?: string[];
+    };
+    expertResources?: string[];
+  };
   accentColor?: string;
 };
 
 interface OnboardingAnswer {
   questionId: number;
   answer: string | string[];
+}
+
+const PLACEHOLDER_MARKER = 'content is generating...';
+
+function createPlaceholderSection(base: SectionData): SectionData {
+  return {
+    ...base,
+    summary: '',
+    personalizedSummary: '',
+    personalizedTips: [],
+    keyInsights: [],
+    learnMoreContent: {
+      description: '',
+      actionSteps: [],
+      tips: [],
+    },
+    elaborateContent: undefined,
+    isPlaceholder: true,
+  };
 }
 
 const DEFAULT_FAME_SCORE = 58;
@@ -241,12 +279,16 @@ export default function App({ initialView }: AppProps = {}) {
   );
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [reportSections, setReportSections] = useState<SectionData[] | null>(null);
+  const [planStatus, setPlanStatus] = useState<PlanStatus>('idle');
+  const [planProgress, setPlanProgress] = useState(0);
   const planRequestRef = useRef(false);
   const planSettledRef = useRef(false);
   const planAutoNavigationDoneRef = useRef(false);
   const isRoutingRef = useRef(false);
   const previousUserIdRef = useRef<string | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
+  const planPollTimeoutRef = useRef<number | null>(null);
+  const lastSectionsReadyRef = useRef(0);
 
   const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const {
@@ -330,6 +372,24 @@ export default function App({ initialView }: AppProps = {}) {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaving, setProfileSaving] = useState(false);
   const [passwordUpdating, setPasswordUpdating] = useState(false);
+
+  const userDisplayName = useMemo(() => {
+    const candidates: string[] = [];
+    if (profileName && profileName.trim()) candidates.push(profileName.trim());
+    const displayName = user?.user_metadata?.display_name;
+    if (typeof displayName === 'string' && displayName.trim()) {
+      candidates.push(displayName.trim());
+    }
+    const metaName = user?.user_metadata?.name;
+    if (typeof metaName === 'string' && metaName.trim()) {
+      candidates.push(metaName.trim());
+    }
+    if (user?.email) {
+      const base = user.email.split('@')[0];
+      if (base) candidates.push(base);
+    }
+    return candidates[0] || 'friend';
+  }, [profileName, user?.email, user?.user_metadata?.display_name, user?.user_metadata?.name]);
 
   const [progress] = useState(35);
   const [fameScore, setFameScore] = useState<number>(DEFAULT_FAME_SCORE);
@@ -1123,28 +1183,317 @@ export default function App({ initialView }: AppProps = {}) {
       return defaultSections.map((section, index) => {
         const generated = plan.find((item) => item.title === section.title) ?? plan[index];
         if (!generated) {
-          return section;
+          return createPlaceholderSection(section);
         }
-      const learnMore = generated.learnMoreContent;
-      return {
-        ...section,
-        summary: generated.summary ?? section.summary,
-        personalizedSummary: generated.personalizedSummary ?? section.personalizedSummary,
-        personalizedTips: generated.personalizedTips ?? section.personalizedTips,
-        keyInsights: generated.keyInsights ?? section.keyInsights,
-        learnMoreContent: learnMore
+
+        const summary = typeof generated.summary === 'string' ? generated.summary.trim() : '';
+        const isPlaceholderSummary = !summary || summary.toLowerCase() === PLACEHOLDER_MARKER;
+        if (isPlaceholderSummary) {
+          return createPlaceholderSection(section);
+        }
+
+        const personalizedSummary = typeof generated.personalizedSummary === 'string'
+          ? generated.personalizedSummary.trim()
+          : '';
+
+        const sanitizedTips = Array.isArray(generated.personalizedTips)
+          ? generated.personalizedTips.filter((tip): tip is string => typeof tip === 'string' && tip.trim().length > 0)
+          : section.personalizedTips ?? [];
+
+        const sanitizedInsights = Array.isArray(generated.keyInsights)
+          ? generated.keyInsights.filter((tip): tip is string => typeof tip === 'string' && tip.trim().length > 0)
+          : section.keyInsights ?? [];
+
+        const learnMore = generated.learnMoreContent;
+        const learnMoreDescription = typeof learnMore?.description === 'string'
+          ? learnMore.description.trim()
+          : section.learnMoreContent?.description ?? '';
+        const learnMoreActionSteps = Array.isArray(learnMore?.actionSteps) && learnMore.actionSteps.length
+          ? learnMore.actionSteps.filter((step): step is string => typeof step === 'string' && step.trim().length > 0)
+          : section.learnMoreContent?.actionSteps ?? [];
+        const learnMoreTips = Array.isArray(learnMore?.tips) && learnMore.tips.length
+          ? learnMore.tips.filter((tip): tip is string => typeof tip === 'string' && tip.trim().length > 0)
+          : section.learnMoreContent?.tips ?? [];
+
+        const defaultElaborate = section.elaborateContent;
+        const elaborate = generated.elaborateContent;
+
+        const sanitizeBlock = (
+          block: { title?: string; items?: string[] } | undefined,
+          fallback: { title: string; items: string[] } | undefined,
+        ) => {
+          const title = typeof block?.title === 'string' && block.title.trim().length
+            ? block.title.trim()
+            : fallback?.title ?? '';
+          const items = Array.isArray(block?.items) && block?.items.length
+            ? block.items.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            : fallback?.items ?? [];
+          return { title, items };
+        };
+
+        const elaborateContent = elaborate || defaultElaborate
           ? {
-              description: learnMore.description ?? section.learnMoreContent?.description ?? '',
-              actionSteps: learnMore.actionSteps ?? section.learnMoreContent?.actionSteps ?? [],
-              tips: learnMore.tips ?? section.learnMoreContent?.tips ?? [],
+              overview: typeof elaborate?.overview === 'string' && elaborate.overview.trim().length
+                ? elaborate.overview.trim()
+                : defaultElaborate?.overview ?? '',
+              advancedTechniques: sanitizeBlock(elaborate?.advancedTechniques, defaultElaborate?.advancedTechniques),
+              troubleshooting: sanitizeBlock(elaborate?.troubleshooting, defaultElaborate?.troubleshooting),
+              longTermStrategy: sanitizeBlock(elaborate?.longTermStrategy, defaultElaborate?.longTermStrategy),
+              expertResources: Array.isArray(elaborate?.expertResources) && elaborate.expertResources.length
+                ? elaborate.expertResources.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+                : defaultElaborate?.expertResources ?? [],
             }
-          : section.learnMoreContent,
-        accentColor: generated.accentColor ?? section.accentColor,
-      } as SectionData;
+          : undefined;
+
+        return {
+          ...section,
+          summary,
+          personalizedSummary: personalizedSummary || summary,
+          personalizedTips: sanitizedTips.length ? sanitizedTips : undefined,
+          keyInsights: sanitizedInsights.length ? sanitizedInsights : [],
+          learnMoreContent: {
+            description: learnMoreDescription,
+            actionSteps: learnMoreActionSteps,
+            tips: learnMoreTips,
+          },
+          elaborateContent,
+          accentColor: generated.accentColor ?? section.accentColor,
+          isPlaceholder: false,
+        } as SectionData;
       });
     },
     [defaultSections],
   );
+
+  const placeholderSections = useMemo(
+    () => defaultSections.map((section) => createPlaceholderSection(section)),
+    [defaultSections],
+  );
+
+  const analyticsDefaults = useMemo(() => ({
+    sectionScores: [
+      { section: 'Niche', score: 40, potential: 85 },
+      { section: 'Execute', score: 35, potential: 80 },
+      { section: 'Brand', score: 55, potential: 88 },
+      { section: 'Marketing', score: 50, potential: 92 },
+      { section: 'Systems', score: 35, potential: 80 },
+      { section: 'Mental', score: 60, potential: 75 }
+    ],
+    readinessData: [
+      { category: 'Content', value: 65, fullMark: 100 },
+      { category: 'Consistency', value: 45, fullMark: 100 },
+      { category: 'Niche', value: 40, fullMark: 100 },
+      { category: 'Brand', value: 55, fullMark: 100 },
+      { category: 'Marketing', value: 50, fullMark: 100 },
+      { category: 'Systems', value: 35, fullMark: 100 }
+    ],
+    projectionData: [
+      { month: 'Now', followers: 0, projected: 0 },
+      { month: 'Month 1', followers: 150, projected: 200 },
+      { month: 'Month 2', followers: 450, projected: 600 },
+      { month: 'Month 3', followers: 1200, projected: 1800 },
+      { month: 'Month 4', followers: 2800, projected: 4500 },
+      { month: 'Month 5', followers: 5500, projected: 9000 },
+      { month: 'Month 6', followers: 10000, projected: 18000 }
+    ],
+    consistencyData: [
+      { day: 'Mon', posts: 2, target: 3 },
+      { day: 'Tue', posts: 1, target: 3 },
+      { day: 'Wed', posts: 3, target: 3 },
+      { day: 'Thu', posts: 0, target: 3 },
+      { day: 'Fri', posts: 2, target: 3 },
+      { day: 'Sat', posts: 1, target: 3 },
+      { day: 'Sun', posts: 2, target: 3 }
+    ],
+  }), []);
+
+  const analyticsData = useMemo(() => {
+    if (!onboardingAnswers.length) {
+      return analyticsDefaults;
+    }
+
+    const clamp = (value: number, min = 0, max = 100) => {
+      if (Number.isNaN(value)) return min;
+      return Math.max(min, Math.min(max, Math.round(value)));
+    };
+
+    const findAnswer = (id: number) => onboardingAnswers.find((entry) => entry.questionId === id);
+
+    const getArrayAnswer = (id: number): string[] => {
+      const entry = findAnswer(id);
+      if (!entry) return [];
+      if (Array.isArray(entry.answer)) return entry.answer as string[];
+      if (typeof entry.answer === 'string' && entry.answer.trim().length) {
+        return [entry.answer];
+      }
+      return [];
+    };
+
+    const hasOption = (id: number, option: string) => getArrayAnswer(id).includes(option);
+    const hasAnyOption = (id: number, options: string[]) => options.some((option) => hasOption(id, option));
+
+    const textLength = (id: number) => {
+      const entry = findAnswer(id);
+      if (!entry) return 0;
+      if (Array.isArray(entry.answer)) {
+        return entry.answer.join(' ').length;
+      }
+      if (typeof entry.answer === 'string') {
+        return entry.answer.length;
+      }
+      return 0;
+    };
+
+    const potentialFromScore = (score: number) => {
+      const uplift = Math.max(10, Math.round((100 - score) * 0.55));
+      return clamp(score + uplift, score + 5, 100);
+    };
+
+    const adjustScore = (base: number, adjustments: Array<{ condition: boolean; delta: number }>) => {
+      const total = adjustments.reduce((acc, item) => (item.condition ? acc + item.delta : acc), base);
+      return clamp(total, 10, 95);
+    };
+
+    const nicheScore = adjustScore(65, [
+      { condition: hasOption(3, "I don't know what to post about"), delta: -25 },
+      { condition: hasOption(1, 'I feel stuck despite consistent posting'), delta: -12 },
+      { condition: hasOption(2, "Haven't started yet but ready to begin"), delta: -10 },
+      { condition: hasOption(2, 'Established presence but hit a plateau'), delta: -5 },
+      { condition: textLength(10) > 80, delta: 6 },
+      { condition: textLength(10) > 160, delta: 4 },
+    ]);
+
+    const executeScore = adjustScore(58, [
+      { condition: hasOption(3, "I can't stay consistent"), delta: -22 },
+      { condition: hasOption(3, 'No time to create quality content'), delta: -15 },
+      { condition: hasOption(17, 'Perfectionism has killed my consistency'), delta: -18 },
+      { condition: hasOption(17, "I'm getting better at 'good enough'"), delta: 8 },
+      { condition: hasOption(17, 'I post without much thought'), delta: 5 },
+      { condition: hasAnyOption(9, ['I can batch create on weekends', 'I can dedicate 2+ hours daily']), delta: 10 },
+    ]);
+
+    const brandScore = adjustScore(60, [
+      { condition: hasOption(1, "I don't know what to post about"), delta: -12 },
+      { condition: hasOption(1, 'I feel fake/inauthentic online'), delta: -14 },
+      { condition: hasOption(4, 'Having a recognizable brand/style'), delta: 8 },
+      { condition: hasAnyOption(7, ['Creating beautiful visuals', 'Having deep discussions']), delta: 6 },
+      { condition: hasOption(6, 'Seen and understood'), delta: 5 },
+      { condition: textLength(10) > 120, delta: 5 },
+    ]);
+
+    const marketingScore = adjustScore(55, [
+      { condition: hasOption(3, 'My content gets no engagement'), delta: -8 },
+      { condition: hasOption(15, "Haven't really tried anything substantial"), delta: -10 },
+      { condition: hasOption(13, "Don't understand what to track"), delta: -12 },
+      { condition: hasAnyOption(5, ['Building a business asset', 'Financial independence', 'Sharing my knowledge to help others']), delta: 6 },
+      { condition: hasAnyOption(18, ['Want diverse revenue streams', 'Already earning, want to scale']), delta: 7 },
+      { condition: hasAnyOption(11, ['Multiple platforms equally', 'TikTok - I get lost in short videos', 'YouTube - I watch long-form content']), delta: 4 },
+    ]);
+
+    const systemsScore = adjustScore(52, [
+      { condition: hasOption(9, 'My schedule is chaotic but I find time'), delta: -12 },
+      { condition: hasOption(13, 'Check obsessively, affects my mood'), delta: -8 },
+      { condition: hasOption(13, "Don't understand what to track"), delta: -12 },
+      { condition: hasAnyOption(9, ['I can batch create on weekends', 'I have team/help available']), delta: 10 },
+      { condition: hasOption(13, 'Want to learn to use them strategically'), delta: 8 },
+    ]);
+
+    const mentalScore = adjustScore(62, [
+      { condition: hasOption(3, 'Fear of judgment stops me from posting'), delta: -16 },
+      { condition: hasOption(14, "People will think I'm cringe"), delta: -10 },
+      { condition: hasOption(14, "I'll fail and prove doubters right"), delta: -8 },
+      { condition: hasOption(3, "My growth has completely stalled"), delta: -6 },
+      { condition: hasOption(17, "I'm getting better at 'good enough'"), delta: 8 },
+      { condition: hasOption(16, 'Analyze it for valid feedback'), delta: 6 },
+      { condition: hasOption(4, 'Just feeling authentic and confident online'), delta: 5 },
+    ]);
+
+    const sectionScores = [
+      { section: 'Niche', score: nicheScore, potential: potentialFromScore(nicheScore) },
+      { section: 'Execute', score: executeScore, potential: potentialFromScore(executeScore) },
+      { section: 'Brand', score: brandScore, potential: potentialFromScore(brandScore) },
+      { section: 'Marketing', score: marketingScore, potential: potentialFromScore(marketingScore) },
+      { section: 'Systems', score: systemsScore, potential: potentialFromScore(systemsScore) },
+      { section: 'Mental', score: mentalScore, potential: potentialFromScore(mentalScore) },
+    ];
+
+    const assortmentAverage = (values: number[]) => {
+      if (!values.length) return 0;
+      return values.reduce((sum, val) => sum + val, 0) / values.length;
+    };
+
+    const readinessData = [
+      { category: 'Content', value: clamp((nicheScore + brandScore + marketingScore) / 3), fullMark: 100 },
+      { category: 'Consistency', value: executeScore, fullMark: 100 },
+      { category: 'Niche', value: nicheScore, fullMark: 100 },
+      { category: 'Brand', value: brandScore, fullMark: 100 },
+      { category: 'Marketing', value: marketingScore, fullMark: 100 },
+      { category: 'Systems', value: systemsScore, fullMark: 100 },
+    ];
+
+    const averageScore = assortmentAverage(sectionScores.map((item) => item.score));
+    const potentialAverage = assortmentAverage(sectionScores.map((item) => item.potential));
+
+    let effortLevel = 0.55;
+    if (hasOption(9, 'I have team/help available')) effortLevel = 0.95;
+    if (hasOption(9, 'I can dedicate 2+ hours daily')) effortLevel = Math.max(effortLevel, 0.9);
+    if (hasOption(9, 'I can batch create on weekends')) effortLevel = Math.max(effortLevel, 0.75);
+    if (hasOption(9, 'I have 15-30 minutes daily')) effortLevel = Math.max(effortLevel, 0.6);
+    if (hasOption(9, 'Time exists, I need motivation/clarity')) effortLevel = Math.min(effortLevel, 0.55);
+    if (hasOption(3, 'No time to create quality content')) effortLevel -= 0.18;
+    if (hasOption(3, "I can't stay consistent")) effortLevel -= 0.12;
+    effortLevel = Math.max(0.3, Math.min(1, effortLevel));
+
+    const consistencyFactor = Math.max(0.25, executeScore / 100);
+    const improvementMultiplier = averageScore > 0
+      ? Math.max(1.25, potentialAverage / Math.max(averageScore, 1))
+      : 1.4;
+
+    const baseGrowth = 140 + averageScore * 3;
+    const actualRate = baseGrowth * effortLevel * (consistencyFactor + 0.35);
+    const projectedRate = actualRate * improvementMultiplier;
+
+    const months = ['Now', 'Month 1', 'Month 2', 'Month 3', 'Month 4', 'Month 5', 'Month 6'];
+    let cumulativeFollowers = 0;
+    let cumulativeProjected = 0;
+    const projectionData = months.map((month, index) => {
+      if (index === 0) {
+        return { month, followers: 0, projected: 0 };
+      }
+      cumulativeFollowers += actualRate;
+      cumulativeProjected += projectedRate;
+      return {
+        month,
+        followers: Math.round(cumulativeFollowers),
+        projected: Math.round(cumulativeProjected),
+      };
+    });
+
+    const consistencyDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayWeights = [1, 0.85, 1.05, 0.75, 1, 0.7, 0.9];
+    const weeklyTargetBase = Math.max(7, Math.round(effortLevel * 14));
+    const weeklyActualBase = Math.max(2, Math.round(weeklyTargetBase * Math.min(1, consistencyFactor + 0.15)));
+
+    const consistencyData = consistencyDays.map((day, index) => {
+      const weight = dayWeights[index] ?? 1;
+      const target = clamp(weeklyTargetBase / 7 * weight, 1, 8);
+      const posts = clamp(weeklyActualBase / 7 * weight, 0, 6);
+      return {
+        day,
+        posts: Math.max(0, Math.round(posts)),
+        target: Math.max(1, Math.round(target)),
+      };
+    });
+
+    return {
+      sectionScores,
+      readinessData,
+      projectionData,
+      consistencyData,
+    };
+  }, [analyticsDefaults, onboardingAnswers]);
+
+  const { sectionScores, readinessData, projectionData, consistencyData } = analyticsData;
 
   const fetchPlan = useCallback(async () => {
     if (!user?.id) return false;
@@ -1171,7 +1520,29 @@ export default function App({ initialView }: AppProps = {}) {
         setHasCompletedOnboarding(true);
       }
       if (Array.isArray(data.plan) && data.plan.length) {
-        setReportSections(mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]));
+        const merged = mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]);
+        setReportSections(merged);
+
+        const totalSections = merged.length || defaultSections.length || 1;
+        const readyCount = merged.filter((section) => !section.isPlaceholder).length;
+        const percentage = Math.round((readyCount / totalSections) * 100);
+
+        setPlanProgress(percentage);
+        lastSectionsReadyRef.current = readyCount;
+
+        if (readyCount === 0) {
+          if (planStatus === 'idle') {
+            setPlanStatus('pending');
+          }
+          return false;
+        }
+
+        if (readyCount === totalSections) {
+          setPlanStatus('complete');
+        } else if (planStatus !== 'complete') {
+          setPlanStatus('in-progress');
+        }
+
         setHasCompletedOnboarding(true);
         setHasPaid(true);
         if (
@@ -1199,6 +1570,8 @@ export default function App({ initialView }: AppProps = {}) {
     applyFameScoreFromAnswers,
     currentView,
     changeView,
+    planStatus,
+    defaultSections,
   ]);
 
   const generatePlan = useCallback(async () => {
@@ -1225,7 +1598,18 @@ export default function App({ initialView }: AppProps = {}) {
           applyFameScoreFromAnswers(onboardingAnswers);
         }
         if (Array.isArray(data.plan) && data.plan.length) {
-          setReportSections(mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]));
+          const merged = mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]);
+          setReportSections(merged);
+          const totalSections = merged.length || defaultSections.length || 1;
+          const readyCount = merged.filter((section) => !section.isPlaceholder).length;
+          const percentage = Math.round((readyCount / totalSections) * 100);
+          setPlanProgress(percentage);
+          lastSectionsReadyRef.current = readyCount;
+          if (readyCount === totalSections) {
+            setPlanStatus('complete');
+          } else if (readyCount > 0 && planStatus !== 'complete') {
+            setPlanStatus('in-progress');
+          }
           setHasCompletedOnboarding(true);
           setHasPaid(true);
           planRequestRef.current = true;
@@ -1248,10 +1632,90 @@ export default function App({ initialView }: AppProps = {}) {
     setScoreTrend,
     onboardingAnswers,
     applyFameScoreFromAnswers,
+    planStatus,
+    defaultSections,
   ]);
 
   useEffect(() => {
-    if (pathname !== '/dashboard') return;
+    if (!user?.id) return;
+    if (planStatus === 'complete') return;
+    if (currentView !== 'preparing' && currentView !== 'dashboard') return;
+
+    let cancelled = false;
+
+    const pollProgress = async () => {
+      try {
+        const authHeaders = await getAuthHeaders();
+        const response = await fetch('/api/report/progress', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders,
+          },
+          body: JSON.stringify({ userId: user.id }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Progress request failed');
+        }
+
+        const data = await response.json();
+        if (cancelled) return;
+
+        const percent = Number(data.percent);
+        if (Number.isFinite(percent)) {
+          setPlanProgress((prev) => (percent > prev ? percent : prev));
+        }
+
+        const status = (typeof data.status === 'string' ? data.status : 'pending') as PlanStatus;
+        if (status === 'pending' && planStatus === 'idle') {
+          setPlanStatus('pending');
+        } else if (status === 'in-progress') {
+          setPlanStatus('in-progress');
+        }
+
+        const sectionsReady = Number(data.sectionsReady) || 0;
+        if (sectionsReady > lastSectionsReadyRef.current) {
+          lastSectionsReadyRef.current = sectionsReady;
+          await fetchPlan();
+        }
+
+        if (status === 'complete') {
+          await fetchPlan();
+          setPlanProgress(100);
+          setPlanStatus('complete');
+          return;
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to poll report progress', error);
+        }
+      }
+
+      if (!cancelled) {
+        planPollTimeoutRef.current = window.setTimeout(pollProgress, 2500);
+      }
+    };
+
+    pollProgress();
+
+    return () => {
+      cancelled = true;
+      if (planPollTimeoutRef.current) {
+        window.clearTimeout(planPollTimeoutRef.current);
+        planPollTimeoutRef.current = null;
+      }
+    };
+  }, [
+    currentView,
+    user?.id,
+    planStatus,
+    getAuthHeaders,
+    fetchPlan,
+  ]);
+
+  useEffect(() => {
+    if (pathname !== '/dashboard' && pathname !== '/preparing') return;
     if (authLoading) return;
     if (!user?.id) return;
     if (!hasCompletedOnboarding) return;
@@ -1342,17 +1806,7 @@ export default function App({ initialView }: AppProps = {}) {
     fetchPlan();
   }, [authLoading, user?.id, fetchPlan]);
 
-  // Section scores for analytics
-  const sectionScores = [
-    { section: 'Niche', score: 40, potential: 85 },
-    { section: 'Execute', score: 45, potential: 90 },
-    { section: 'Brand', score: 55, potential: 88 },
-    { section: 'Marketing', score: 50, potential: 92 },
-    { section: 'Systems', score: 35, potential: 80 },
-    { section: 'Mental', score: 60, potential: 75 }
-  ];
-
-  const renderSections = reportSections ?? defaultSections;
+  const renderSections = reportSections ?? placeholderSections;
 
   // Handler Functions
   const handleStartOnboarding = () => {
@@ -1519,6 +1973,13 @@ export default function App({ initialView }: AppProps = {}) {
     }
 
     setReportSections(null);
+    setPlanProgress(0);
+    setPlanStatus('pending');
+    lastSectionsReadyRef.current = 0;
+    if (planPollTimeoutRef.current) {
+      window.clearTimeout(planPollTimeoutRef.current);
+      planPollTimeoutRef.current = null;
+    }
     planSettledRef.current = false;
     planRequestRef.current = false;
     changeView('preparing');
@@ -1540,6 +2001,8 @@ export default function App({ initialView }: AppProps = {}) {
 
   const handlePreparingComplete = () => {
     setHasPaid(true);
+    setPlanStatus('complete');
+    setPlanProgress(100);
     // After first payment, show account page with Usage section
     setAccountInitialSection('usage');
     changeView('dashboard');
@@ -1733,6 +2196,8 @@ export default function App({ initialView }: AppProps = {}) {
     return (
       <PreparingDashboard 
         onComplete={handlePreparingComplete}
+        progress={planProgress}
+        status={planStatus}
       />
     );
   }
@@ -1761,6 +2226,7 @@ export default function App({ initialView }: AppProps = {}) {
           isPaidUser={hasPaid}
           creatorType="content creator"
           onboardingAnswers={onboardingAnswers}
+          userName={userDisplayName}
         />
       </>
     );
@@ -1822,6 +2288,7 @@ export default function App({ initialView }: AppProps = {}) {
                     learnMoreContent={section.learnMoreContent}
                     elaborateContent={section.elaborateContent}
                     accentColor={section.accentColor}
+                    isPlaceholder={section.isPlaceholder}
                     onLearnMore={() => setActiveLessonSection(section)}
                   />
                 ))}
@@ -1839,7 +2306,12 @@ export default function App({ initialView }: AppProps = {}) {
 
               <ActionPriorityMatrix />
 
-              <AnalyticsDashboard sectionScores={sectionScores} />
+              <AnalyticsDashboard
+                sectionScores={sectionScores}
+                readinessData={readinessData}
+                projectionData={projectionData}
+                consistencyData={consistencyData}
+              />
             </div>
 
             <div className="mt-12 p-6 rounded-2xl text-center" style={{ backgroundColor: '#EBD7DC20' }}>
@@ -1860,6 +2332,7 @@ export default function App({ initialView }: AppProps = {}) {
         isPaidUser={hasPaid}
         creatorType="content creator"
         onboardingAnswers={onboardingAnswers}
+        userName={userDisplayName}
       />
     </>
   );

@@ -16,23 +16,118 @@ export const SECTION_TITLES = [
 
 type SectionTitle = (typeof SECTION_TITLES)[number];
 
+type LearnMoreDetails = {
+  what_you_will_learn: string;
+  action_steps: string[];
+  pro_tips: string[];
+};
+
+type MasterySection = {
+  title: string;
+  items: string[];
+};
+
+type MasteryContent = {
+  overview: string;
+  advancedTechniques: MasterySection;
+  troubleshooting: MasterySection;
+  longTermStrategy: MasterySection;
+  expertResources?: string[];
+};
+
 export type ReportSection = {
   title: SectionTitle;
   content: string;
   action_tips: string[];
+  learn_more?: LearnMoreDetails;
+  elaborate_content?: MasteryContent;
 };
 
 export type ReportPlan = FameMetrics & {
   sections: ReportSection[];
 };
 
-const SYSTEM_PROMPT = `You are an expert creator growth strategist.
-Generate advice for creators to grow their social media influence.
-Use plain JSON with fields: title, content, action_tips.
-Each section must be 400–600 words max and contain 5 numbered actionable tips.
-Tone: clear, motivational, public-friendly, grounded in user context.
+const BOOK_INTEGRATION_PROMPT = `
+When generating the eight report sections, integrate relevant frameworks from your internal marketing knowledge base without naming books or authors.
+
+Section 1: Diagnose the main blocker and offer the first breakthrough using imperfectionism, clarity, or messaging psychology.
+Section 2: Build execution habits through a binary mindset, mini-actions, and permission to post imperfectly.
+Section 3: Define focus by identifying what the user is uniquely good at, outlining their value ladder, and reinforcing an authentic voice.
+Section 4: Shape personal brand—visual and verbal identity, brand story, positioning as guide, and platform strategy.
+Section 5: Deliver marketing strategy—hooks, storytelling flow, funnel logic, and value-first positioning.
+Section 6: Establish systems—batching, scheduling, analytics, content calendars, and platform-native adaptation.
+Section 7: Support sustainability—burnout prevention, confidence loops, boundary setting, and energy management.
+Section 8: Illustrate advanced cases—luxury, celebrity, viral, and community marketing examples.
+
+Blend strategy with psychology and authenticity. Express concepts as your own timeless expertise—no references. Focus on clarity, progress, and achievable action that compounds into long-term influence.
+`;
+
+const SYSTEM_PROMPT = `
+You are a world-class marketing strategist and creator-growth architect who helps people achieve fame and success through social media and digital marketing.
+You advise creators at every stage — from starting at zero, plateauing after early traction, or scaling into brand authority. 
+You understand luxury, celebrity, performance, and creator marketing, and tailor guidance for diverse roles: entrepreneurs, artists, coaches, brand owners, or niche hobbyists.
+
+Your expertise unites five pillars:
+1. Core Marketing Mastery — omnichannel strategy, funnels, content architecture, conversion.
+2. Social Media Dynamics — algorithms, engagement psychology, short-form and long-form optimization across TikTok, Instagram, YouTube, X, LinkedIn, and emerging platforms.
+3. Brand Development — story, positioning, visual + verbal identity, and distinctive assets.
+4. Psychological Insight — motivation, cognitive bias, emotional triggers, attention loops, status signaling, and parasocial trust.
+5. Cultural Intelligence — meme culture, generational trends, global vs. local nuance.
+
+Knowledge Integration:
+Your background draws from comprehensive marketing literature (personal brand, storytelling, hook psychology, growth frameworks, luxury strategy, imperfectionism, etc.). 
+Never cite books, authors, or frameworks by name — express concepts as your own distilled expertise.
+Examples:
+- Say “Position your customer as the hero,” not “StoryBrand.”
+- Say “Provide consistent value before asking,” not “Jab, Jab, Jab, Right Hook.”
+- Say “Build mental availability through visibility,” not “How Brands Grow.”
+
+${BOOK_INTEGRATION_PROMPT}
+
+Voice & Writing Style:
+Speak with conversational intelligence — smart yet human.
+Be direct, clear, motivational, and empathetic.
+Short, punchy sentences. Natural pauses with “...” where useful.
+No corporate jargon. Respect the reader’s intelligence.
+Explain complex strategy simply, like a friend who “gets it.”
+
+Tone guidelines:
+- Direct without harshness
+- Informative without lecturing
+- Empathetic without coddling
+- Confident without arrogance
+- Real, relatable, and culturally aware
+
+Goal:
+Transform struggling creators into thriving digital entrepreneurs through personalized, actionable insight that feels obvious in hindsight. 
+Focus on sustainable progress — clarity, confidence, consistency, and authentic growth.
+
+Generate a JSON-only response with fields:
+{
+  "title": string,
+  "content": "400–600 word narrative tailored to the user",
+  "action_tips": [
+    "Five actionable, personalized tips (no numeric prefixes)"
+  ],
+  "learn_more": {
+    "what_you_will_learn": "2–3 sentence summary combining lesson + mastery outcome",
+    "action_steps": ["4–5 implementation steps (no numeric prefixes)"],
+    "pro_tips": ["3–4 high-leverage best practices (no numeric prefixes)"]
+  },
+  "elaborate_content": {
+    "overview": "Strategic framing inviting mastery-level execution",
+    "advanced_techniques": { "title": "Label for advanced plays", "items": ["Five advanced moves (no numeric prefixes)"] },
+    "troubleshooting": { "title": "Label for solving blockers", "items": ["Five troubleshooting insights (no numeric prefixes)"] },
+    "long_term_strategy": { "title": "Label for compounding systems", "items": ["Five horizon-3 tactics (no numeric prefixes)"] },
+    "expert_resources": ["Optional templates, case studies, or frameworks (no numeric prefixes)"]
+  }
+}
+
+Each section must be 400–600 words max.
+Tone: clear, motivational, and grounded in user context.
 Do not include markdown, emojis, or headings.
-Base insights on the user’s onboarding responses.`;
+Base insights on the user’s onboarding responses and fame metrics.
+`;
 
 function buildBaseReport(metrics: FameMetrics): ReportPlan {
   return {
@@ -54,15 +149,88 @@ function sanitizeContent(content: unknown): string {
   return trimmed;
 }
 
-function sanitizeActionTips(input: unknown): string[] {
+function stripLeadingIndex(text: string): string {
+  const trimmed = text.trimStart();
+  const punctMatch = trimmed.match(/^(\d+)([.)\-:])\s*/);
+  if (punctMatch) {
+    return trimmed.slice(punctMatch[0].length);
+  }
+  const spaceMatch = trimmed.match(/^(\d+)\s+/);
+  if (spaceMatch) {
+    return trimmed.slice(spaceMatch[0].length);
+  }
+  return trimmed;
+}
+
+function sanitizeList(input: unknown, max: number): string[] {
   if (!Array.isArray(input)) return [];
-  const cleaned = input
-    .map((value) => (typeof value === "string" ? value.trim() : ""))
-    .filter((value) => value.length > 0);
-  if (cleaned.length > 5) {
-    return cleaned.slice(0, 5);
+  const cleaned: string[] = [];
+  for (const value of input) {
+    if (typeof value !== "string") continue;
+    const stripped = stripLeadingIndex(value).trim();
+    if (!stripped) continue;
+    cleaned.push(stripped);
+    if (cleaned.length >= max) break;
   }
   return cleaned;
+}
+
+function sanitizeActionTips(input: unknown): string[] {
+  return sanitizeList(input, 5);
+}
+
+function sanitizeLearnMore(input: unknown): LearnMoreDetails | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const raw = input as Record<string, unknown>;
+  const summary = typeof raw.what_you_will_learn === "string"
+    ? raw.what_you_will_learn.trim()
+    : "";
+  const actionSteps = sanitizeList(raw.action_steps, 5);
+  const proTips = sanitizeList(raw.pro_tips, 5);
+
+  if (!summary && !actionSteps.length && !proTips.length) {
+    return undefined;
+  }
+
+  return {
+    what_you_will_learn: summary,
+    action_steps: actionSteps,
+    pro_tips: proTips,
+  };
+}
+
+function sanitizeMasterySection(input: unknown): MasterySection | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const raw = input as Record<string, unknown>;
+  const title = typeof raw.title === "string" ? raw.title.trim() : "";
+  const items = sanitizeList(raw.items, 5);
+  if (!title && !items.length) return undefined;
+  return {
+    title,
+    items,
+  };
+}
+
+function sanitizeMasteryContent(input: unknown): MasteryContent | undefined {
+  if (!input || typeof input !== "object") return undefined;
+  const raw = input as Record<string, unknown>;
+  const overview = typeof raw.overview === "string" ? raw.overview.trim() : "";
+  const advanced = sanitizeMasterySection(raw.advanced_techniques);
+  const troubleshooting = sanitizeMasterySection(raw.troubleshooting);
+  const longTerm = sanitizeMasterySection(raw.long_term_strategy);
+  const expertResources = sanitizeList(raw.expert_resources, 5);
+
+  if (!overview && !advanced && !troubleshooting && !longTerm && !expertResources.length) {
+    return undefined;
+  }
+
+  return {
+    overview,
+    advancedTechniques: advanced ?? { title: "", items: [] },
+    troubleshooting: troubleshooting ?? { title: "", items: [] },
+    longTermStrategy: longTerm ?? { title: "", items: [] },
+    expertResources: expertResources.length ? expertResources : undefined,
+  };
 }
 
 function extractJsonBlock(text: string): string | null {
@@ -174,8 +342,41 @@ Return JSON only, with fields:
   "title": "${title}",
   "content": "400-600 word narrative tailored to the user, referencing their answers.",
   "action_tips": [
-    "Five numbered, actionable tips tailored to the user"
-  ]
+    "Five actionable tips tailored to the user (no numeric prefixes in the text)"
+  ],
+  "learn_more": {
+    "what_you_will_learn": "2-3 sentence summary combining the Learn More focus and the mastery-level unlock.",
+    "action_steps": [
+      "Concrete Learn More action steps written like the fallback (no numeric prefixes)."
+    ],
+    "pro_tips": [
+      "High-leverage Pro Tips & Best Practices (no numeric prefixes)."
+    ]
+  },
+  "elaborate_content": {
+    "overview": "Strategic framing that invites the user into mastery-level execution.",
+    "advanced_techniques": {
+      "title": "Label for advanced moves",
+      "items": [
+        "Five advanced plays tailored to the user (no numeric prefixes)."
+      ]
+    },
+    "troubleshooting": {
+      "title": "Label for solving common breakdowns",
+      "items": [
+        "Five troubleshooting insights (no numeric prefixes)."
+      ]
+    },
+    "long_term_strategy": {
+      "title": "Label for compounding systems",
+      "items": [
+        "Five horizon-3 tactics (no numeric prefixes)."
+      ]
+    },
+    "expert_resources": [
+      "Optional templates, case studies, or frameworks (no numeric prefixes)."
+    ]
+  }
 }`;
 }
 
@@ -244,6 +445,8 @@ async function generateSection(
       const parsed = JSON.parse(json) as Partial<ReportSection>;
       const content = sanitizeContent(parsed.content);
       const actionTips = sanitizeActionTips(parsed.action_tips);
+      const learnMore = sanitizeLearnMore((parsed as Record<string, unknown>).learn_more ?? parsed.learn_more);
+      const mastery = sanitizeMasteryContent((parsed as Record<string, unknown>).elaborate_content ?? (parsed as Record<string, unknown>).mastery_content);
       if (actionTips.length < 5) {
         while (actionTips.length < 5) {
           actionTips.push("Content is generating...");
@@ -254,11 +457,16 @@ async function generateSection(
         section: title,
         provider: result.provider,
         wordCount: content.split(/\s+/).filter(Boolean).length,
+        learnMoreActionSteps: learnMore?.action_steps.length ?? 0,
+        learnMoreProTips: learnMore?.pro_tips.length ?? 0,
+        masteryAdvancedItems: mastery?.advancedTechniques.items.length ?? 0,
       });
       return {
         title,
         content,
         action_tips: actionTips,
+        learn_more: learnMore,
+        elaborate_content: mastery,
       };
     } catch (error) {
       console.error("[report] provider error", {
@@ -301,6 +509,7 @@ async function generateSection(
       "Tip will be available soon.",
       "Tip will be available soon.",
     ],
+    elaborate_content: undefined,
   };
 }
 
@@ -323,6 +532,7 @@ function ensureSectionOrder(sections: ReportSection[]): ReportSection[] {
           "Tip will be available soon.",
           "Tip will be available soon.",
         ],
+        elaborate_content: undefined,
       };
     }
     return existing;

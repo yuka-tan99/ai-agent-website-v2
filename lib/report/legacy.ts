@@ -11,6 +11,22 @@ export type LegacySection = {
     actionSteps?: string[];
     tips?: string[];
   };
+  elaborateContent?: {
+    overview: string;
+    advancedTechniques: {
+      title: string;
+      items: string[];
+    };
+    troubleshooting: {
+      title: string;
+      items: string[];
+    };
+    longTermStrategy: {
+      title: string;
+      items: string[];
+    };
+    expertResources?: string[];
+  };
   accentColor?: string;
 };
 
@@ -33,17 +49,47 @@ export function reportPlanToLegacy(plan?: ReportPlan | null): LegacyPlan {
     const section = sectionMap.get(title);
     const content = section?.content ?? "";
     const tips = defaultActionTips(section);
+    const learnMore = section?.learn_more;
+    const mastery = section?.elaborate_content;
+    const learnMoreDescription = learnMore?.what_you_will_learn?.trim() ?? "";
+    const learnMoreActionSteps = learnMore?.action_steps?.length
+      ? [...learnMore.action_steps]
+      : learnMore
+      ? []
+      : tips
+      ? [...tips]
+      : [];
+    const learnMoreTips = learnMore?.pro_tips?.length
+      ? [...learnMore.pro_tips]
+      : learnMore
+      ? []
+      : tips
+      ? [...tips]
+      : [];
+    const learnMoreContent =
+      (learnMoreDescription && learnMoreDescription.length > 0) ||
+      learnMoreActionSteps.length ||
+      learnMoreTips.length
+        ? {
+            description: learnMoreDescription.length > 0 ? learnMoreDescription : content,
+            actionSteps: learnMoreActionSteps,
+            tips: learnMoreTips,
+          }
+        : undefined;
     return {
       title,
       summary: content,
       personalizedSummary: content,
       personalizedTips: tips,
       keyInsights: tips,
-      learnMoreContent: tips
+      learnMoreContent,
+      elaborateContent: mastery
         ? {
-            description: content,
-            actionSteps: tips,
-            tips,
+            overview: mastery.overview,
+            advancedTechniques: mastery.advancedTechniques,
+            troubleshooting: mastery.troubleshooting,
+            longTermStrategy: mastery.longTermStrategy,
+            expertResources: mastery.expertResources,
           }
         : undefined,
       accentColor: undefined,

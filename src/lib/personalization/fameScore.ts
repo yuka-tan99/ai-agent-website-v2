@@ -20,7 +20,11 @@ export type FameScoreResult = {
 };
 
 function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(value, max));
+  return Math.max(min, Math.min(max, value));
+}
+
+function baseId(value: string): string {
+  return value.split(":")[0];
 }
 
 function normalizeValue(value: unknown): string[] {
@@ -62,225 +66,270 @@ function normalizeAnswers(raw: OnboardingAnswersSource): NormalizedAnswers {
   return normalized;
 }
 
-function includes(values: string[] | undefined, target: string) {
+function hasId(values: string[] | undefined, target: string) {
   if (!values?.length) return false;
-  const needle = target.toLowerCase();
-  return values.some((value) => value.toLowerCase().includes(needle));
+  return values.some((value) => {
+    const id = baseId(value);
+    if (id === target) return true;
+    return id.startsWith(`${target}-`);
+  });
+}
+
+function hasExact(values: string[] | undefined, target: string) {
+  if (!values?.length) return false;
+  return values.some((value) => baseId(value) === target);
+}
+
+function selectionCount(values: string[] | undefined) {
+  if (!values?.length) return 0;
+  const unique = new Set(values.map((value) => baseId(value)));
+  return unique.size;
+}
+
+function extractCustomNumber(values: string[] | undefined, key = "custom") {
+  if (!values?.length) return null;
+  for (const value of values) {
+    const [id, raw] = value.split(":");
+    if (id !== key || !raw) continue;
+    const digits = raw.replace(/[^\d]/g, "");
+    if (!digits) continue;
+    const num = Number(digits);
+    if (Number.isFinite(num)) {
+      return num;
+    }
+  }
+  return null;
 }
 
 function scorePlatformPresence(answers: NormalizedAnswers) {
-  const platforms = answers[11] ?? [];
-  if (!platforms.length) return 4;
+  const platforms = answers[9] ?? [];
+  const followers = answers[2] ?? [];
 
-  let score = 8;
-  if (platforms.length > 1) {
-    score += Math.min((platforms.length - 1) * 2, 6);
+  let score = 6;
+
+  if (platforms.length) {
+    const uniquePlatforms = selectionCount(platforms);
+    score = 8 + Math.min(uniquePlatforms * 2, 8);
+
+    if (hasExact(platforms, "tiktok")) score += 4;
+    if (hasExact(platforms, "youtube")) score += 4;
+    if (hasExact(platforms, "instagram")) score += 3;
+    if (hasExact(platforms, "twitter")) score += 2;
+    if (hasExact(platforms, "twitch")) score += 2;
+    if (hasExact(platforms, "linkedin") || hasExact(platforms, "pinterest")) {
+      score += 1;
+    }
   }
-  if (includes(platforms, "tiktok")) score += 3;
-  if (includes(platforms, "youtube")) score += 3;
-  if (includes(platforms, "instagram")) score += 2;
-  if (
-    includes(platforms, "linkedin") ||
-    includes(platforms, "twitter") ||
-    includes(platforms, "multiple")
-  ) {
-    score += 1;
+
+  if (hasExact(followers, "1m+")) score += 6;
+  else if (hasExact(followers, "250k-1m")) score += 5;
+  else if (hasExact(followers, "50k-250k")) score += 4;
+  else if (hasExact(followers, "10k-50k")) score += 3;
+  else if (hasExact(followers, "1k-10k")) score += 2;
+  else if (hasExact(followers, "0-1k")) score += 1;
+
+  const customFollowers = extractCustomNumber(followers);
+  if (customFollowers != null) {
+    if (customFollowers >= 1_000_000) score += 6;
+    else if (customFollowers >= 250_000) score += 5;
+    else if (customFollowers >= 50_000) score += 4;
+    else if (customFollowers >= 10_000) score += 3;
+    else if (customFollowers >= 1_000) score += 2;
+    else score += 1;
   }
+
   return clamp(score, 0, 20);
 }
 
 function scoreContentConsistency(answers: NormalizedAnswers) {
-  const stage = answers[2] ?? [];
-  const capacity = answers[9] ?? [];
-  const blockers = answers[3] ?? [];
+  const experience = answers[4] ?? [];
+  const planning = answers[5] ?? [];
+  const blockers = answers[8] ?? [];
+  const hours = answers[14] ?? [];
+  const experiments = answers[13] ?? [];
 
-  const stageMap: Array<{ keyword: string; value: number }> = [
-    { keyword: "haven't started", value: 4 },
-    { keyword: "started recently", value: 8 },
-    { keyword: "been at it for months", value: 11 },
-    { keyword: "established presence", value: 13 },
-    { keyword: "successful before", value: 15 },
-    { keyword: "burned out", value: 10 },
-  ];
+  let score = 8;
 
-  const capacityMap: Array<{ keyword: string; value: number }> = [
-    { keyword: "2+ hours", value: 8 },
-    { keyword: "batch create", value: 6 },
-    { keyword: "15-30 minutes", value: 5 },
-    { keyword: "schedule is chaotic", value: 4 },
-    { keyword: "team/help", value: 6 },
-    { keyword: "motivation/clarity", value: 3 },
-    { keyword: "make time", value: 4 },
-  ];
+  if (hasExact(experience, "5plus")) score += 14;
+  else if (hasExact(experience, "2-5yr")) score += 13;
+  else if (hasExact(experience, "1-2yr")) score += 12;
+  else if (hasExact(experience, "6mo-1yr")) score += 10;
+  else if (hasExact(experience, "3-6mo")) score += 8;
+  else if (hasExact(experience, "less-3mo")) score += 6;
+  else if (hasExact(experience, "not-started")) score += 2;
+  else score += 7;
 
-  let stageScore = 4;
-  for (const item of stageMap) {
-    if (includes(stage, item.keyword)) {
-      stageScore = Math.max(stageScore, item.value);
-    }
-  }
+  if (hasExact(planning, "plan")) score += 4;
+  if (hasExact(planning, "mix")) score += 2;
+  if (hasExact(planning, "moment")) score -= 3;
 
-  let capacityScore = 3;
-  for (const item of capacityMap) {
-    if (includes(capacity, item.keyword)) {
-      capacityScore = Math.max(capacityScore, item.value);
-    }
-  }
+  if (hasExact(hours, "40plus")) score += 6;
+  else if (hasExact(hours, "20-40")) score += 5;
+  else if (hasExact(hours, "10-20")) score += 4;
+  else if (hasExact(hours, "5-10")) score += 3;
+  else if (hasExact(hours, "3-5")) score += 2;
+  else if (hasExact(hours, "1-3")) score -= 1;
 
-  let score = stageScore + capacityScore;
+  const expCount = selectionCount(experiments);
+  if (expCount >= 5) score += 5;
+  else if (expCount >= 3) score += 4;
+  else if (expCount >= 1) score += 2;
+  if (hasExact(experiments, "nothing")) score -= 5;
 
-  if (stageScore >= 13 && capacityScore >= 6) {
-    score += 2;
-  }
-
-  if (
-    includes(blockers, "stay consistent") ||
-    includes(blockers, "no time to create")
-  ) {
-    score -= 4;
-  }
+  if (hasExact(blockers, "consistency")) score -= 5;
+  if (hasExact(blockers, "time")) score -= 4;
+  if (hasExact(blockers, "executing")) score -= 4;
+  if (hasExact(blockers, "burnout")) score -= 3;
+  if (hasExact(blockers, "perfectionism")) score -= 2;
+  if (hasExact(blockers, "anxiety")) score -= 1;
 
   return clamp(score, 0, 20);
 }
 
 function scoreNicheClarity(answers: NormalizedAnswers) {
-  const target = answers[12] ?? [];
-  const expertise = answers[10] ?? [];
-  const blockers = answers[3] ?? [];
-  const strengths = answers[7] ?? [];
+  const identity = answers[1] ?? [];
+  const passions = answers[3] ?? [];
+  const goals = answers[6] ?? [];
+  const differentiators = answers[15] ?? [];
+  const topics = answers[18] ?? [];
 
-  let score = 7;
+  let score = 8;
 
-  if (target.length && !includes(target, "still figuring this out")) {
-    score += Math.min(target.length * 2, 6);
-  } else if (!target.length) {
-    score -= 2;
-  }
+  if (identity.length) score += 4;
+  if (hasExact(identity, "just-me")) score -= 4;
+  if (hasExact(identity, "figuring-out")) score -= 6;
 
-  if (expertise.length) score += 3;
+  const passionCount = selectionCount(passions);
+  if (passionCount >= 4) score += 6;
+  else if (passionCount >= 2) score += 4;
+  else if (passionCount >= 1) score += 2;
 
-  if (
-    includes(strengths, "teaching") ||
-    includes(strengths, "process") ||
-    includes(strengths, "opinion")
-  ) {
+  if (hasExact(goals, "expert") || hasExact(goals, "sell")) score += 4;
+  if (hasExact(goals, "monetize") || hasExact(goals, "traffic")) score += 3;
+  if (hasExact(goals, "journey") || hasExact(goals, "community"))
     score += 2;
-  }
 
-  if (includes(blockers, "don't know what to post")) {
-    score -= 5;
-  }
+  if (hasExact(differentiators, "not-sure")) score -= 8;
+  else if (selectionCount(differentiators) >= 2) score += 5;
+  else if (selectionCount(differentiators) === 1) score += 3;
 
-  if (includes(blockers, "contradicting advice")) {
-    score -= 2;
-  }
+  const topicCount = selectionCount(topics);
+  if (topicCount >= 3) score += 5;
+  else if (topicCount >= 1) score += 3;
+  else score -= 2;
 
   return clamp(score, 0, 15);
 }
 
 function scoreAudienceEngagement(answers: NormalizedAnswers) {
-  const metrics = answers[13] ?? [];
-  const tried = answers[15] ?? [];
-  const blockers = answers[3] ?? [];
+  const experiments = answers[13] ?? [];
+  const blockers = answers[8] ?? [];
+  const platforms = answers[9] ?? [];
 
-  let score = 6;
+  let score = 7;
 
-  if (includes(metrics, "check regularly")) score += 5;
-  else if (includes(metrics, "want to learn to use")) score += 4;
-  else if (includes(metrics, "care more about comments")) score += 3;
-  else if (includes(metrics, "check obsessively")) score += 2;
-  else if (
-    includes(metrics, "avoid them") ||
-    includes(metrics, "don't understand")
-  )
-    score += 1;
+  const experimentCount = selectionCount(experiments);
+  if (experimentCount >= 5) score += 7;
+  else if (experimentCount >= 3) score += 5;
+  else if (experimentCount >= 1) score += 3;
+  if (hasExact(experiments, "nothing")) score -= 5;
 
-  if (tried.length) {
-    score += Math.min(tried.length * 2, 6);
-    if (includes(tried, "posted consistently")) score += 2;
-  }
+  if (hasExact(experiments, "engaging")) score += 2;
+  if (hasExact(experiments, "posting-more")) score += 1;
+  if (hasExact(experiments, "collaborating")) score += 2;
+  if (hasExact(experiments, "trends")) score += 1;
 
-  if (includes(blockers, "gets no engagement")) {
-    score -= 4;
-  }
+  const platformCount = selectionCount(platforms);
+  if (platformCount >= 3) score += 3;
+
+  if (hasExact(blockers, "engagement")) score -= 5;
+  if (hasExact(blockers, "likes")) score -= 3;
+  if (hasExact(blockers, "strategy")) score -= 2;
+  if (hasExact(blockers, "monetization")) score -= 1;
 
   return clamp(score, 0, 15);
 }
 
 function scoreMarketingStrategy(answers: NormalizedAnswers) {
-  const monetization = answers[18] ?? [];
-  const vision = answers[4] ?? [];
-  const drivers = answers[5] ?? [];
+  const goals = answers[6] ?? [];
+  const drivers = answers[17] ?? [];
+  const blockers = answers[8] ?? [];
+  const experiments = answers[13] ?? [];
 
-  let score = 5;
+  let score = 7;
 
-  if (includes(monetization, "already earning")) score += 7;
-  if (includes(monetization, "diverse revenue")) score += 6;
-  if (includes(monetization, "long-term")) score += 5;
-  if (includes(monetization, "income asap")) score += 4;
-  if (includes(monetization, "money isn't")) score += 2;
-  if (includes(monetization, "not sure if")) score -= 2;
+  if (hasExact(goals, "monetize")) score += 6;
+  if (hasExact(goals, "sell")) score += 5;
+  if (hasExact(goals, "traffic")) score += 4;
+  if (hasExact(goals, "network")) score += 3;
+  if (hasExact(goals, "reach") || hasExact(goals, "project")) score += 3;
 
-  if (
-    vision.some((item) =>
-      item.toLowerCase().match(/clients|partnerships|selling|steady stream/),
-    )
-  ) {
-    score += 3;
-  }
+  if (hasExact(drivers, "financial")) score += 4;
+  if (hasExact(drivers, "building")) score += 3;
+  if (hasExact(drivers, "legacy")) score += 2;
+  if (hasExact(drivers, "helping")) score += 2;
 
-  if (
-    drivers.some((item) =>
-      item.toLowerCase().match(/business asset|financial independence/),
-    )
-  ) {
-    score += 3;
-  }
+  const experimentCount = selectionCount(experiments);
+  if (experimentCount >= 4) score += 4;
+  else if (experimentCount >= 2) score += 3;
+  if (hasExact(experiments, "ads")) score += 2;
+  if (hasExact(experiments, "collaborating")) score += 2;
+  if (hasExact(experiments, "hashtags")) score += 2;
+  if (hasExact(experiments, "timing")) score += 1;
+  if (hasExact(experiments, "nothing")) score -= 4;
+
+  if (hasExact(blockers, "strategy")) score -= 5;
+  if (hasExact(blockers, "engagement")) score -= 3;
+  if (hasExact(blockers, "monetization")) score -= 3;
 
   return clamp(score, 0, 15);
 }
 
 function scoreExecutionCapability(answers: NormalizedAnswers) {
-  const perfectionism = answers[17] ?? [];
-  const blockers = answers[3] ?? [];
-  const criticism = answers[16] ?? [];
-  const capacity = answers[9] ?? [];
+  const planning = answers[5] ?? [];
+  const blockers = answers[8] ?? [];
+  const camera = answers[11] ?? [];
+  const hours = answers[14] ?? [];
+  const drivers = answers[17] ?? [];
 
-  let score = 6;
+  let score = 8;
 
+  if (hasExact(planning, "plan")) score += 5;
+  if (hasExact(planning, "mix")) score += 3;
+  if (hasExact(planning, "moment")) score -= 3;
+
+  if (hasExact(hours, "40plus")) score += 5;
+  else if (hasExact(hours, "20-40")) score += 4;
+  else if (hasExact(hours, "10-20")) score += 3;
+  else if (hasExact(hours, "5-10")) score += 2;
+  else if (hasExact(hours, "1-3")) score -= 2;
+
+  if (hasExact(camera, "love-it")) score += 4;
+  if (hasExact(camera, "okay")) score += 2;
+  if (hasExact(camera, "voice-ok")) score += 2;
+  if (hasExact(camera, "confidence")) score += 2;
   if (
-    includes(perfectionism, "good enough") ||
-    includes(perfectionism, "post without")
+    hasExact(camera, "no-thanks") ||
+    hasExact(camera, "awkward") ||
+    hasExact(camera, "privacy") ||
+    hasExact(camera, "restrictions") ||
+    hasExact(camera, "faceless")
   ) {
-    score += 5;
+    score -= 4;
   }
 
-  if (
-    includes(perfectionism, "perfectionism has killed") ||
-    includes(perfectionism, "delete more than I post") ||
-    includes(perfectionism, "overthink every caption")
-  ) {
-    score -= 5;
-  }
+  if (hasExact(blockers, "consistency")) score -= 5;
+  if (hasExact(blockers, "executing")) score -= 5;
+  if (hasExact(blockers, "time")) score -= 4;
+  if (hasExact(blockers, "perfectionism")) score -= 4;
+  if (hasExact(blockers, "anxiety")) score -= 3;
+  if (hasExact(blockers, "burnout")) score -= 3;
+  if (hasExact(blockers, "negative")) score -= 2;
 
-  if (includes(perfectionism, "depends on my mood")) {
-    score -= 1;
-  }
-
-  if (includes(blockers, "fear of judgment")) score -= 3;
-  if (includes(blockers, "stay consistent")) score -= 4;
-  if (includes(blockers, "no time to create")) score -= 3;
-  if (includes(blockers, "technical aspects")) score -= 2;
-
-  if (includes(criticism, "analyze it for valid")) score += 4;
-  else if (includes(criticism, "learn from it but it still")) score += 3;
-  else if (includes(criticism, "feel hurt for days")) score -= 3;
-  else if (includes(criticism, "get defensive")) score -= 2;
-
-  if (includes(capacity, "team/help")) score += 2;
-  if (includes(capacity, "2+ hours")) score += 3;
-  if (includes(capacity, "batch create")) score += 2;
-  if (includes(capacity, "15-30 minutes")) score += 1;
+  if (hasExact(drivers, "building")) score += 2;
+  if (hasExact(drivers, "creative")) score += 2;
+  if (hasExact(drivers, "helping")) score += 1;
+  if (hasExact(drivers, "fun")) score += 1;
 
   return clamp(score, 0, 15);
 }

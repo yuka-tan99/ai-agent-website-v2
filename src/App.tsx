@@ -1312,148 +1312,290 @@ export default function App({ initialView }: AppProps = {}) {
       return analyticsDefaults;
     }
 
-    const clamp = (value: number, min = 0, max = 100) => {
+    const clampValue = (value: number, min = 0, max = 100) => {
       if (Number.isNaN(value)) return min;
       return Math.max(min, Math.min(max, Math.round(value)));
     };
 
-    const findAnswer = (id: number) => onboardingAnswers.find((entry) => entry.questionId === id);
+    const findAnswer = (id: number) =>
+      onboardingAnswers.find((entry) => entry.questionId === id);
 
-    const getArrayAnswer = (id: number): string[] => {
+    const getRawValues = (id: number): string[] => {
       const entry = findAnswer(id);
       if (!entry) return [];
       if (Array.isArray(entry.answer)) return entry.answer as string[];
-      if (typeof entry.answer === 'string' && entry.answer.trim().length) {
+      if (typeof entry.answer === "string" && entry.answer.trim().length) {
         return [entry.answer];
       }
       return [];
     };
 
-    const hasOption = (id: number, option: string) => getArrayAnswer(id).includes(option);
-    const hasAnyOption = (id: number, options: string[]) => options.some((option) => hasOption(id, option));
+    const normalize = (value: string) => value.split(":")[0];
 
-    const textLength = (id: number) => {
-      const entry = findAnswer(id);
-      if (!entry) return 0;
-      if (Array.isArray(entry.answer)) {
-        return entry.answer.join(' ').length;
-      }
-      if (typeof entry.answer === 'string') {
-        return entry.answer.length;
-      }
-      return 0;
+    const valueList = (id: number) => getRawValues(id).map(normalize);
+
+    const has = (id: number, target: string) =>
+      valueList(id).some((value) => value === target || value.startsWith(`${target}-`));
+
+    const hasExact = (id: number, target: string) =>
+      valueList(id).includes(target);
+
+    const countSelections = (id: number) =>
+      new Set(valueList(id)).size;
+
+    const textLength = (id: number, key?: string) => {
+      const raw = getRawValues(id);
+      if (!raw.length) return 0;
+      return raw.reduce((total, entry) => {
+        const [entryKey, ...rest] = entry.split(":");
+        if (key && normalize(entry) !== key) return total;
+        if (!rest.length) return total;
+        return total + rest.join(":").trim().length;
+      }, 0);
     };
 
     const potentialFromScore = (score: number) => {
       const uplift = Math.max(10, Math.round((100 - score) * 0.55));
-      return clamp(score + uplift, score + 5, 100);
+      return clampValue(score + uplift, score + 5, 100);
     };
 
-    const adjustScore = (base: number, adjustments: Array<{ condition: boolean; delta: number }>) => {
-      const total = adjustments.reduce((acc, item) => (item.condition ? acc + item.delta : acc), base);
-      return clamp(total, 10, 95);
+    const adjustScore = (
+      base: number,
+      adjustments: Array<{ condition: boolean; delta: number }>,
+    ) => {
+      const total = adjustments.reduce(
+        (acc, item) => (item.condition ? acc + item.delta : acc),
+        base,
+      );
+      return clampValue(total, 10, 95);
     };
 
-    const nicheScore = adjustScore(65, [
-      { condition: hasOption(3, "I don't know what to post about"), delta: -25 },
-      { condition: hasOption(1, 'I feel stuck despite consistent posting'), delta: -12 },
-      { condition: hasOption(2, "Haven't started yet but ready to begin"), delta: -10 },
-      { condition: hasOption(2, 'Established presence but hit a plateau'), delta: -5 },
-      { condition: textLength(10) > 80, delta: 6 },
-      { condition: textLength(10) > 160, delta: 4 },
+    const nicheScore = adjustScore(64, [
+      { condition: hasExact(1, "figuring-out"), delta: -18 },
+      { condition: hasExact(1, "just-me"), delta: -12 },
+      { condition: countSelections(3) >= 4, delta: 8 },
+      { condition: countSelections(3) >= 2, delta: 6 },
+      {
+        condition:
+          has(6, "expert") || has(6, "sell") || has(6, "monetize"),
+        delta: 8,
+      },
+      { condition: hasExact(15, "not-sure"), delta: -16 },
+      { condition: countSelections(15) >= 2, delta: 8 },
+      { condition: countSelections(18) >= 2, delta: 6 },
+      { condition: countSelections(18) === 0, delta: -6 },
+      { condition: textLength(18, "other-topics") > 40, delta: 4 },
     ]);
 
     const executeScore = adjustScore(58, [
-      { condition: hasOption(3, "I can't stay consistent"), delta: -22 },
-      { condition: hasOption(3, 'No time to create quality content'), delta: -15 },
-      { condition: hasOption(17, 'Perfectionism has killed my consistency'), delta: -18 },
-      { condition: hasOption(17, "I'm getting better at 'good enough'"), delta: 8 },
-      { condition: hasOption(17, 'I post without much thought'), delta: 5 },
-      { condition: hasAnyOption(9, ['I can batch create on weekends', 'I can dedicate 2+ hours daily']), delta: 10 },
+      { condition: hasExact(8, "consistency"), delta: -22 },
+      { condition: hasExact(8, "executing"), delta: -16 },
+      { condition: hasExact(8, "time"), delta: -14 },
+      { condition: hasExact(8, "burnout"), delta: -12 },
+      { condition: hasExact(8, "perfectionism"), delta: -10 },
+      { condition: hasExact(8, "anxiety"), delta: -8 },
+      { condition: hasExact(5, "plan"), delta: 10 },
+      { condition: hasExact(5, "mix"), delta: 6 },
+      { condition: hasExact(5, "moment"), delta: -6 },
+      { condition: hasExact(14, "40plus"), delta: 14 },
+      { condition: hasExact(14, "20-40"), delta: 12 },
+      { condition: hasExact(14, "10-20"), delta: 8 },
+      { condition: hasExact(14, "5-10"), delta: 5 },
+      { condition: hasExact(14, "1-3"), delta: -4 },
+      { condition: countSelections(13) >= 3, delta: 8 },
+      { condition: hasExact(13, "nothing"), delta: -10 },
     ]);
 
     const brandScore = adjustScore(60, [
-      { condition: hasOption(1, "I don't know what to post about"), delta: -12 },
-      { condition: hasOption(1, 'I feel fake/inauthentic online'), delta: -14 },
-      { condition: hasOption(4, 'Having a recognizable brand/style'), delta: 8 },
-      { condition: hasAnyOption(7, ['Creating beautiful visuals', 'Having deep discussions']), delta: 6 },
-      { condition: hasOption(6, 'Seen and understood'), delta: 5 },
-      { condition: textLength(10) > 120, delta: 5 },
+      { condition: hasExact(10, "unique"), delta: 8 },
+      { condition: hasExact(10, "creative"), delta: 6 },
+      {
+        condition: hasExact(10, "inspiring") || hasExact(10, "friendly"),
+        delta: 5,
+      },
+      {
+        condition: hasExact(7, "storytelling") || hasExact(7, "visuals"),
+        delta: 5,
+      },
+      { condition: hasExact(7, "talking") || hasExact(7, "funny"), delta: 3 },
+      { condition: hasExact(8, "authentic"), delta: -12 },
+      { condition: hasExact(8, "judgment"), delta: -12 },
+      { condition: hasExact(8, "comparing"), delta: -10 },
+      { condition: hasExact(15, "not-sure"), delta: -10 },
+      { condition: countSelections(3) >= 4, delta: 6 },
+      { condition: hasExact(16, "identity"), delta: 8 },
+      { condition: hasExact(16, "confident"), delta: 6 },
+      { condition: textLength(15, "other-different") > 20, delta: 6 },
     ]);
 
     const marketingScore = adjustScore(55, [
-      { condition: hasOption(3, 'My content gets no engagement'), delta: -8 },
-      { condition: hasOption(15, "Haven't really tried anything substantial"), delta: -10 },
-      { condition: hasOption(13, "Don't understand what to track"), delta: -12 },
-      { condition: hasAnyOption(5, ['Building a business asset', 'Financial independence', 'Sharing my knowledge to help others']), delta: 6 },
-      { condition: hasAnyOption(18, ['Want diverse revenue streams', 'Already earning, want to scale']), delta: 7 },
-      { condition: hasAnyOption(11, ['Multiple platforms equally', 'TikTok - I get lost in short videos', 'YouTube - I watch long-form content']), delta: 4 },
+      { condition: has(6, "monetize") || has(6, "sell"), delta: 10 },
+      { condition: has(6, "traffic") || has(6, "network"), delta: 7 },
+      { condition: has(6, "reach") || has(6, "project"), delta: 5 },
+      {
+        condition: hasExact(17, "financial") || hasExact(17, "building"),
+        delta: 6,
+      },
+      { condition: hasExact(17, "legacy"), delta: 4 },
+      { condition: countSelections(13) >= 3, delta: 8 },
+      {
+        condition:
+          hasExact(13, "ads") ||
+          hasExact(13, "collaborating") ||
+          hasExact(13, "hashtags"),
+        delta: 4,
+      },
+      { condition: hasExact(13, "nothing"), delta: -12 },
+      { condition: hasExact(8, "strategy"), delta: -10 },
+      { condition: hasExact(8, "engagement"), delta: -8 },
+      { condition: hasExact(8, "monetization"), delta: -6 },
+      { condition: countSelections(9) >= 3, delta: 5 },
     ]);
 
     const systemsScore = adjustScore(52, [
-      { condition: hasOption(9, 'My schedule is chaotic but I find time'), delta: -12 },
-      { condition: hasOption(13, 'Check obsessively, affects my mood'), delta: -8 },
-      { condition: hasOption(13, "Don't understand what to track"), delta: -12 },
-      { condition: hasAnyOption(9, ['I can batch create on weekends', 'I have team/help available']), delta: 10 },
-      { condition: hasOption(13, 'Want to learn to use them strategically'), delta: 8 },
+      { condition: hasExact(5, "plan"), delta: 8 },
+      { condition: hasExact(5, "mix"), delta: 4 },
+      { condition: hasExact(5, "moment"), delta: -6 },
+      { condition: hasExact(14, "40plus"), delta: 10 },
+      { condition: hasExact(14, "20-40"), delta: 8 },
+      { condition: hasExact(14, "10-20"), delta: 6 },
+      { condition: hasExact(14, "1-3"), delta: -4 },
+      { condition: hasExact(8, "time"), delta: -12 },
+      { condition: hasExact(8, "consistency"), delta: -10 },
+      { condition: hasExact(8, "executing"), delta: -8 },
+      {
+        condition:
+          hasExact(13, "posting-more") || hasExact(13, "timing"),
+        delta: 6,
+      },
+      { condition: countSelections(13) >= 4, delta: 6 },
+      { condition: hasExact(13, "nothing"), delta: -8 },
     ]);
 
-    const mentalScore = adjustScore(62, [
-      { condition: hasOption(3, 'Fear of judgment stops me from posting'), delta: -16 },
-      { condition: hasOption(14, "People will think I'm cringe"), delta: -10 },
-      { condition: hasOption(14, "I'll fail and prove doubters right"), delta: -8 },
-      { condition: hasOption(3, "My growth has completely stalled"), delta: -6 },
-      { condition: hasOption(17, "I'm getting better at 'good enough'"), delta: 8 },
-      { condition: hasOption(16, 'Analyze it for valid feedback'), delta: 6 },
-      { condition: hasOption(4, 'Just feeling authentic and confident online'), delta: 5 },
+    const mentalScore = adjustScore(63, [
+      { condition: hasExact(8, "anxiety"), delta: -16 },
+      { condition: hasExact(8, "judgment"), delta: -14 },
+      { condition: hasExact(8, "negative"), delta: -12 },
+      { condition: hasExact(8, "perfectionism"), delta: -10 },
+      { condition: hasExact(8, "burnout"), delta: -9 },
+      { condition: hasExact(8, "comparing"), delta: -8 },
+      { condition: hasExact(8, "likes"), delta: -5 },
+      { condition: hasExact(16, "confident"), delta: 10 },
+      { condition: hasExact(16, "consistent"), delta: 8 },
+      {
+        condition:
+          hasExact(17, "creative") ||
+          hasExact(17, "helping") ||
+          hasExact(17, "connecting"),
+        delta: 6,
+      },
+      { condition: hasExact(17, "fun"), delta: 5 },
+      {
+        condition:
+          hasExact(11, "love-it") ||
+          hasExact(11, "okay") ||
+          hasExact(11, "voice-ok"),
+        delta: 6,
+      },
+      {
+        condition:
+          hasExact(11, "no-thanks") ||
+          hasExact(11, "awkward") ||
+          hasExact(11, "privacy") ||
+          hasExact(11, "restrictions"),
+        delta: -8,
+      },
+      { condition: countSelections(7) >= 3, delta: 4 },
     ]);
 
     const sectionScores = [
-      { section: 'Niche', score: nicheScore, potential: potentialFromScore(nicheScore) },
-      { section: 'Execute', score: executeScore, potential: potentialFromScore(executeScore) },
-      { section: 'Brand', score: brandScore, potential: potentialFromScore(brandScore) },
-      { section: 'Marketing', score: marketingScore, potential: potentialFromScore(marketingScore) },
-      { section: 'Systems', score: systemsScore, potential: potentialFromScore(systemsScore) },
-      { section: 'Mental', score: mentalScore, potential: potentialFromScore(mentalScore) },
+      {
+        section: "Niche",
+        score: nicheScore,
+        potential: potentialFromScore(nicheScore),
+      },
+      {
+        section: "Execute",
+        score: executeScore,
+        potential: potentialFromScore(executeScore),
+      },
+      {
+        section: "Brand",
+        score: brandScore,
+        potential: potentialFromScore(brandScore),
+      },
+      {
+        section: "Marketing",
+        score: marketingScore,
+        potential: potentialFromScore(marketingScore),
+      },
+      {
+        section: "Systems",
+        score: systemsScore,
+        potential: potentialFromScore(systemsScore),
+      },
+      {
+        section: "Mental",
+        score: mentalScore,
+        potential: potentialFromScore(mentalScore),
+      },
     ];
 
-    const assortmentAverage = (values: number[]) => {
-      if (!values.length) return 0;
-      return values.reduce((sum, val) => sum + val, 0) / values.length;
-    };
+    const averageScore =
+      sectionScores.reduce((sum, item) => sum + item.score, 0) /
+      sectionScores.length;
+    const potentialAverage =
+      sectionScores.reduce((sum, item) => sum + item.potential, 0) /
+      sectionScores.length;
 
     const readinessData = [
-      { category: 'Content', value: clamp((nicheScore + brandScore + marketingScore) / 3), fullMark: 100 },
-      { category: 'Consistency', value: executeScore, fullMark: 100 },
-      { category: 'Niche', value: nicheScore, fullMark: 100 },
-      { category: 'Brand', value: brandScore, fullMark: 100 },
-      { category: 'Marketing', value: marketingScore, fullMark: 100 },
-      { category: 'Systems', value: systemsScore, fullMark: 100 },
+      {
+        category: "Content",
+        value: clampValue((nicheScore + brandScore + marketingScore) / 3),
+        fullMark: 100,
+      },
+      { category: "Consistency", value: executeScore, fullMark: 100 },
+      { category: "Niche", value: nicheScore, fullMark: 100 },
+      { category: "Brand", value: brandScore, fullMark: 100 },
+      { category: "Marketing", value: marketingScore, fullMark: 100 },
+      { category: "Systems", value: systemsScore, fullMark: 100 },
     ];
 
-    const averageScore = assortmentAverage(sectionScores.map((item) => item.score));
-    const potentialAverage = assortmentAverage(sectionScores.map((item) => item.potential));
-
     let effortLevel = 0.55;
-    if (hasOption(9, 'I have team/help available')) effortLevel = 0.95;
-    if (hasOption(9, 'I can dedicate 2+ hours daily')) effortLevel = Math.max(effortLevel, 0.9);
-    if (hasOption(9, 'I can batch create on weekends')) effortLevel = Math.max(effortLevel, 0.75);
-    if (hasOption(9, 'I have 15-30 minutes daily')) effortLevel = Math.max(effortLevel, 0.6);
-    if (hasOption(9, 'Time exists, I need motivation/clarity')) effortLevel = Math.min(effortLevel, 0.55);
-    if (hasOption(3, 'No time to create quality content')) effortLevel -= 0.18;
-    if (hasOption(3, "I can't stay consistent")) effortLevel -= 0.12;
+    if (hasExact(14, "40plus")) effortLevel = 1;
+    else if (hasExact(14, "20-40")) effortLevel = 0.92;
+    else if (hasExact(14, "10-20")) effortLevel = 0.82;
+    else if (hasExact(14, "5-10")) effortLevel = 0.7;
+    else if (hasExact(14, "3-5")) effortLevel = 0.6;
+    else effortLevel = 0.5;
+
+    if (hasExact(5, "plan")) effortLevel += 0.08;
+    if (hasExact(5, "mix")) effortLevel += 0.04;
+    if (hasExact(5, "moment")) effortLevel -= 0.08;
+    if (hasExact(13, "nothing")) effortLevel -= 0.1;
+    if (hasExact(8, "time")) effortLevel -= 0.15;
+    if (hasExact(8, "consistency")) effortLevel -= 0.12;
     effortLevel = Math.max(0.3, Math.min(1, effortLevel));
 
     const consistencyFactor = Math.max(0.25, executeScore / 100);
-    const improvementMultiplier = averageScore > 0
-      ? Math.max(1.25, potentialAverage / Math.max(averageScore, 1))
-      : 1.4;
+    const improvementMultiplier =
+      averageScore > 0
+        ? Math.max(1.25, potentialAverage / Math.max(averageScore, 1))
+        : 1.4;
 
     const baseGrowth = 140 + averageScore * 3;
     const actualRate = baseGrowth * effortLevel * (consistencyFactor + 0.35);
     const projectedRate = actualRate * improvementMultiplier;
 
-    const months = ['Now', 'Month 1', 'Month 2', 'Month 3', 'Month 4', 'Month 5', 'Month 6'];
+    const months = [
+      "Now",
+      "Month 1",
+      "Month 2",
+      "Month 3",
+      "Month 4",
+      "Month 5",
+      "Month 6",
+    ];
     let cumulativeFollowers = 0;
     let cumulativeProjected = 0;
     const projectionData = months.map((month, index) => {
@@ -1469,15 +1611,18 @@ export default function App({ initialView }: AppProps = {}) {
       };
     });
 
-    const consistencyDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const consistencyDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const dayWeights = [1, 0.85, 1.05, 0.75, 1, 0.7, 0.9];
     const weeklyTargetBase = Math.max(7, Math.round(effortLevel * 14));
-    const weeklyActualBase = Math.max(2, Math.round(weeklyTargetBase * Math.min(1, consistencyFactor + 0.15)));
+    const weeklyActualBase = Math.max(
+      2,
+      Math.round(weeklyTargetBase * Math.min(1, consistencyFactor + 0.15)),
+    );
 
     const consistencyData = consistencyDays.map((day, index) => {
       const weight = dayWeights[index] ?? 1;
-      const target = clamp(weeklyTargetBase / 7 * weight, 1, 8);
-      const posts = clamp(weeklyActualBase / 7 * weight, 0, 6);
+      const target = clampValue((weeklyTargetBase / 7) * weight, 1, 8);
+      const posts = clampValue((weeklyActualBase / 7) * weight, 0, 6);
       return {
         day,
         posts: Math.max(0, Math.round(posts)),

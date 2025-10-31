@@ -6,6 +6,7 @@ export type LegacySection = {
   personalizedSummary?: string;
   personalizedTips?: string[];
   keyInsights?: string[];
+  cards?: Array<{ title?: string; content?: string }>;
   learnMoreContent?: {
     description?: string;
     actionSteps?: string[];
@@ -82,6 +83,7 @@ export function reportPlanToLegacy(plan?: ReportPlan | null): LegacyPlan {
       personalizedSummary: content,
       personalizedTips: tips,
       keyInsights: tips,
+      cards: section?.cards?.map((card) => ({ title: card.title, content: card.content })),
       learnMoreContent,
       elaborateContent: mastery
         ? {

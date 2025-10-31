@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   MessageCircle, 
@@ -57,6 +57,72 @@ interface AskVeeChatProps {
   userName?: string;
 }
 
+const SESSIONS_STORAGE_KEY = "askvee_sessions_v1";
+
+function useChatSessionStorage() {
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    try {
+      if (typeof window === "undefined") return;
+      const stored = window.localStorage.getItem(SESSIONS_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as Array<{
+        id: string;
+        title: string;
+        timestamp: string;
+        messages: Array<{
+          id: string;
+          role: Message["role"];
+          content: string;
+          timestamp: string;
+          isPinned?: boolean;
+          suggestions?: string[];
+          isThinking?: boolean;
+        }>;
+      }>;
+      if (!Array.isArray(parsed)) return;
+      const restored: ChatSession[] = parsed.map((session) => ({
+        id: session.id,
+        title: session.title,
+        timestamp: new Date(session.timestamp),
+        messages: session.messages.map((msg) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp),
+        })),
+      }));
+      restored.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      setSessions(restored.slice(0, 10));
+    } catch (error) {
+      console.warn("[AskVeeChat] failed to load sessions", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    try {
+      if (typeof window === "undefined") return;
+      const payload = sessions.map((session) => ({
+        id: session.id,
+        title: session.title,
+        timestamp: session.timestamp.toISOString(),
+        messages: session.messages.map((msg) => ({
+          ...msg,
+          timestamp: msg.timestamp.toISOString(),
+        })),
+      }));
+      window.localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("[AskVeeChat] failed to persist sessions", error);
+    }
+  }, [sessions]);
+
+  return { sessions, setSessions, sessionsLoadedRef: loadedRef };
+}
+
 export function AskVeeChat({ 
   isPaidUser = false,
   creatorType = "content creator",
@@ -65,11 +131,12 @@ export function AskVeeChat({
 }: AskVeeChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const { sessions, setSessions, sessionsLoadedRef } = useChatSessionStorage();
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [inputValue, setInputValue] = useState('');
   const [questionsUsed, setQuestionsUsed] = useState(0);
   const [isListening, setIsListening] = useState(false);
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'pinned'>('chat');
   const [isSending, setIsSending] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -85,6 +152,25 @@ export function AskVeeChat({
     if (trimmed) return trimmed.split(' ')[0];
     return 'friend';
   }, [userName]);
+
+  const renderMessageContent = useCallback((text: string, role: Message['role']) => {
+    if (!text) return null;
+    const accent = role === 'user' ? '#FCE0FF' : '#9E5DAB';
+    const segments = text.split(/(\*\*[^*]+\*\*)/g);
+    return segments
+      .filter((segment) => segment.length > 0)
+      .map((segment, index) => {
+        if (/^\*\*.*\*\*$/.test(segment)) {
+          const clean = segment.slice(2, -2);
+          return (
+            <span key={`msg-bold-${index}`} style={{ fontWeight: 600, color: accent }}>
+              {clean}
+            </span>
+          );
+        }
+        return <span key={`msg-text-${index}`}>{segment}</span>;
+      });
+  }, []);
 
   // Generate personalized suggestions based on onboarding
   const getPersonalizedSuggestions = (userMessage: string): string[] => {
@@ -123,6 +209,79 @@ export function AskVeeChat({
     return combined.slice(0, 4); // Return top 4 suggestions
   };
 
+  const speechRecognitionRef = useRef<any>(null);
+  const speechBaseValueRef = useRef('');
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setIsSpeechSupported(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onend = () => {
+      speechBaseValueRef.current = speechBaseValueRef.current.trim();
+      setInputValue((prev) => prev.trim());
+      setIsListening(false);
+    };
+
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
+
+    recognition.onresult = (event: any) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
+      const joinSegments = (base: string, addition: string) => {
+        const trimmedAddition = addition.trim();
+        if (!trimmedAddition) return base.trim();
+        if (!base.trim()) return trimmedAddition;
+        return `${base.trim()} ${trimmedAddition}`.replace(/\s+/g, ' ').trim();
+      };
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (finalTranscript) {
+        speechBaseValueRef.current = joinSegments(
+          speechBaseValueRef.current,
+          finalTranscript,
+        );
+        setInputValue(speechBaseValueRef.current);
+      } else if (interimTranscript) {
+        const combined = joinSegments(speechBaseValueRef.current, interimTranscript);
+        setInputValue(combined);
+      }
+    };
+
+    speechRecognitionRef.current = recognition;
+    setIsSpeechSupported(true);
+
+    return () => {
+      recognition.onresult = null;
+      recognition.onend = null;
+      recognition.onerror = null;
+      recognition.stop();
+      speechRecognitionRef.current = null;
+    };
+  }, []);
+
   // Initialize with welcome message and session
   useEffect(() => {
     if (messages.length === 0 && isOpen) {
@@ -149,22 +308,30 @@ export function AskVeeChat({
   // Save session when closing
   const handleCloseChat = () => {
     if (messages.length > 1) {
-      // Save current session
+      const firstUserMessage = messages.find((msg) => msg.role === 'user');
+      const lastMessage = messages[messages.length - 1];
       const session: ChatSession = {
         id: currentSessionId,
-        title: messages[1]?.content.slice(0, 50) + '...' || 'New conversation',
-        timestamp: new Date(),
-        messages: messages
+        title: firstUserMessage
+          ? `${firstUserMessage.content.slice(0, 60)}${firstUserMessage.content.length > 60 ? '…' : ''}`
+          : messages[1]?.content.slice(0, 60) ?? 'New conversation',
+        timestamp: lastMessage?.timestamp
+          ? new Date(lastMessage.timestamp)
+          : new Date(),
+        messages: messages.map((msg) => ({ ...msg }))
       };
       
-      setSessions(prev => [session, ...prev].slice(0, 10)); // Keep last 10 sessions
+      setSessions(prev => {
+        const withoutCurrent = prev.filter(existing => existing.id !== session.id);
+        return [session, ...withoutCurrent].slice(0, 10);
+      });
     }
     setIsOpen(false);
   };
 
   // Load a past session
   const loadSession = (session: ChatSession) => {
-    setMessages(session.messages);
+    setMessages(session.messages.map((msg) => ({ ...msg, timestamp: new Date(msg.timestamp) })));
     setCurrentSessionId(session.id);
     setActiveTab('chat');
   };
@@ -357,12 +524,17 @@ export function AskVeeChat({
   };
 
   const toggleVoiceInput = () => {
-    setIsListening(!isListening);
-    // In production, implement actual voice recognition here
-    if (!isListening) {
-      setTimeout(() => {
-        setIsListening(false);
-      }, 3000);
+    const recognition = speechRecognitionRef.current;
+    if (!recognition) return;
+    if (isListening) {
+      recognition.stop();
+      return;
+    }
+    try {
+      speechBaseValueRef.current = inputValue.trim();
+      recognition.start();
+    } catch (error) {
+      console.warn("[AskVeeChat] speech recognition failed to start", error);
     }
   };
 
@@ -683,36 +855,6 @@ export function AskVeeChat({
                 </div>
               </div>
 
-              {/* Quick Stats Mini Dashboard */}
-              <div 
-                className="px-4 py-2.5 border-b flex-shrink-0" 
-                style={{ 
-                  background: 'linear-gradient(to right, #F8F3F9, #FDF8FB)',
-                  borderColor: '#EBD7DC50'
-                }}
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <motion.div
-                      animate={{ y: [-1, 1, -1] }}
-                      transition={{ duration: 2, repeat: Infinity }}
-                    >
-                      <TrendingUp className="w-3.5 h-3.5" style={{ color: '#9E5DAB' }} />
-                    </motion.div>
-                    <span style={{ color: '#6b6b6b' }}>Fame Score: <span style={{ color: '#9E5DAB' }}>58</span></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <motion.div
-                      animate={{ rotate: [0, 360] }}
-                      transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                    >
-                      <Sparkles className="w-3.5 h-3.5" style={{ color: '#8FD9FB' }} />
-                    </motion.div>
-                    <span style={{ color: '#6b6b6b' }}>+12% this week</span>
-                  </div>
-                </div>
-              </div>
-
               {/* Pinned Messages */}
               {pinnedMessages.length > 0 && (
                 <div 
@@ -813,7 +955,9 @@ export function AskVeeChat({
                               ))}
                             </div>
                           ) : (
-                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                            <p className="text-sm whitespace-pre-wrap">
+                              {renderMessageContent(message.content, message.role)}
+                            </p>
                           )}
                           
                           {/* Message Pin Button - Visible on hover, always visible when pinned */}
@@ -982,9 +1126,11 @@ export function AskVeeChat({
                             }}
                           >
                             <div className="flex items-start gap-3">
-                              <Bot className="w-5 h-5 flex-shrink-0" style={{ color: '#9E5DAB' }} />
+                          <Bot className="w-5 h-5 flex-shrink-0" style={{ color: '#9E5DAB' }} />
                               <div className="flex-1">
-                                <p className="text-sm" style={{ color: '#2d2d2d' }}>{message.content}</p>
+                                <p className="text-sm" style={{ color: '#2d2d2d' }}>
+                                  {renderMessageContent(message.content, 'assistant')}
+                                </p>
                                 <p className="text-xs mt-2" style={{ color: '#9E5DAB99' }}>
                                   {message.timestamp.toLocaleDateString()}
                                 </p>
@@ -1044,31 +1190,51 @@ export function AskVeeChat({
                               Start New Chat
                             </Button>
                           )}
-                          {sessions.map((session) => (
-                            <motion.button
-                              key={session.id}
-                              onClick={() => loadSession(session)}
-                              whileHover={{ scale: 1.02 }}
-                              whileTap={{ scale: 0.98 }}
-                              className="w-full p-3 rounded-2xl border-2 text-left transition-all"
-                              style={{
-                                borderColor: session.id === currentSessionId ? '#9E5DAB' : '#EBD7DC',
-                                background: session.id === currentSessionId ? '#F8F3F9' : '#FFFFFF'
-                              }}
-                            >
-                              <div className="flex items-start gap-2">
-                                <MessageCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#9E5DAB' }} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm line-clamp-2" style={{ color: '#2d2d2d' }}>
-                                    {session.title}
-                                  </p>
-                                  <p className="text-xs mt-1" style={{ color: '#9E5DAB99' }}>
-                                    {session.timestamp.toLocaleDateString()} • {session.messages.length} messages
-                                  </p>
+                          <AnimatePresence initial={false}>
+                            {sessions.map((session) => (
+                              <motion.button
+                                key={session.id}
+                                onClick={() => loadSession(session)}
+                                layout
+                                initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -10, scale: 0.96 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                className="w-full p-3 rounded-2xl border-2 text-left transition-all shadow-sm"
+                                style={{
+                                  borderColor: session.id === currentSessionId ? '#9E5DAB' : '#EBD7DC',
+                                  background: session.id === currentSessionId ? '#F8F3F9' : '#FFFFFF',
+                                  boxShadow: session.id === currentSessionId
+                                    ? '0 10px 30px rgba(158, 93, 171, 0.18)'
+                                    : '0 6px 18px rgba(235, 215, 220, 0.20)'
+                                }}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div
+                                    className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                                    style={{
+                                      background: session.id === currentSessionId ? '#9E5DAB' : '#EBD7DC'
+                                    }}
+                                  >
+                                    <MessageCircle
+                                      className="w-4 h-4"
+                                      style={{ color: session.id === currentSessionId ? '#FFFFFF' : '#9E5DAB' }}
+                                    />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm line-clamp-2 font-medium" style={{ color: '#2d2d2d' }}>
+                                      {session.title}
+                                    </p>
+                                    <p className="text-xs mt-1" style={{ color: '#9E5DAB99' }}>
+                                      {session.timestamp.toLocaleDateString()} • {session.messages.length} messages
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
-                            </motion.button>
-                          ))}
+                              </motion.button>
+                            ))}
+                          </AnimatePresence>
                         </>
                       )}
                     </div>
@@ -1110,21 +1276,30 @@ export function AskVeeChat({
                         backgroundColor: '#FFFFFF'
                       }}
                     />
-                    <motion.div
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={toggleVoiceInput}
+                      disabled={
+                        !isSpeechSupported ||
+                        (!isPaidUser && questionsUsed >= maxFreeQuestions) ||
+                        isSending
+                      }
+                      className={`absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full transition-all duration-200 ease-out ${isListening ? 'text-red-400' : 'text-muted-foreground'} ${!isSpeechSupported || (!isPaidUser && questionsUsed >= maxFreeQuestions) || isSending ? '' : 'hover:bg-[#F6ECF3] active:bg-[#F1D8EC]'}`}
+                      style={{
+                        ...(isListening ? { backgroundColor: '#FFE5E5' } : {}),
+                        transformOrigin: 'center'
+                      }}
+                      title={
+                        !isSpeechSupported
+                          ? 'Voice input is not supported in this browser'
+                          : isListening
+                            ? 'Stop voice input'
+                            : 'Start voice input'
+                      }
                     >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={toggleVoiceInput}
-                        disabled={!isPaidUser && questionsUsed >= maxFreeQuestions || isSending}
-                        className={`absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full ${isListening ? 'text-red-400' : 'text-muted-foreground'}`}
-                        style={isListening ? { backgroundColor: '#FFE5E5' } : {}}
-                      >
-                        <Mic className="w-4 h-4" />
-                      </Button>
-                    </motion.div>
+                      <Mic className="w-4 h-4" />
+                    </Button>
                   </div>
                   <motion.div
                     whileHover={{ scale: 1.05 }}
@@ -1160,6 +1335,11 @@ export function AskVeeChat({
                     </motion.span>
                     Listening...
                   </motion.p>
+                )}
+                {!isSpeechSupported && (
+                  <p className="text-[11px] mt-2 text-center" style={{ color: '#9E5DAB99' }}>
+                    Voice input works best in the latest Chrome or Edge browsers.
+                  </p>
                 )}
               </div>
             </Card>

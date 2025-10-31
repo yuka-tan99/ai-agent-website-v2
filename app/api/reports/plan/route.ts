@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = supabaseAdmin();
+
   const [{ data, error }, { data: onboarding, error: onboardingError }] =
     await Promise.all([
       supabase
@@ -70,6 +71,21 @@ export async function GET(req: NextRequest) {
   const hasOnboarding = Boolean(
     onboarding?.answers && Object.keys(onboarding.answers).length,
   );
+
+  try {
+    await supabase.from("report_usage_events").insert({
+      user_id: user.id,
+      report_id: user.id,
+      source: "reports_plan",
+      meta: {
+        fame_score: fameScore?.score ?? null,
+        trend: fameScore?.trend ?? null,
+        has_plan: Boolean(planPayload),
+      },
+    });
+  } catch (logError) {
+    console.warn("[report-plan] usage log failed", logError);
+  }
 
   return NextResponse.json({ plan: planPayload, fameScore, hasOnboarding });
 }

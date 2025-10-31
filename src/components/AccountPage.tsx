@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -26,10 +26,14 @@ import {
   MapPin,
   Smartphone,
   Download,
-  ExternalLink,
   AlertCircle,
-  Lightbulb
+  Lightbulb,
+  MessageSquare,
+  Video,
+  Timer,
+  Activity
 } from 'lucide-react';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
@@ -38,6 +42,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Badge } from './ui/badge';
+import { Textarea } from './ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from './ui/dialog';
 import {
   DropdownMenu,
@@ -47,9 +52,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Calendar as CalendarComponent } from './ui/calendar';
 import { BecomeFamousLogo } from './BecomeFamousLogo';
 
-type SectionId = 'report' | 'usage' | 'rewards' | 'referrals' | 'profile';
+type SectionId = 'report' | 'appointments' | 'usage' | 'rewards' | 'referrals' | 'profile';
+
+type UsageSeriesPoint = {
+  week: string;
+  reportViews: number;
+  aiMessages: number;
+};
 
 interface AccountPageProps {
   onNavigateToDashboard: () => void;
@@ -65,6 +79,7 @@ interface AccountPageProps {
   profileError?: string | null;
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   passwordUpdating?: boolean;
+  getAuthHeaders?: () => Promise<Record<string, string>>;
 }
 
 export function AccountPage({ 
@@ -81,6 +96,7 @@ export function AccountPage({
   profileError,
   onChangePassword,
   passwordUpdating = false,
+  getAuthHeaders,
 }: AccountPageProps) {
   const handleReportClick = () => {
     if (hasCompletedOnboarding && hasPaid) {
@@ -97,6 +113,7 @@ export function AccountPage({
     action?: () => void;
   }> = [
     { id: 'report', label: 'My Report', icon: <LayoutDashboard className="w-5 h-5" />, action: handleReportClick },
+    { id: 'appointments', label: 'My Appointments', icon: <Calendar className="w-5 h-5" /> },
     { id: 'usage', label: 'Usage', icon: <BarChart3 className="w-5 h-5" /> },
     { id: 'rewards', label: 'Rewards', icon: <Gift className="w-5 h-5" /> },
     { id: 'referrals', label: 'Referrals', icon: <Users className="w-5 h-5" /> },
@@ -110,6 +127,7 @@ export function AccountPage({
   const [privacySecurityOpen, setPrivacySecurityOpen] = useState(false);
   const [billingOpen, setBillingOpen] = useState(false);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
+  const [scheduleSessionOpen, setScheduleSessionOpen] = useState(false);
   
   // Form states
   const [email, setEmail] = useState(profileEmailProp ?? '');
@@ -133,6 +151,138 @@ export function AccountPage({
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   const [profilePublic, setProfilePublic] = useState(false);
   const [dataSharing, setDataSharing] = useState(true);
+
+  // Session scheduling states
+  const [sessionType, setSessionType] = useState('');
+  const [sessionExpert, setSessionExpert] = useState('');
+  const [sessionDate, setSessionDate] = useState<Date | undefined>(undefined);
+  const [sessionTime, setSessionTime] = useState('');
+  const [sessionNotes, setSessionNotes] = useState('');
+
+  // Usage analytics state
+  const [usageSeries, setUsageSeries] = useState<UsageSeriesPoint[] | null>(null);
+  const [usageTotals, setUsageTotals] = useState<{ reportViews: number; aiMessages: number }>({
+    reportViews: 0,
+    aiMessages: 0,
+  });
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState<string | null>(null);
+
+  const loadUsageAnalytics = useCallback(async () => {
+    if (usageLoading) return;
+    setUsageLoading(true);
+    setUsageError(null);
+    try {
+      let headers: Record<string, string> = {};
+      if (typeof getAuthHeaders === "function") {
+        try {
+          headers = await getAuthHeaders();
+        } catch (authError) {
+          console.warn("[AccountPage] Failed to obtain auth headers", authError);
+        }
+      }
+
+      const response = await fetch("/api/usage/weekly", {
+        credentials: "include",
+        headers: {
+          Accept: "application/json",
+          ...headers,
+        },
+      });
+      if (!response.ok) {
+        if (response.status === 401) {
+          setUsageSeries([]);
+          setUsageTotals({ reportViews: 0, aiMessages: 0 });
+          setUsageError(null);
+          return;
+        }
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        series?: UsageSeriesPoint[];
+        totals?: { reportViews?: number; aiMessages?: number };
+      };
+      if (Array.isArray(payload.series) && payload.series.length) {
+        setUsageSeries(
+          payload.series.map((item) => ({
+            week: item.week,
+            reportViews: Number(item.reportViews ?? 0),
+            aiMessages: Number(item.aiMessages ?? 0),
+          })),
+        );
+      } else {
+        setUsageSeries([]);
+      }
+      setUsageTotals({
+        reportViews: Number(payload.totals?.reportViews ?? 0),
+        aiMessages: Number(payload.totals?.aiMessages ?? 0),
+      });
+      setUsageError(null);
+    } catch (error) {
+      console.error("[AccountPage] Failed to load usage analytics", error);
+      setUsageError(
+        error instanceof Error ? error.message : "Unable to load usage analytics.",
+      );
+    } finally {
+      setUsageLoading(false);
+    }
+  }, [usageLoading, getAuthHeaders]);
+
+  // Mock expert availability data - replace with API call in production
+  const expertAvailability: Record<string, Record<string, string[]>> = {
+    'sarah-chen': {
+      '2025-10-28': ['9:00 AM', '10:30 AM', '2:00 PM', '4:00 PM'],
+    '2025-10-29': ['9:00 AM', '11:00 AM', '1:00 PM', '3:30 PM'],
+    '2025-10-30': ['10:00 AM', '2:00 PM', '4:30 PM'],
+    '2025-11-01': ['9:00 AM', '11:30 AM', '2:00 PM'],
+    '2025-11-04': ['9:00 AM', '10:00 AM', '1:00 PM', '3:00 PM', '4:30 PM'],
+  },
+  'marcus-rodriguez': {
+    '2025-10-28': ['11:00 AM', '1:00 PM', '3:00 PM'],
+    '2025-10-29': ['9:30 AM', '12:00 PM', '2:30 PM', '4:00 PM'],
+    '2025-10-31': ['10:00 AM', '1:30 PM', '3:30 PM'],
+    '2025-11-01': ['9:00 AM', '11:00 AM', '2:00 PM', '4:00 PM'],
+    '2025-11-03': ['10:30 AM', '1:00 PM', '3:00 PM'],
+  },
+  'emma-thompson': {
+    '2025-10-28': ['10:00 AM', '12:00 PM', '3:30 PM'],
+    '2025-10-30': ['9:00 AM', '11:30 AM', '1:00 PM', '3:00 PM'],
+    '2025-10-31': ['10:00 AM', '2:00 PM', '4:00 PM'],
+    '2025-11-02': ['9:30 AM', '12:30 PM', '3:30 PM'],
+    '2025-11-05': ['9:00 AM', '10:30 AM', '1:00 PM', '2:30 PM', '4:00 PM'],
+  },
+  'david-kim': {
+    '2025-10-29': ['11:00 AM', '1:30 PM', '4:00 PM'],
+    '2025-10-30': ['9:00 AM', '12:00 PM', '2:30 PM'],
+    '2025-11-01': ['10:00 AM', '1:00 PM', '3:30 PM'],
+    '2025-11-04': ['9:30 AM', '11:30 AM', '2:00 PM', '4:30 PM'],
+    '2025-11-05': ['10:00 AM', '12:00 PM', '3:00 PM'],
+  },
+  any: {
+    '2025-10-28': ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '3:30 PM', '4:00 PM'],
+    '2025-10-29': ['9:00 AM', '9:30 AM', '11:00 AM', '12:00 PM', '1:00 PM', '1:30 PM', '2:30 PM', '3:30 PM', '4:00 PM'],
+    '2025-10-30': ['9:00 AM', '10:00 AM', '11:30 AM', '12:00 PM', '1:00 PM', '2:00 PM', '2:30 PM', '3:00 PM', '4:30 PM'],
+    '2025-10-31': ['10:00 AM', '1:30 PM', '2:00 PM', '3:30 PM', '4:00 PM'],
+    '2025-11-01': ['9:00 AM', '10:00 AM', '11:00 AM', '11:30 AM', '1:00 PM', '2:00 PM', '3:30 PM', '4:00 PM'],
+    '2025-11-02': ['9:30 AM', '12:30 PM', '3:30 PM'],
+    '2025-11-03': ['10:30 AM', '1:00 PM', '3:00 PM'],
+    '2025-11-04': ['9:00 AM', '9:30 AM', '10:00 AM', '11:30 AM', '1:00 PM', '2:00 PM', '3:00 PM', '4:30 PM'],
+    '2025-11-05': ['9:00 AM', '10:00 AM', '10:30 AM', '12:00 PM', '1:00 PM', '2:30 PM', '3:00 PM', '4:00 PM'],
+  },
+  };
+
+  const getAvailableTimeSlots = (expertId: string, date: Date | undefined): string[] => {
+    if (!expertId || !date || !expertAvailability[expertId]) return [];
+    const dateStr = date.toISOString().split('T')[0];
+    return expertAvailability[expertId][dateStr] || [];
+  };
+
+  const dateHasAvailability = (expertId: string, date: Date): boolean => {
+    if (!expertId) return false;
+    const dateStr = date.toISOString().split('T')[0];
+    const slots = expertAvailability[expertId]?.[dateStr];
+    return Array.isArray(slots) && slots.length > 0;
+  };
 
   const handleLogoClick = () => {
     setActiveSection('usage');
@@ -173,6 +323,12 @@ export function AccountPage({
     }
   }, [changePasswordOpen]);
 
+  useEffect(() => {
+    if (!usageSeries && !usageLoading && !usageError) {
+      void loadUsageAnalytics();
+    }
+  }, [usageSeries, usageLoading, usageError, loadUsageAnalytics]);
+
   const displayName = useMemo(() => {
     const trimmed = name?.trim();
     if (trimmed) return trimmed;
@@ -188,6 +344,53 @@ export function AccountPage({
   const avatarInitial = useMemo(() => {
     return displayName.charAt(0).toUpperCase();
   }, [displayName]);
+
+  const fallbackUsageSeries = useMemo<UsageSeriesPoint[]>(() => [
+    { week: "2024-10-07T00:00:00.000Z", reportViews: 12, aiMessages: 45 },
+    { week: "2024-10-14T00:00:00.000Z", reportViews: 18, aiMessages: 62 },
+    { week: "2024-10-21T00:00:00.000Z", reportViews: 8, aiMessages: 38 },
+    { week: "2024-10-28T00:00:00.000Z", reportViews: 22, aiMessages: 71 },
+    { week: "2024-11-04T00:00:00.000Z", reportViews: 15, aiMessages: 89 },
+    { week: "2024-11-11T00:00:00.000Z", reportViews: 28, aiMessages: 105 },
+  ], []);
+
+  const fallbackTotals = useMemo(
+    () =>
+      fallbackUsageSeries.reduce(
+        (acc, item) => {
+          acc.reportViews += item.reportViews;
+          acc.aiMessages += item.aiMessages;
+          return acc;
+        },
+        { reportViews: 0, aiMessages: 0 },
+      ),
+    [fallbackUsageSeries],
+  );
+
+  const resolvedUsageSeries =
+    usageSeries && usageSeries.length ? usageSeries : fallbackUsageSeries;
+
+  const resolvedTotals =
+    usageSeries && usageSeries.length ? usageTotals : fallbackTotals;
+
+  const usageChartData = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+
+    return resolvedUsageSeries.map((item, index) => {
+      const date = new Date(item.week);
+      const weekLabel = Number.isNaN(date.getTime())
+        ? `Week ${index + 1}`
+        : formatter.format(date);
+      return {
+        week: weekLabel,
+        reportViews: item.reportViews,
+        aiMessages: item.aiMessages,
+      };
+    });
+  }, [resolvedUsageSeries]);
 
   const handleProfileSubmit = async () => {
     if (!onProfileSave) return;
@@ -527,11 +730,431 @@ export function AccountPage({
             </motion.div>
           )}
 
+          {activeSection === 'appointments' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="space-y-6"
+            >
+              <Card className="p-8 border-l-4" style={{ borderLeftColor: '#9E5DAB' }}>
+                <div className="flex items-start gap-6">
+                  <div 
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: '#9E5DAB20' }}
+                  >
+                    <Calendar className="w-8 h-8" style={{ color: '#9E5DAB' }} />
+                  </div>
+                  
+                  <div className="flex-1">
+                    <h2 className="mb-2">My Appointments</h2>
+                    <p className="text-muted-foreground">
+                      Manage your 1:1 expert sessions and coaching appointments
+                    </p>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start gap-4 mb-6">
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: '#EBD7DC' }}
+                  >
+                    <Video className="w-6 h-6" style={{ color: '#9E5DAB' }} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="mb-1">1:1 Expert Sessions</h3>
+                    <p className="text-sm text-muted-foreground">Completed and scheduled sessions</p>
+                  </div>
+                  <Badge 
+                    className="px-3 py-1"
+                    style={{ backgroundColor: '#9E5DAB20', color: '#9E5DAB' }}
+                  >
+                    3 Total
+                  </Badge>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-gradient-to-b from-muted via-muted to-transparent" />
+
+                  <div className="space-y-6">
+                    <div className="flex items-start gap-4 relative">
+                      <div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10"
+                        style={{ backgroundColor: '#9E5DAB' }}
+                      >
+                        <Check className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1 pt-2">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <span>Strategy Session: Content Calendar</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">Nov 15, 2025</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Developed 30-day content strategy with Sarah Chen
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-4 relative">
+                      <div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10"
+                        style={{ backgroundColor: '#9E5DAB' }}
+                      >
+                        <Check className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1 pt-2">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <span>Growth Deep Dive: Algorithm Optimization</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">Oct 22, 2025</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Platform-specific tactics with Marcus Rodriguez
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-4 relative">
+                      <motion.div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10 border-2"
+                        style={{ 
+                          borderColor: '#8FD9FB',
+                          backgroundColor: 'white'
+                        }}
+                        animate={{ 
+                          scale: [1, 1.1, 1],
+                          boxShadow: [
+                            '0 0 0 0 rgba(143, 217, 251, 0.4)',
+                            '0 0 0 8px rgba(143, 217, 251, 0)',
+                            '0 0 0 0 rgba(143, 217, 251, 0)'
+                          ]
+                        }}
+                        transition={{ 
+                          duration: 2,
+                          repeat: Infinity,
+                          ease: "easeInOut"
+                        }}
+                      >
+                        <Calendar className="w-6 h-6" style={{ color: '#8FD9FB' }} />
+                      </motion.div>
+                      <div className="flex-1 pt-2">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <span>Monetization Strategy Session</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">Nov 28, 2025</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Upcoming session with Emma Thompson
+                        </p>
+                        <Badge 
+                          className="mt-2 px-2 py-0.5 text-xs"
+                          style={{ backgroundColor: '#8FD9FB20', color: '#6BA3D1' }}
+                        >
+                          Scheduled
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-border">
+                  <Dialog open={scheduleSessionOpen} onOpenChange={setScheduleSessionOpen}>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        className="w-full sm:w-auto gap-2"
+                        style={{ borderColor: '#9E5DAB', color: '#9E5DAB' }}
+                      >
+                        <Calendar className="w-4 h-4" />
+                        Schedule New Session
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <div 
+                            className="w-10 h-10 rounded-xl flex items-center justify-center"
+                            style={{ backgroundColor: '#9E5DAB20' }}
+                          >
+                            <Video className="w-5 h-5" style={{ color: '#9E5DAB' }} />
+                          </div>
+                          Schedule Expert Session
+                        </DialogTitle>
+                        <DialogDescription>
+                          Book a personalized 1:1 session with one of our expert coaches to accelerate your creator journey.
+                        </DialogDescription>
+                      </DialogHeader>
+
+                      <div className="space-y-6 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="session-type" className="flex items-center gap-2">
+                            <Lightbulb className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Session Focus
+                          </Label>
+                          <Select value={sessionType} onValueChange={setSessionType}>
+                            <SelectTrigger id="session-type" className="bg-input-background">
+                              <SelectValue placeholder="Choose what you'd like to work on..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="content-strategy">Content Strategy & Planning</SelectItem>
+                              <SelectItem value="algorithm-optimization">Algorithm Optimization</SelectItem>
+                              <SelectItem value="monetization">Monetization Strategy</SelectItem>
+                              <SelectItem value="brand-partnerships">Brand Partnerships</SelectItem>
+                              <SelectItem value="audience-growth">Audience Growth Tactics</SelectItem>
+                              <SelectItem value="platform-specific">Platform-Specific Tips</SelectItem>
+                              <SelectItem value="creative-direction">Creative Direction</SelectItem>
+                              <SelectItem value="analytics-review">Analytics Deep Dive</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="expert" className="flex items-center gap-2">
+                            <UserCircle className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Preferred Expert
+                          </Label>
+                          <Select 
+                            value={sessionExpert} 
+                            onValueChange={(value) => {
+                              setSessionExpert(value);
+                              setSessionDate(undefined);
+                              setSessionTime('');
+                            }}
+                          >
+                            <SelectTrigger id="expert" className="bg-input-background">
+                              <SelectValue placeholder="Select an expert coach..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sarah-chen">
+                                <div className="flex flex-col">
+                                  <span>Sarah Chen</span>
+                                  <span className="text-xs text-muted-foreground">Content Strategy Specialist</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="marcus-rodriguez">
+                                <div className="flex flex-col">
+                                  <span>Marcus Rodriguez</span>
+                                  <span className="text-xs text-muted-foreground">Growth & Algorithm Expert</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="emma-thompson">
+                                <div className="flex flex-col">
+                                  <span>Emma Thompson</span>
+                                  <span className="text-xs text-muted-foreground">Monetization Expert</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="david-kim">
+                                <div className="flex flex-col">
+                                  <span>David Kim</span>
+                                  <span className="text-xs text-muted-foreground">Brand Partnerships Strategist</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="any">
+                                <div className="flex flex-col">
+                                  <span>No Preference</span>
+                                  <span className="text-xs text-muted-foreground">Match me with the best fit</span>
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {sessionExpert && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Check className="w-3 h-3" style={{ color: '#9E5DAB' }} />
+                              Showing availability for selected expert
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Select Date
+                          </Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-start text-left font-normal bg-input-background"
+                                disabled={!sessionExpert}
+                              >
+                                <Calendar className="mr-2 h-4 w-4" />
+                                {sessionDate ? sessionDate.toLocaleDateString('en-US', { 
+                                  weekday: 'long', 
+                                  year: 'numeric', 
+                                  month: 'long', 
+                                  day: 'numeric' 
+                                }) : <span>{sessionExpert ? 'Pick a date' : 'Select an expert first'}</span>}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <CalendarComponent
+                                mode="single"
+                                selected={sessionDate}
+                                onSelect={(date) => {
+                                  setSessionDate(date);
+                                  setSessionTime('');
+                                }}
+                                disabled={(date) => {
+                                  const today = new Date();
+                                  today.setHours(0, 0, 0, 0);
+                                  if (date < today) return true;
+                                  if (!sessionExpert) return true;
+                                  return !dateHasAvailability(sessionExpert, date);
+                                }}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          {sessionExpert && !sessionDate && (
+                            <p className="text-xs text-muted-foreground">
+                              Only dates with available time slots are selectable
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Clock className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Available Time Slots
+                          </Label>
+                          {!sessionExpert || !sessionDate ? (
+                            <div className="p-4 bg-muted/50 rounded-lg text-center text-sm text-muted-foreground">
+                              {!sessionExpert 
+                                ? 'Select an expert to see available times' 
+                                : 'Select a date to see available time slots'
+                              }
+                            </div>
+                          ) : (
+                            <>
+                              {getAvailableTimeSlots(sessionExpert, sessionDate).length > 0 ? (
+                                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+                                  {getAvailableTimeSlots(sessionExpert, sessionDate).map((time) => (
+                                    <Button
+                                      key={time}
+                                      variant={sessionTime === time ? "default" : "outline"}
+                                      className="justify-center text-sm"
+                                      style={
+                                        sessionTime === time
+                                          ? { backgroundColor: '#9E5DAB', color: 'white' }
+                                          : {}
+                                      }
+                                      onClick={() => setSessionTime(time)}
+                                    >
+                                      {time}
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="p-4 bg-muted/50 rounded-lg text-center text-sm text-muted-foreground">
+                                  No available time slots for this date
+                                </div>
+                              )}
+                            </>
+                          )}
+                          {sessionTime && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Check className="w-3 h-3" style={{ color: '#9E5DAB' }} />
+                              {sessionTime} selected • 60-minute session
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="session-notes" className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Goals & Topics
+                          </Label>
+                          <Textarea
+                            id="session-notes"
+                            placeholder="What would you like to focus on in this session? Share any specific challenges or goals..."
+                            value={sessionNotes}
+                            onChange={(e) => setSessionNotes(e.target.value)}
+                            className="bg-input-background min-h-[100px] resize-none"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            This helps your expert prepare a customized session for you.
+                          </p>
+                        </div>
+
+                        <div 
+                          className="p-4 rounded-lg border-2"
+                          style={{ 
+                            backgroundColor: '#9E5DAB10',
+                            borderColor: '#9E5DAB40'
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div 
+                              className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                              style={{ backgroundColor: '#9E5DAB20' }}
+                            >
+                              <CreditCard className="w-5 h-5" style={{ color: '#9E5DAB' }} />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-baseline gap-2 mb-1">
+                                <span>$150</span>
+                                <span className="text-sm text-muted-foreground">per session</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                60-minute personalized coaching session with expert-level guidance and actionable strategies.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <DialogFooter className="gap-2">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            setScheduleSessionOpen(false);
+                            setSessionType('');
+                            setSessionExpert('');
+                            setSessionDate(undefined);
+                            setSessionTime('');
+                            setSessionNotes('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          style={{ backgroundColor: '#9E5DAB', color: 'white' }}
+                          disabled={!sessionType || !sessionExpert || !sessionDate || !sessionTime}
+                          onClick={() => {
+                            const bookingData = {
+                              type: sessionType,
+                              expert: sessionExpert,
+                              date: sessionDate?.toISOString().split('T')[0],
+                              time: sessionTime,
+                              notes: sessionNotes,
+                              timestamp: new Date().toISOString()
+                            };
+                            console.log('Session scheduled:', bookingData);
+                            setScheduleSessionOpen(false);
+                            setSessionType('');
+                            setSessionExpert('');
+                            setSessionDate(undefined);
+                            setSessionTime('');
+                            setSessionNotes('');
+                          }}
+                        >
+                          <Check className="w-4 h-4 mr-2" />
+                          Confirm Booking
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </Card>
+            </motion.div>
+          )}
+
           {activeSection === 'usage' && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4 }}
+              className="space-y-6"
             >
               <Card className="p-8 border-l-4" style={{ borderLeftColor: '#6BA3D1' }}>
                 <div className="flex items-start gap-6">
@@ -544,27 +1167,523 @@ export function AccountPage({
                   
                   <div className="flex-1">
                     <h2 className="mb-2">Usage Analytics</h2>
-                    <p className="text-muted-foreground mb-6">
+                    <p className="text-muted-foreground">
                       Monitor your platform usage and activity insights
                     </p>
+                  </div>
+                </div>
+              </Card>
 
-                    <div className="bg-muted/50 rounded-xl p-8 text-center">
-                      <div 
-                        className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
-                        style={{ backgroundColor: '#6BA3D110' }}
-                      >
-                        <BarChart3 className="w-10 h-10" style={{ color: '#6BA3D1' }} />
+              <Card className="p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start justify-between gap-4 mb-6">
+                  <div className="flex items-start gap-4">
+                    <div 
+                      className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: '#9E5DAB20' }}
+                    >
+                      <Timer className="w-6 h-6" style={{ color: '#9E5DAB' }} />
+                    </div>
+                    <div>
+                      <h3 className="mb-1">Access Time Left</h3>
+                      <p className="text-sm text-muted-foreground">AI Mentor Plan</p>
+                    </div>
+                  </div>
+                  <Badge 
+                    className="px-3 py-1" 
+                    style={{ backgroundColor: '#9E5DAB20', color: '#9E5DAB' }}
+                  >
+                    Active
+                  </Badge>
+                </div>
+
+                <div className="flex items-center gap-8 flex-wrap">
+                  <div className="relative w-32 h-32 flex-shrink-0">
+                    <svg className="w-32 h-32 transform -rotate-90">
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="#E8E8E8"
+                        strokeWidth="8"
+                        fill="none"
+                      />
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="#9E5DAB"
+                        strokeWidth="8"
+                        fill="none"
+                        strokeDasharray={`${(67 / 90) * 351.86} 351.86`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-sm text-muted-foreground">74%</span>
+                      <span className="text-xs text-muted-foreground">67 days left</span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-4 min-w-[220px]">
+                    <div>
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-muted-foreground">67 days</span>
+                        <span className="text-sm text-muted-foreground">remaining</span>
                       </div>
-                      <h3 className="mb-2">Track Your Growth</h3>
-                      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                        Detailed usage metrics and engagement analytics are being prepared to help you understand your platform activity.
-                      </p>
-                      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="w-4 h-4" />
-                        <span>Coming soon</span>
+                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ 
+                            width: '74%',
+                            background: 'linear-gradient(90deg, #9E5DAB 0%, #B481C0 100%)'
+                          }}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                      <span>Expires: Feb 1, 2026</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start gap-4 mb-6">
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ 
+                      background: 'linear-gradient(135deg, #9E5DAB 0%, #8FD9FB 100%)'
+                    }}
+                  >
+                    <Activity className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="mb-1">Usage Statistics</h3>
+                    <p className="text-sm text-muted-foreground">Report views and AI chat activity</p>
+                  </div>
+                </div>
+
+                {usageError && (
+                  <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    We couldn&rsquo;t load your live usage stats. Showing sample data instead.
+                  </div>
+                )}
+
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart
+                    data={usageChartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E8E8E8" vertical={false} />
+                    <XAxis
+                      dataKey="week"
+                      tick={{ fill: '#666', fontSize: 12 }}
+                      axisLine={{ stroke: '#E8E8E8' }}
+                    />
+                    <YAxis
+                      tick={{ fill: '#666', fontSize: 12 }}
+                      axisLine={{ stroke: '#E8E8E8' }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #E8E8E8',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                      }}
+                    />
+                    <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="line" />
+                    <Line
+                      type="monotone"
+                      dataKey="reportViews"
+                      name="Report Views"
+                      stroke="#9E5DAB"
+                      strokeWidth={2}
+                      dot={{ fill: '#9E5DAB', r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="aiMessages"
+                      name="AI Chat Messages"
+                      stroke="#6BA3D1"
+                      strokeWidth={2}
+                      dot={{ fill: '#6BA3D1', r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+
+                <div className="mt-6 grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#9E5DAB' }} />
+                      <span className="text-xs text-muted-foreground">Report Views</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span>{resolvedTotals.reportViews}</span>
+                      <span className="text-xs text-muted-foreground">total</span>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#6BA3D1' }} />
+                      <span className="text-xs text-muted-foreground">AI Messages</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span>{resolvedTotals.aiMessages}</span>
+                      <span className="text-xs text-muted-foreground">total</span>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 hover:shadow-lg transition-shadow">
+                <div className="flex items-start gap-4 mb-6">
+                  <div 
+                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: '#EBD7DC' }}
+                  >
+                    <Video className="w-6 h-6" style={{ color: '#9E5DAB' }} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="mb-1">1:1 Expert Sessions</h3>
+                    <p className="text-sm text-muted-foreground">Completed and scheduled sessions</p>
+                  </div>
+                  <Badge 
+                    className="px-3 py-1"
+                    style={{ backgroundColor: '#9E5DAB20', color: '#9E5DAB' }}
+                  >
+                    3 Total
+                  </Badge>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-gradient-to-b from-muted via-muted to-transparent" />
+
+                  <div className="space-y-6">
+                    <div className="flex items-start gap-4 relative">
+                      <div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10"
+                        style={{ backgroundColor: '#9E5DAB' }}
+                      >
+                        <Check className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1 pt-2">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <span>Strategy Session: Content Calendar</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">Nov 15, 2025</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Developed 30-day content strategy with Sarah Chen
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-4 relative">
+                      <div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10"
+                        style={{ backgroundColor: '#9E5DAB' }}
+                      >
+                        <Check className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1 pt-2">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <span>Growth Deep Dive: Algorithm Optimization</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">Oct 22, 2025</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Platform-specific tactics with Marcus Rodriguez
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-4 relative">
+                      <motion.div 
+                        className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 z-10 border-2"
+                        style={{ 
+                          borderColor: '#8FD9FB',
+                          backgroundColor: 'white'
+                        }}
+                        animate={{ 
+                          scale: [1, 1.1, 1],
+                          boxShadow: [
+                            '0 0 0 0 rgba(143, 217, 251, 0.4)',
+                            '0 0 0 8px rgba(143, 217, 251, 0)',
+                            '0 0 0 0 rgba(143, 217, 251, 0)'
+                          ]
+                        }}
+                        transition={{ 
+                          duration: 2,
+                          repeat: Infinity,
+                          ease: "easeInOut"
+                        }}
+                      >
+                        <Calendar className="w-6 h-6" style={{ color: '#8FD9FB' }} />
+                      </motion.div>
+                      <div className="flex-1 pt-2">
+                        <div className="flex items-start justify-between gap-2 mb-1">
+                          <span>Monetization Strategy Session</span>
+                          <span className="text-sm text-muted-foreground whitespace-nowrap">Nov 28, 2025</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Upcoming session with Emma Thompson
+                        </p>
+                        <Badge 
+                          className="mt-2 px-2 py-0.5 text-xs"
+                          style={{ backgroundColor: '#8FD9FB20', color: '#6BA3D1' }}
+                        >
+                          Scheduled
+                        </Badge>
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-border">
+                  <Dialog open={scheduleSessionOpen} onOpenChange={setScheduleSessionOpen}>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        className="w-full sm:w-auto gap-2"
+                        style={{ borderColor: '#9E5DAB', color: '#9E5DAB' }}
+                      >
+                        <Calendar className="w-4 h-4" />
+                        Schedule New Session
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                          <div 
+                            className="w-10 h-10 rounded-xl flex items-center justify-center"
+                            style={{ backgroundColor: '#9E5DAB20' }}
+                          >
+                            <Video className="w-5 h-5" style={{ color: '#9E5DAB' }} />
+                          </div>
+                          Schedule Expert Session
+                        </DialogTitle>
+                        <DialogDescription>
+                          Book a personalized 1:1 session with one of our expert coaches to accelerate your creator journey.
+                        </DialogDescription>
+                      </DialogHeader>
+                      {/* Dialog content duplicated intentionally for consistent UX */}
+                      <div className="space-y-6 py-4">
+                        {/* we can reuse same form */}
+                        <div className="space-y-2">
+                          <Label htmlFor="session-type-secondary" className="flex items-center gap-2">
+                            <Lightbulb className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Session Focus
+                          </Label>
+                          <Select value={sessionType} onValueChange={setSessionType}>
+                            <SelectTrigger id="session-type-secondary" className="bg-input-background">
+                              <SelectValue placeholder="Choose what you'd like to work on..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="content-strategy">Content Strategy & Planning</SelectItem>
+                              <SelectItem value="algorithm-optimization">Algorithm Optimization</SelectItem>
+                              <SelectItem value="monetization">Monetization Strategy</SelectItem>
+                              <SelectItem value="brand-partnerships">Brand Partnerships</SelectItem>
+                              <SelectItem value="audience-growth">Audience Growth Tactics</SelectItem>
+                              <SelectItem value="platform-specific">Platform-Specific Tips</SelectItem>
+                              <SelectItem value="creative-direction">Creative Direction</SelectItem>
+                              <SelectItem value="analytics-review">Analytics Deep Dive</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="expert-secondary" className="flex items-center gap-2">
+                            <UserCircle className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Preferred Expert
+                          </Label>
+                          <Select 
+                            value={sessionExpert} 
+                            onValueChange={(value) => {
+                              setSessionExpert(value);
+                              setSessionDate(undefined);
+                              setSessionTime('');
+                            }}
+                          >
+                            <SelectTrigger id="expert-secondary" className="bg-input-background">
+                              <SelectValue placeholder="Select an expert coach..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="sarah-chen">
+                                <div className="flex flex-col">
+                                  <span>Sarah Chen</span>
+                                  <span className="text-xs text-muted-foreground">Content Strategy Specialist</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="marcus-rodriguez">
+                                <div className="flex flex-col">
+                                  <span>Marcus Rodriguez</span>
+                                  <span className="text-xs text-muted-foreground">Growth & Algorithm Expert</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="emma-thompson">
+                                <div className="flex flex-col">
+                                  <span>Emma Thompson</span>
+                                  <span className="text-xs text-muted-foreground">Monetization Expert</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="david-kim">
+                                <div className="flex flex-col">
+                                  <span>David Kim</span>
+                                  <span className="text-xs text-muted-foreground">Brand Partnerships Strategist</span>
+                                </div>
+                              </SelectItem>
+                              <SelectItem value="any">
+                                <div className="flex flex-col">
+                                  <span>No Preference</span>
+                                  <span className="text-xs text-muted-foreground">Match me with the best fit</span>
+                                </div>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Select Date
+                          </Label>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                className="w-full justify-start text-left font-normal bg-input-background"
+                                disabled={!sessionExpert}
+                              >
+                                <Calendar className="mr-2 h-4 w-4" />
+                                {sessionDate ? sessionDate.toLocaleDateString('en-US', { 
+                                  weekday: 'long', 
+                                  year: 'numeric', 
+                                  month: 'long', 
+                                  day: 'numeric' 
+                                }) : <span>{sessionExpert ? 'Pick a date' : 'Select an expert first'}</span>}
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <CalendarComponent
+                                mode="single"
+                                selected={sessionDate}
+                                onSelect={(date) => {
+                                  setSessionDate(date);
+                                  setSessionTime('');
+                                }}
+                                disabled={(date) => {
+                                  const today = new Date();
+                                  today.setHours(0, 0, 0, 0);
+                                  if (date < today) return true;
+                                  if (!sessionExpert) return true;
+                                  return !dateHasAvailability(sessionExpert, date);
+                                }}
+                                initialFocus
+                              />
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="flex items-center gap-2">
+                            <Clock className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Available Time Slots
+                          </Label>
+                          {!sessionExpert || !sessionDate ? (
+                            <div className="p-4 bg-muted/50 rounded-lg text-center text-sm text-muted-foreground">
+                              {!sessionExpert 
+                                ? 'Select an expert to see available times' 
+                                : 'Select a date to see available time slots'
+                              }
+                            </div>
+                          ) : (
+                            <>
+                              {getAvailableTimeSlots(sessionExpert, sessionDate).length > 0 ? (
+                                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+                                  {getAvailableTimeSlots(sessionExpert, sessionDate).map((time) => (
+                                    <Button
+                                      key={time}
+                                      variant={sessionTime === time ? "default" : "outline"}
+                                      className="justify-center text-sm"
+                                      style={
+                                        sessionTime === time
+                                          ? { backgroundColor: '#9E5DAB', color: 'white' }
+                                          : {}
+                                      }
+                                      onClick={() => setSessionTime(time)}
+                                    >
+                                      {time}
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="p-4 bg-muted/50 rounded-lg text-center text-sm text-muted-foreground">
+                                  No available time slots for this date
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="session-notes-secondary" className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4" style={{ color: '#9E5DAB' }} />
+                            Goals & Topics
+                          </Label>
+                          <Textarea
+                            id="session-notes-secondary"
+                            placeholder="What would you like to focus on in this session? Share any specific challenges or goals..."
+                            value={sessionNotes}
+                            onChange={(e) => setSessionNotes(e.target.value)}
+                            className="bg-input-background min-h-[100px] resize-none"
+                          />
+                        </div>
+                      </div>
+
+                      <DialogFooter className="gap-2">
+                        <Button 
+                          variant="outline" 
+                          onClick={() => {
+                            setScheduleSessionOpen(false);
+                            setSessionType('');
+                            setSessionExpert('');
+                            setSessionDate(undefined);
+                            setSessionTime('');
+                            setSessionNotes('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button 
+                          style={{ backgroundColor: '#9E5DAB', color: 'white' }}
+                          disabled={!sessionType || !sessionExpert || !sessionDate || !sessionTime}
+                          onClick={() => {
+                            const bookingData = {
+                              type: sessionType,
+                              expert: sessionExpert,
+                              date: sessionDate?.toISOString().split('T')[0],
+                              time: sessionTime,
+                              notes: sessionNotes,
+                              timestamp: new Date().toISOString()
+                            };
+                            console.log('Session scheduled:', bookingData);
+                            setScheduleSessionOpen(false);
+                            setSessionType('');
+                            setSessionExpert('');
+                            setSessionDate(undefined);
+                            setSessionTime('');
+                            setSessionNotes('');
+                          }}
+                        >
+                          <Check className="w-4 h-4 mr-2" />
+                          Confirm Booking
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </Card>
             </motion.div>

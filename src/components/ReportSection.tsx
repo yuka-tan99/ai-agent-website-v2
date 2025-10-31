@@ -1,14 +1,45 @@
+import type { ComponentType, ReactNode } from 'react';
 import { motion } from 'motion/react';
-import { BookOpen } from 'lucide-react';
+import {
+  BookOpen,
+  Target,
+  Sparkles,
+  TrendingUp,
+  Rocket,
+  Compass,
+  Zap,
+  User,
+  Heart,
+  FolderKanban,
+} from 'lucide-react';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { Skeleton } from './ui/skeleton';
+
+type CardIconKey = 'Target' | 'Sparkles' | 'TrendingUp' | 'Rocket' | 'Compass' | 'Zap' | 'User' | 'Heart' | 'FolderKanban';
+
+const CARD_ICON_MAP: Record<CardIconKey, ComponentType<{ className?: string }>> = {
+  Target,
+  Sparkles,
+  TrendingUp,
+  Rocket,
+  Compass,
+  Zap,
+  User,
+  Heart,
+  FolderKanban,
+};
 
 interface ReportSectionProps {
   sectionNumber: number;
   title: string;
   icon: React.ReactNode;
   summary: string;
+  cards?: Array<{
+    title: string;
+    content: string;
+    icon?: CardIconKey;
+  }>;
   personalizedSummary?: string;
   personalizedTips?: string[];
   keyInsights: string[];
@@ -28,6 +59,7 @@ export function ReportSection({
   title,
   icon,
   summary,
+  cards,
   personalizedSummary,
   personalizedTips,
   keyInsights,
@@ -41,6 +73,39 @@ export function ReportSection({
   const showPlaceholder = Boolean(isPlaceholder);
   const summaryText = personalizedSummary?.trim() ? personalizedSummary : summary;
   const hasTips = Array.isArray(personalizedTips) && personalizedTips.length > 0;
+
+  const hasCards = Array.isArray(cards) && cards.length > 0;
+
+  const renderRichText = (text: string, color: string): ReactNode => {
+    if (!text) return null;
+    const tokens = text.split(new RegExp('(<<highlight>>|<</highlight>>)','g'));
+    let isHighlight = false;
+    return tokens
+      .map((token, index) => {
+        if (!token) return null;
+        if (token === '<<highlight>>') {
+          isHighlight = true;
+          return null;
+        }
+        if (token === '<</highlight>>') {
+          isHighlight = false;
+          return null;
+        }
+        if (isHighlight) {
+          return (
+            <span
+              key={`hl-${index}`}
+              className="font-semibold"
+              style={{ color }}
+            >
+              {token}
+            </span>
+          );
+        }
+        return <span key={`txt-${index}`}>{token}</span>;
+      })
+      .filter(Boolean);
+  };
 
   const handleLearnMore = () => {
     if (showPlaceholder) return;
@@ -87,9 +152,50 @@ export function ReportSection({
               </div>
             ) : (
               <>
-                <p className="text-muted-foreground text-base md:text-lg leading-relaxed mb-6">
-                  {summaryText}
-                </p>
+                {summaryText && (
+                  <p className="text-muted-foreground text-base md:text-lg leading-relaxed mb-6">
+                    {renderRichText(summaryText, accentColor)}
+                  </p>
+                )}
+
+                {hasCards && (
+                  <div className="grid gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-3">
+                    {cards!.map((card, idx) => {
+                      const iconKey = card.icon ?? 'Sparkles';
+                      const IconComponent = CARD_ICON_MAP[iconKey] ?? Sparkles;
+                      return (
+                        <motion.div
+                          key={`${card.title}-${idx}`}
+                          initial={{ opacity: 0, y: 12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.08 }}
+                          className="relative overflow-hidden rounded-2xl border p-5 shadow-sm"
+                          style={{
+                            borderColor: `${accentColor}30`,
+                            background: 'linear-gradient(135deg, rgba(255,255,255,0.95), rgba(248,243,249,0.85))',
+                          }}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                              style={{ backgroundColor: `${accentColor}20` }}
+                            >
+                              <IconComponent className="w-5 h-5" style={{ color: accentColor }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold" style={{ color: accentColor }}>
+                                {card.title}
+                              </p>
+                              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                                {renderRichText(card.content, accentColor)}
+                              </p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {hasTips && personalizedTips && (
                   <div className="mb-6 space-y-3">
@@ -108,7 +214,7 @@ export function ReportSection({
                         >
                           {idx + 1}
                         </div>
-                        <p className="flex-1 text-sm">{tip}</p>
+                        <p className="flex-1 text-sm">{renderRichText(tip, accentColor)}</p>
                       </motion.div>
                     ))}
                   </div>

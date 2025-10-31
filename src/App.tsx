@@ -103,6 +103,10 @@ type GeneratedSectionPayload = {
   personalizedSummary?: string;
   personalizedTips?: string[];
   keyInsights?: string[];
+  cards?: Array<{
+    title?: string;
+    content?: string;
+  }>;
   learnMoreContent?: {
     description?: string;
     actionSteps?: string[];
@@ -1245,6 +1249,28 @@ export default function App({ initialView }: AppProps = {}) {
             }
           : undefined;
 
+        const defaultCards = section.cards ?? [];
+        const generatedCards = Array.isArray(generated.cards) ? generated.cards : [];
+        const mergedCards = defaultCards.length
+          ? defaultCards.map((card, idx) => {
+              const generatedCard = generatedCards[idx];
+              const title = typeof generatedCard?.title === 'string' && generatedCard.title.trim().length
+                ? generatedCard.title.trim()
+                : card.title;
+              const content = typeof generatedCard?.content === 'string' && generatedCard.content.trim().length
+                ? generatedCard.content.trim()
+                : card.content;
+              return { ...card, title, content };
+            })
+          : generatedCards
+            .filter((card): card is { title?: string; content?: string } => Boolean(card))
+            .slice(0, 3)
+            .map((card) => ({
+              title: typeof card.title === 'string' && card.title.trim().length ? card.title.trim() : 'Key Insight',
+              content: typeof card.content === 'string' && card.content.trim().length ? card.content.trim() : '',
+              icon: 'Sparkles' as SectionCard['icon'],
+            }));
+
         return {
           ...section,
           summary,
@@ -1258,6 +1284,7 @@ export default function App({ initialView }: AppProps = {}) {
           },
           elaborateContent,
           accentColor: generated.accentColor ?? section.accentColor,
+          cards: mergedCards,
           isPlaceholder: false,
         } as SectionData;
       });
@@ -2365,6 +2392,7 @@ export default function App({ initialView }: AppProps = {}) {
           profileError={profileError}
           onChangePassword={handleChangePassword}
           passwordUpdating={passwordUpdating}
+          getAuthHeaders={getAuthHeaders}
         />
         {/* Ask Vee Chat - Available in Account Page */}
         <AskVeeChat 
@@ -2427,6 +2455,7 @@ export default function App({ initialView }: AppProps = {}) {
                     title={section.title}
                     icon={section.icon}
                     summary={section.summary}
+                    cards={section.cards}
                     personalizedSummary={section.personalizedSummary}
                     personalizedTips={section.personalizedTips}
                     keyInsights={section.keyInsights}

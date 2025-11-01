@@ -14,7 +14,7 @@ if (!PRICE_ID_AI) {
   throw new Error("PRICE_ID_AI is not set");
 }
 
-export const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-04-10" });
+export const stripe = new Stripe(STRIPE_SECRET_KEY);
 
 const COMPLIMENTARY_PRODUCT_KEYS = ["report_plan"];
 const COMPLIMENTARY_ACCESS_MONTHS = 3;

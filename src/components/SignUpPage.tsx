@@ -97,10 +97,44 @@ export function SignUpPage({ onBack, onSignUp, onNavigateToSignIn }: SignUpPageP
     }
   };
 
-  const handleSocialSignUp = (provider: string) => {
-    // In a real app, this would trigger OAuth flow
-    console.log(`Sign up with ${provider}`);
-    onSignUp();
+  const OAUTH_PROVIDER_MAP: Record<string, { provider: 'google' | 'azure'; label: string }> = {
+    Google: { provider: 'google', label: 'Google' },
+    Microsoft: { provider: 'azure', label: 'Microsoft' },
+  };
+
+  const handleSocialSignUp = async (providerLabel: string) => {
+    const mapped = OAUTH_PROVIDER_MAP[providerLabel];
+    if (!mapped) {
+      setErrorMessage(`${providerLabel} sign up is coming soon.`);
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    setInfoMessage(null);
+
+    try {
+      const redirectTo =
+        typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: mapped.provider,
+        options: {
+          redirectTo,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Supabase handles redirect.
+    } catch (error) {
+      setIsLoading(false);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Unable to continue with Google. Please try again.',
+      );
+    }
   };
 
   return (

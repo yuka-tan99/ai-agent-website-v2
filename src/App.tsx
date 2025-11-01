@@ -52,6 +52,7 @@ interface SectionData {
     actionSteps: string[];
     tips: string[];
   };
+  cards?: SectionCard[];
   elaborateContent?: {
     overview: string;
     advancedTechniques: {
@@ -71,6 +72,29 @@ interface SectionData {
   accentColor: string;
   isPlaceholder?: boolean;
 }
+
+type CardIconKey = 'Target' | 'Sparkles' | 'TrendingUp' | 'Rocket' | 'Compass' | 'Zap' | 'User' | 'Heart' | 'FolderKanban';
+
+interface SectionCard {
+  title: string;
+  content: string;
+  icon?: CardIconKey;
+}
+
+const CARD_ICON_KEYS: readonly CardIconKey[] = [
+  'Target',
+  'Sparkles',
+  'TrendingUp',
+  'Rocket',
+  'Compass',
+  'Zap',
+  'User',
+  'Heart',
+  'FolderKanban',
+] as const;
+
+const isCardIconKey = (value: unknown): value is CardIconKey =>
+  typeof value === 'string' && CARD_ICON_KEYS.includes(value as CardIconKey);
 
 type PlanStatus = 'idle' | 'pending' | 'in-progress' | 'complete';
 
@@ -106,6 +130,7 @@ type GeneratedSectionPayload = {
   cards?: Array<{
     title?: string;
     content?: string;
+    icon?: CardIconKey;
   }>;
   learnMoreContent?: {
     description?: string;
@@ -1249,10 +1274,12 @@ export default function App({ initialView }: AppProps = {}) {
             }
           : undefined;
 
-        const defaultCards = section.cards ?? [];
-        const generatedCards = Array.isArray(generated.cards) ? generated.cards : [];
-        const mergedCards = defaultCards.length
-          ? defaultCards.map((card, idx) => {
+        const defaultCards: SectionCard[] = section.cards ?? [];
+        const generatedCards: Array<{ title?: string; content?: string; icon?: CardIconKey }> = Array.isArray(generated.cards)
+          ? generated.cards
+          : [];
+        const mergedCards: SectionCard[] = defaultCards.length
+          ? defaultCards.map((card: SectionCard, idx: number) => {
               const generatedCard = generatedCards[idx];
               const title = typeof generatedCard?.title === 'string' && generatedCard.title.trim().length
                 ? generatedCard.title.trim()
@@ -1260,15 +1287,18 @@ export default function App({ initialView }: AppProps = {}) {
               const content = typeof generatedCard?.content === 'string' && generatedCard.content.trim().length
                 ? generatedCard.content.trim()
                 : card.content;
-              return { ...card, title, content };
+              const icon = isCardIconKey(generatedCard?.icon)
+                ? generatedCard.icon
+                : card.icon;
+              return { ...card, title, content, icon };
             })
           : generatedCards
-            .filter((card): card is { title?: string; content?: string } => Boolean(card))
+            .filter((card): card is { title?: string; content?: string; icon?: CardIconKey } => Boolean(card))
             .slice(0, 3)
-            .map((card) => ({
+            .map((card): SectionCard => ({
               title: typeof card.title === 'string' && card.title.trim().length ? card.title.trim() : 'Key Insight',
               content: typeof card.content === 'string' && card.content.trim().length ? card.content.trim() : '',
-              icon: 'Sparkles' as SectionCard['icon'],
+              icon: isCardIconKey(card.icon) ? card.icon : 'Sparkles',
             }));
 
         return {

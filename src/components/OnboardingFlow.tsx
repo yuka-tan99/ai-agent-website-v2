@@ -2,7 +2,16 @@ import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { ChevronLeft } from "lucide-react";
+import {
+  ChevronLeft,
+  Sparkles,
+  Target,
+  Heart,
+  Zap,
+  TrendingUp,
+  Users,
+  Flower2,
+} from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { BecomeFamousLogo } from "./BecomeFamousLogo";
 
@@ -29,6 +38,44 @@ interface Question {
   type: "single" | "multiple";
   options: Option[];
 }
+
+const contentTips = [
+  {
+    text: "Pro tip: Your niche doesn't need to be perfect from day one. The best creators discover their niche through experimentation, not overthinking.",
+    icon: Sparkles,
+    gradient: "from-purple-200 to-pink-200",
+  },
+  {
+    text: "Quick insight: Consistency beats perfection every time. A 'good enough' post today is worth more than a perfect post next week.",
+    icon: Target,
+    gradient: "from-sky-200 to-blue-200",
+  },
+  {
+    text: "Creator secret: Your most engaged followers care more about authenticity than production quality. Show up as yourself!",
+    icon: Heart,
+    gradient: "from-rose-200 to-pink-200",
+  },
+  {
+    text: "Growth hack: The algorithm loves engagement velocity. Posts that get early comments and saves get pushed to more people.",
+    icon: Zap,
+    gradient: "from-amber-200 to-yellow-200",
+  },
+  {
+    text: "Hidden truth: 80% of your growth comes from 20% of your content. Track what resonates and double down on those topics.",
+    icon: TrendingUp,
+    gradient: "from-emerald-200 to-teal-200",
+  },
+  {
+    text: "Monetization tip: Your first 1,000 true fans can support you better than 100,000 passive followers. Build community, not just audience.",
+    icon: Users,
+    gradient: "from-violet-200 to-purple-200",
+  },
+  {
+    text: "Burnout prevention: Schedule rest weeks just like you schedule content. Sustainable creators outlast passionate ones who burn out.",
+    icon: Flower2,
+    gradient: "from-cyan-200 to-teal-200",
+  },
+];
 
 const questions: Question[] = [
   {
@@ -771,6 +818,11 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const [expandedOptions, setExpandedOptions] = useState<string[]>([]);
   const [textInputs, setTextInputs] = useState<TextInputs>({});
+  const [showAdviceBox, setShowAdviceBox] = useState(false);
+  const [currentTipIndex, setCurrentTipIndex] = useState(0);
+  const [tipSequenceCount, setTipSequenceCount] = useState(0);
+  const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
+  const [pendingAnswers, setPendingAnswers] = useState<OnboardingAnswer[] | null>(null);
 
   const question = questions[currentQuestion];
   const progress = ((currentQuestion + 1) / questions.length) * 100;
@@ -942,7 +994,18 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
     }
 
     const nextIndex = currentQuestion + 1;
-    moveToQuestion(nextIndex, updatedAnswers);
+    const adviceQuestions = [1, 4, 6, 9, 11, 14, 16];
+
+    if (adviceQuestions.includes(currentQuestion)) {
+      const nextTipIndex = tipSequenceCount % contentTips.length;
+      setCurrentTipIndex(nextTipIndex);
+      setTipSequenceCount((prev) => prev + 1);
+      setShowAdviceBox(true);
+      setPendingNextIndex(nextIndex);
+      setPendingAnswers(updatedAnswers);
+    } else {
+      moveToQuestion(nextIndex, updatedAnswers);
+    }
   };
 
   const handleBack = () => {
@@ -953,6 +1016,19 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
 
     const prevIndex = currentQuestion - 1;
     moveToQuestion(prevIndex);
+  };
+
+  const handleCloseAdviceBox = () => {
+    setShowAdviceBox(false);
+    const targetIndex = pendingNextIndex;
+    const dataset = pendingAnswers ?? answers;
+
+    setPendingNextIndex(null);
+    setPendingAnswers(null);
+
+    if (typeof targetIndex === "number") {
+      moveToQuestion(targetIndex, dataset);
+    }
   };
 
   const canProceed = () => {
@@ -994,6 +1070,138 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
           }}
         />
       ))}
+
+      <AnimatePresence>
+        {showAdviceBox && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ backgroundColor: "rgba(0, 0, 0, 0.3)" }}
+            onClick={handleCloseAdviceBox}
+          >
+            <motion.div
+              initial={{ scale: 0.8, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.8, y: 20, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              onClick={(event) => event.stopPropagation()}
+              className="relative max-w-md w-full p-8 rounded-3xl shadow-2xl backdrop-blur-lg"
+              style={{
+                background:
+                  "linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(251, 245, 253, 0.95) 100%)",
+                border: "2px solid rgba(158, 93, 171, 0.2)",
+              }}
+            >
+              {(() => {
+                const activeTip =
+                  contentTips[currentTipIndex] ?? contentTips[0];
+                const gradient = activeTip?.gradient ?? "from-purple-200 to-pink-200";
+                const IconComponent = activeTip?.icon ?? Sparkles;
+                const tipText = activeTip?.text ?? "";
+
+                return (
+                  <>
+                    <motion.div
+                      className="absolute -top-4 -right-4 w-10 h-10 rounded-full flex items-center justify-center shadow-lg"
+                      style={{
+                        background:
+                          "linear-gradient(135deg, #8FD9FB 0%, #B8E7FF 100%)",
+                      }}
+                      animate={{
+                        scale: [1, 1.15, 1],
+                        rotate: [0, 10, -10, 0],
+                      }}
+                      transition={{
+                        duration: 3,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    >
+                      <Sparkles className="w-5 h-5 text-white" />
+                    </motion.div>
+
+                    <div className="text-center mb-6">
+                      <motion.div
+                        initial={{ scale: 0, rotate: -180 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        transition={{
+                          delay: 0.1,
+                          type: "spring",
+                          stiffness: 200,
+                          damping: 15,
+                        }}
+                        className="inline-block mb-4 relative"
+                      >
+                        <div
+                          className={`absolute inset-0 bg-gradient-to-br ${gradient} rounded-3xl blur-xl opacity-40`}
+                        />
+                        <div
+                          className={`relative w-20 h-20 rounded-3xl flex items-center justify-center shadow-lg bg-gradient-to-br ${gradient}`}
+                        >
+                          <motion.div
+                            animate={{
+                              rotate: [0, 5, -5, 0],
+                              scale: [1, 1.05, 1],
+                            }}
+                            transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: "easeInOut",
+                              repeatDelay: 1,
+                            }}
+                          >
+                            <IconComponent
+                              className="w-10 h-10"
+                              style={{ color: "#9E5DAB" }}
+                              strokeWidth={2.5}
+                            />
+                          </motion.div>
+                        </div>
+                      </motion.div>
+
+                      <motion.h3
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="mb-3"
+                        style={{ color: "#9E5DAB" }}
+                      >
+                        Quick Creator Tip!
+                      </motion.h3>
+
+                      <motion.p
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.4 }}
+                        className="text-foreground/80 leading-relaxed"
+                      >
+                        {tipText}
+                      </motion.p>
+                    </div>
+                  </>
+                );
+              })()}
+
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button
+                  onClick={handleCloseAdviceBox}
+                  className="w-full rounded-full shadow-lg"
+                  style={{ backgroundColor: "#9E5DAB", color: "white" }}
+                >
+                  Got it! Let's continue
+                </Button>
+              </motion.div>
+
+              <div
+                className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full blur-2xl opacity-30 pointer-events-none"
+                style={{ backgroundColor: "#EBD7DC" }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <ScrollArea className="h-screen">
         <div className="max-w-6xl mx-auto px-6 py-8 relative z-10">
@@ -1372,7 +1580,9 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
             transition={{ delay: 0.3 }}
           >
             <Button
-              onClick={handleNext}
+              onClick={() => {
+                void handleNext();
+              }}
               disabled={!canProceed()}
               className="w-72 py-7 rounded-full text-lg shadow-xl transition-all duration-300"
               style={{

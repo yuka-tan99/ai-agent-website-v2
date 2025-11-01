@@ -65,6 +65,26 @@ type UsageSeriesPoint = {
   aiMessages: number;
 };
 
+type BillingSnapshot = {
+  complimentary: {
+    active: boolean;
+    expiresAt: string | null;
+    sourceProductKey: string | null;
+  };
+  subscription: {
+    stripeSubscriptionId: string | null;
+    status: string | null;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+    latestInvoiceId: string | null;
+    priceAmountCents: number | null;
+    priceCurrency: string | null;
+    customerId: string | null;
+    trialEnd: string | null;
+  } | null;
+};
+
 interface AccountPageProps {
   onNavigateToDashboard: () => void;
   hasCompletedOnboarding?: boolean;
@@ -74,6 +94,7 @@ interface AccountPageProps {
   initialSection?: SectionId;
   profileName?: string;
   profileEmail?: string;
+  userId?: string;
   onProfileSave?: (payload: { name: string; email: string }) => Promise<void>;
   profileSaving?: boolean;
   profileError?: string | null;
@@ -91,6 +112,7 @@ export function AccountPage({
   initialSection = 'usage',
   profileName: profileNameProp,
   profileEmail: profileEmailProp,
+  userId,
   onProfileSave,
   profileSaving = false,
   profileError,
@@ -128,6 +150,44 @@ export function AccountPage({
   const [billingOpen, setBillingOpen] = useState(false);
   const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [scheduleSessionOpen, setScheduleSessionOpen] = useState(false);
+  const [billingSnapshot, setBillingSnapshot] = useState<BillingSnapshot | null>(null);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingActionLoading, setBillingActionLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
+  const [billingMessage, setBillingMessage] = useState<string | null>(null);
+
+  const formatDateDisplay = (value: string | null | undefined) => {
+    if (!value) return "—";
+    try {
+      return new Date(value).toLocaleDateString(undefined, {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return "—";
+    }
+  };
+
+  const formatCurrencyDisplay = (
+    amountCents: number | null | undefined,
+    currency: string | null | undefined,
+  ) => {
+    if (amountCents == null) return "";
+    const code = (currency ?? "usd").toUpperCase();
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: code,
+      }).format(amountCents / 100);
+    } catch {
+      const symbol = code === "USD" ? "$" : `${code} `;
+      return `${symbol}${(amountCents / 100).toFixed(2)}`;
+    }
+  };
+
+  const isSubscriptionActive = (status: string | null | undefined) =>
+    status ? ["active", "trialing", "past_due"].includes(status) : false;
   
   // Form states
   const [email, setEmail] = useState(profileEmailProp ?? '');
@@ -227,6 +287,188 @@ export function AccountPage({
       setUsageLoading(false);
     }
   }, [usageLoading, getAuthHeaders]);
+
+  const fetchBillingSnapshot = useCallback(async () => {
+    if (billingLoading) return;
+    setBillingLoading(true);
+    setBillingError(null);
+    try {
+      let headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+
+      if (typeof getAuthHeaders === "function") {
+        try {
+          headers = { ...headers, ...(await getAuthHeaders()) };
+        } catch (authError) {
+          console.warn("[AccountPage] Failed to obtain auth headers", authError);
+        }
+      }
+
+      const response = await fetch("/api/subscription/status", {
+        credentials: "include",
+        headers,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setBillingSnapshot(null);
+          setBillingError("Please sign in to manage billing.");
+          return;
+        }
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+
+      const data = (await response.json()) as BillingSnapshot;
+      setBillingSnapshot(data);
+      setBillingMessage(null);
+    } catch (error) {
+      console.error("[AccountPage] Failed to load billing snapshot", error);
+      setBillingError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load subscription details.",
+      );
+    } finally {
+      setBillingLoading(false);
+    }
+  }, [billingLoading, getAuthHeaders]);
+
+  const performBillingAction = useCallback(
+    async (endpoint: string) => {
+      setBillingActionLoading(true);
+      setBillingError(null);
+      setBillingMessage(null);
+      try {
+        let headers: Record<string, string> = {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        };
+
+        if (typeof getAuthHeaders === "function") {
+          try {
+            headers = { ...headers, ...(await getAuthHeaders()) };
+          } catch (authError) {
+            console.warn(
+              "[AccountPage] Failed to obtain auth headers",
+              authError,
+            );
+          }
+        }
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          credentials: "include",
+          headers,
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          setBillingError(
+            (data && typeof data.error === "string")
+              ? data.error
+              : "Unable to update subscription.",
+          );
+          return;
+        }
+
+        if (data?.message) {
+          setBillingMessage(data.message);
+        }
+
+        if (data?.blocked) {
+          if (data?.snapshot) {
+            setBillingSnapshot(data.snapshot as BillingSnapshot);
+          }
+          return;
+        }
+
+        if (data?.snapshot) {
+          setBillingSnapshot(data.snapshot as BillingSnapshot);
+        } else {
+          await fetchBillingSnapshot();
+        }
+      } catch (error) {
+        console.error("[AccountPage] Billing action failed", error);
+        setBillingError(
+          error instanceof Error
+            ? error.message
+            : "Unable to update subscription.",
+        );
+      } finally {
+        setBillingActionLoading(false);
+      }
+    },
+    [fetchBillingSnapshot, getAuthHeaders],
+  );
+
+  const handleCancelSubscription = useCallback(() => {
+    return performBillingAction("/api/subscription/cancel");
+  }, [performBillingAction]);
+
+  const handleResumeSubscription = useCallback(() => {
+    return performBillingAction("/api/subscription/resume");
+  }, [performBillingAction]);
+
+  const handleStartSubscription = useCallback(async () => {
+    if (!userId) {
+      setBillingError("You need to be signed in to start a subscription.");
+      return;
+    }
+
+    setBillingActionLoading(true);
+    setBillingError(null);
+    setBillingMessage(null);
+
+    try {
+      let headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      };
+
+      if (typeof getAuthHeaders === "function") {
+        try {
+          headers = { ...headers, ...(await getAuthHeaders()) };
+        } catch (authError) {
+          console.warn("[AccountPage] Failed to obtain auth headers", authError);
+        }
+      }
+
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ productKey: "ai_subscription", userId }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setBillingError(
+          (data && typeof data.error === "string")
+            ? data.error
+            : "Unable to start subscription checkout.",
+        );
+        return;
+      }
+
+      if (data?.url) {
+        window.location.href = data.url as string;
+      } else {
+        setBillingMessage("Checkout session created. Please follow the prompts to subscribe.");
+      }
+    } catch (error) {
+      console.error("[AccountPage] Failed to start subscription", error);
+      setBillingError(
+        error instanceof Error
+          ? error.message
+          : "Unable to start subscription checkout.",
+      );
+    } finally {
+      setBillingActionLoading(false);
+    }
+  }, [getAuthHeaders, userId]);
 
   // Mock expert availability data - replace with API call in production
   const expertAvailability: Record<string, Record<string, string[]>> = {
@@ -328,6 +570,11 @@ export function AccountPage({
       void loadUsageAnalytics();
     }
   }, [usageSeries, usageLoading, usageError, loadUsageAnalytics]);
+
+  useEffect(() => {
+    if (!billingOpen) return;
+    void fetchBillingSnapshot();
+  }, [billingOpen, fetchBillingSnapshot]);
 
   const displayName = useMemo(() => {
     const trimmed = name?.trim();

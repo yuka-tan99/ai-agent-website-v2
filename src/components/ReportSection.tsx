@@ -18,7 +18,7 @@ import { Skeleton } from './ui/skeleton';
 
 type CardIconKey = 'Target' | 'Sparkles' | 'TrendingUp' | 'Rocket' | 'Compass' | 'Zap' | 'User' | 'Heart' | 'FolderKanban';
 
-const CARD_ICON_MAP: Record<CardIconKey, ComponentType<{ className?: string }>> = {
+const CARD_ICON_MAP: Record<CardIconKey, ComponentType<{ className?: string; color?: string }>> = {
   Target,
   Sparkles,
   TrendingUp,
@@ -180,7 +180,7 @@ export function ReportSection({
                               className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
                               style={{ backgroundColor: `${accentColor}20` }}
                             >
-                              <IconComponent className="w-5 h-5" style={{ color: accentColor }} />
+                            <IconComponent className="w-5 h-5" color={accentColor} />
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold" style={{ color: accentColor }}>

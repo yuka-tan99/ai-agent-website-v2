@@ -326,6 +326,7 @@ async function embedChunks(chunks: string[]): Promise<number[][]> {
   for (const chunk of chunks) {
     const response = await embedClient!.embedContent({
       content: {
+        role: "user",
         parts: [{ text: chunk }],
       },
     });

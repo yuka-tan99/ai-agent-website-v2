@@ -444,8 +444,13 @@ export async function syncSubscriptionState(
   const currency =
     typeof price !== "string" ? price?.currency ?? "usd" : "usd";
 
-  const periodStart = toDate(subscription.current_period_start);
-  const periodEnd = toDate(subscription.current_period_end);
+  const periodData = subscription as Stripe.Subscription & {
+    current_period_start?: number | null;
+    current_period_end?: number | null;
+  };
+
+  const periodStart = toDate(periodData.current_period_start ?? null);
+  const periodEnd = toDate(periodData.current_period_end ?? null);
 
   await upsertSubscriptionPeriod({
     userId,

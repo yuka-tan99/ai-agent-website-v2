@@ -172,6 +172,15 @@ export async function buildSubscriptionSnapshot(
     return null;
   }
 
+  const periodData = subscription as Stripe.Subscription & {
+    current_period_start?: number | null;
+    current_period_end?: number | null;
+    trial_end?: number | null;
+  };
+  const currentPeriodStartUnix = periodData.current_period_start ?? null;
+  const currentPeriodEndUnix = periodData.current_period_end ?? null;
+  const trialEndUnix = periodData.trial_end ?? null;
+
   const price = subscription.items.data[0]?.price ?? null;
   const amountCents =
     typeof price !== "string"
@@ -185,11 +194,11 @@ export async function buildSubscriptionSnapshot(
     stripeSubscriptionId: subscription.id,
     status: subscription.status ?? null,
     cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
-    currentPeriodStart: subscription.current_period_start
-      ? new Date(subscription.current_period_start * 1000).toISOString()
+    currentPeriodStart: currentPeriodStartUnix
+      ? new Date(currentPeriodStartUnix * 1000).toISOString()
       : null,
-    currentPeriodEnd: subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000).toISOString()
+    currentPeriodEnd: currentPeriodEndUnix
+      ? new Date(currentPeriodEndUnix * 1000).toISOString()
       : null,
     latestInvoiceId:
       typeof subscription.latest_invoice === "string"
@@ -202,8 +211,8 @@ export async function buildSubscriptionSnapshot(
       typeof subscription.customer === "string"
         ? subscription.customer
         : subscription.customer?.id ?? null,
-    trialEnd: subscription.trial_end
-      ? new Date(subscription.trial_end * 1000).toISOString()
+    trialEnd: trialEndUnix
+      ? new Date(trialEndUnix * 1000).toISOString()
       : null,
   };
 }

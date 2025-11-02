@@ -35,7 +35,7 @@ interface Option {
 interface Question {
   id: number;
   question: string;
-  type: "single" | "multiple";
+  type: "multiple";
   options: Option[];
 }
 
@@ -81,7 +81,7 @@ const questions: Question[] = [
   {
     id: 1,
     question: "who are you creating as?",
-    type: "single",
+    type: "multiple",
     options: [
       { id: "personal", label: "personal brand or influencer" },
       {
@@ -180,7 +180,7 @@ const questions: Question[] = [
     id: 2,
     question:
       "what's your current follower count across all platforms combined?",
-    type: "single",
+    type: "multiple",
     options: [
       { id: "0-1k", label: "0-1,000 (building from zero)" },
       { id: "1k-10k", label: "1,000-10,000 (early growth phase)" },
@@ -392,7 +392,7 @@ const questions: Question[] = [
     id: 4,
     question:
       "how long have you been creating content or building your brand?",
-    type: "single",
+    type: "multiple",
     options: [
       { id: "not-started", label: "haven't started yet" },
       { id: "less-3mo", label: "less than 3 months" },
@@ -408,7 +408,7 @@ const questions: Question[] = [
     id: 5,
     question:
       "do you like planning things ahead or more posting in the moment?",
-    type: "single",
+    type: "multiple",
     options: [
       { id: "plan", label: "i like to plan content in advance" },
       { id: "moment", label: "i prefer posting in the moment" },
@@ -738,7 +738,7 @@ const questions: Question[] = [
   {
     id: 14,
     question: "realistically, how many hours per week can you dedicate to this?",
-    type: "single",
+    type: "multiple",
     options: [
       { id: "1-3", label: "1-3 hours" },
       { id: "3-5", label: "3-5 hours" },
@@ -874,51 +874,63 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
   };
 
   const handleCircleClick = (optionId: string, option: Option) => {
-    if (question.type === "single") {
-      if (selectedOptions.includes(optionId)) {
-        setSelectedOptions([]);
-        setExpandedOptions([]);
-      } else {
-        setSelectedOptions([optionId]);
-        if (option.subOptions?.length) {
-          setExpandedOptions([optionId]);
-        } else {
-          setExpandedOptions([]);
-        }
-      }
-    } else {
-      if (selectedOptions.includes(optionId)) {
-        setSelectedOptions(selectedOptions.filter((id) => id !== optionId));
-        if (option.subOptions?.length) {
-          setExpandedOptions(
-            expandedOptions.filter((id) => id !== optionId),
-          );
-        }
-      } else {
-        setSelectedOptions([...selectedOptions, optionId]);
-        if (option.subOptions?.length) {
+    const childSelections = selectedOptions.filter((id) =>
+      id.startsWith(`${optionId}-`),
+    );
+    const hasChildSelected = childSelections.length > 0;
+    const isDirectlySelected = selectedOptions.includes(optionId);
+
+    if (isDirectlySelected || hasChildSelected) {
+      const idsToRemove = new Set<string>([optionId, ...childSelections]);
+      setSelectedOptions(selectedOptions.filter((id) => !idsToRemove.has(id)));
+
+      if (option.subOptions?.length) {
+        if (!expandedOptions.includes(optionId)) {
           setExpandedOptions([...expandedOptions, optionId]);
         }
+      } else {
+        setExpandedOptions(expandedOptions.filter((id) => id !== optionId));
       }
+
+      setTextInputs((prev) => {
+        let next = prev;
+        for (const key of idsToRemove) {
+          if (key in next) {
+            if (next === prev) next = { ...prev };
+            delete next[key];
+          }
+        }
+        return next;
+      });
+      return;
+    }
+
+    setSelectedOptions((prev) =>
+      prev.includes(optionId) ? prev : [...prev, optionId],
+    );
+    if (option.subOptions?.length && !expandedOptions.includes(optionId)) {
+      setExpandedOptions([...expandedOptions, optionId]);
     }
   };
 
   const handleSubOptionClick = (parentId: string, subOptionId: string) => {
     const fullId = `${parentId}-${subOptionId}`;
 
-    if (question.type === "single") {
-      if (selectedOptions.includes(fullId)) {
-        setSelectedOptions([parentId]);
-      } else {
-        setSelectedOptions([fullId]);
-      }
+    if (selectedOptions.includes(fullId)) {
+      setSelectedOptions(selectedOptions.filter((id) => id !== fullId));
+      setTextInputs((prev) => {
+        if (!(fullId in prev)) return prev;
+        const next = { ...prev };
+        delete next[fullId];
+        return next;
+      });
     } else {
-      if (selectedOptions.includes(fullId)) {
-        setSelectedOptions(
-          selectedOptions.filter((id) => id !== fullId),
-        );
-      } else {
-        setSelectedOptions([...selectedOptions, fullId]);
+      const updatedSelections = selectedOptions.includes(parentId)
+        ? [...selectedOptions, fullId]
+        : [...selectedOptions, parentId, fullId];
+      setSelectedOptions(Array.from(new Set(updatedSelections)));
+      if (!expandedOptions.includes(parentId)) {
+        setExpandedOptions([...expandedOptions, parentId]);
       }
     }
   };
@@ -1272,9 +1284,7 @@ export function OnboardingFlow({ onComplete, onBack }: OnboardingFlowProps) {
               {question.question}
             </h2>
             <p className="text-sm" style={{ color: "#6b6b6b" }}>
-              {question.type === "single"
-                ? "select one"
-                : "select all that apply"}
+              select all that apply
             </p>
           </motion.div>
 

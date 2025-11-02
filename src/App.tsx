@@ -348,7 +348,12 @@ export default function App({ initialView }: AppProps = {}) {
   const answersArrayToRecord = useCallback((answers: OnboardingAnswer[]) => {
     const record: Record<string, unknown> = {};
     for (const entry of answers) {
-      record[`q${entry.questionId}`] = entry.answer;
+      const value = Array.isArray(entry.answer)
+        ? entry.answer
+        : entry.answer != null
+          ? [entry.answer]
+          : [];
+      record[`q${entry.questionId}`] = value;
     }
     return record;
   }, []);

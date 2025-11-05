@@ -31,7 +31,8 @@ import {
   MessageSquare,
   Video,
   Timer,
-  Activity
+  Activity,
+  Loader2
 } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
 import { Card } from './ui/card';
@@ -86,7 +87,7 @@ type BillingSnapshot = {
 };
 
 interface AccountPageProps {
-  onNavigateToDashboard: () => void;
+  onNavigateToDashboard: () => void | Promise<void>;
   hasCompletedOnboarding?: boolean;
   hasPaid?: boolean;
   onBecomeFamousNow?: () => void;
@@ -101,6 +102,7 @@ interface AccountPageProps {
   onChangePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   passwordUpdating?: boolean;
   getAuthHeaders?: () => Promise<Record<string, string>>;
+  navigateToDashboardLoading?: boolean;
 }
 
 export function AccountPage({ 
@@ -119,8 +121,10 @@ export function AccountPage({
   onChangePassword,
   passwordUpdating = false,
   getAuthHeaders,
+  navigateToDashboardLoading = false,
 }: AccountPageProps) {
   const handleReportClick = () => {
+    if (navigateToDashboardLoading) return;
     if (hasCompletedOnboarding && hasPaid) {
       onNavigateToDashboard();
     } else {
@@ -156,7 +160,7 @@ export function AccountPage({
   const [billingError, setBillingError] = useState<string | null>(null);
   const [billingMessage, setBillingMessage] = useState<string | null>(null);
 
-  const formatDateDisplay = (value: string | null | undefined) => {
+  const formatDateDisplay = useCallback((value: string | null | undefined) => {
     if (!value) return "—";
     try {
       return new Date(value).toLocaleDateString(undefined, {
@@ -167,7 +171,7 @@ export function AccountPage({
     } catch {
       return "—";
     }
-  };
+  }, []);
 
   const formatCurrencyDisplay = (
     amountCents: number | null | undefined,
@@ -186,8 +190,11 @@ export function AccountPage({
     }
   };
 
-  const isSubscriptionActive = (status: string | null | undefined) =>
-    status ? ["active", "trialing", "past_due"].includes(status) : false;
+  const isSubscriptionActive = useCallback(
+    (status: string | null | undefined) =>
+      status ? ["active", "trialing", "past_due"].includes(status) : false,
+    [],
+  );
   
   // Form states
   const [email, setEmail] = useState(profileEmailProp ?? '');
@@ -531,6 +538,9 @@ export function AccountPage({
   };
 
   const handleNavClick = (item: typeof navigationItems[0]) => {
+    if (item.id === 'report' && navigateToDashboardLoading) {
+      return;
+    }
     if (item.action) {
       item.action();
     } else {
@@ -571,10 +581,15 @@ export function AccountPage({
     }
   }, [usageSeries, usageLoading, usageError, loadUsageAnalytics]);
 
+useEffect(() => {
+  if (!billingOpen) return;
+  void fetchBillingSnapshot();
+}, [billingOpen, fetchBillingSnapshot]);
+
   useEffect(() => {
-    if (!billingOpen) return;
+    if (billingSnapshot || billingLoading) return;
     void fetchBillingSnapshot();
-  }, [billingOpen, fetchBillingSnapshot]);
+  }, [billingSnapshot, billingLoading, fetchBillingSnapshot]);
 
   const displayName = useMemo(() => {
     const trimmed = name?.trim();
@@ -619,6 +634,258 @@ export function AccountPage({
 
   const resolvedTotals =
     usageSeries && usageSeries.length ? usageTotals : fallbackTotals;
+
+  const accessDetails = useMemo(() => {
+    const MS_PER_DAY = 86_400_000;
+    const clamp = (value: number) => Math.min(Math.max(value, 0), 1);
+    const now = Date.now();
+
+    const defaultDetails = {
+      isLoading: billingLoading && !billingSnapshot,
+      hasAccess: false,
+      badgeLabel: billingLoading ? 'Loading…' : 'Inactive',
+      badgeBackground: billingLoading ? '#F3E8F740' : '#E5E7EB',
+      badgeColor: billingLoading ? '#9E5DAB' : '#6B7280',
+      accentColor: billingLoading ? '#9E5DAB' : '#E5E7EB',
+      percentRemaining: 0,
+      percentLabel: billingLoading ? '--' : '0%',
+      circleSubtitle: billingLoading ? 'Checking…' : 'No access',
+      daysSummaryValue: billingLoading ? '—' : '0',
+      daysSummaryCaption: billingLoading ? 'Checking status' : 'days remaining',
+      statusLine: billingLoading
+        ? 'Checking your access status…'
+        : 'No active chat access.',
+      helperLine: billingLoading
+        ? null
+        : 'Unlock AI Mentor to start chatting instantly.',
+    };
+
+    if (!billingSnapshot) {
+      return defaultDetails;
+    }
+
+    const parseDate = (value: string | null | undefined): Date | null => {
+      if (!value) return null;
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
+
+    type AccessEntry = {
+      type: 'subscription' | 'complimentary';
+      startDate: Date | null;
+      endDate: Date | null;
+      label: string;
+      statusLine: string;
+      helperLine: string | null;
+      accentColor: string;
+      badgeBackground: string;
+      badgeColor: string;
+      isActive: boolean;
+    };
+
+    const entries: AccessEntry[] = [];
+    const { subscription, complimentary } = billingSnapshot;
+
+    if (subscription) {
+      const endDate = parseDate(subscription.currentPeriodEnd);
+      let startDate = parseDate(subscription.currentPeriodStart);
+      if (!startDate && endDate) {
+        const fallback = new Date(endDate);
+        fallback.setMonth(fallback.getMonth() - 1);
+        startDate = fallback;
+      }
+
+      const subscriptionActive = isSubscriptionActive(subscription.status);
+      const isActive =
+        Boolean(endDate && endDate.getTime() > now && subscriptionActive) ||
+        Boolean(endDate && endDate.getTime() > now && !subscription.cancelAtPeriodEnd);
+
+      const endFormatted = endDate ? formatDateDisplay(endDate.toISOString()) : '—';
+
+      let statusLine = 'Subscription status unavailable.';
+      if (endDate) {
+        if (subscription.cancelAtPeriodEnd) {
+          statusLine = `Expires: ${endFormatted}`;
+        } else if (subscriptionActive) {
+          statusLine = `Renews: ${endFormatted}`;
+        } else {
+          statusLine = `Expired: ${endFormatted}`;
+        }
+      }
+
+      const helperLine = subscription.cancelAtPeriodEnd
+        ? 'Subscription will end after the current billing cycle.'
+        : null;
+
+      entries.push({
+        type: 'subscription',
+        startDate,
+        endDate,
+        label: isActive
+          ? subscription.cancelAtPeriodEnd
+            ? 'Active (ends soon)'
+            : 'Active'
+          : endDate && endDate.getTime() > now
+            ? subscription.cancelAtPeriodEnd
+              ? 'Active (ends soon)'
+              : 'Active'
+            : 'Inactive',
+        statusLine,
+        helperLine,
+        accentColor: '#9E5DAB',
+        badgeBackground: '#9E5DAB20',
+        badgeColor: '#9E5DAB',
+        isActive: Boolean(endDate && endDate.getTime() > now),
+      });
+    }
+
+    if (complimentary?.expiresAt) {
+      const endDate = parseDate(complimentary.expiresAt);
+      let startDate: Date | null = null;
+      if (endDate) {
+        startDate = new Date(endDate);
+        startDate.setMonth(startDate.getMonth() - 3);
+      }
+
+      const isActive = Boolean(complimentary.active && endDate && endDate.getTime() > now);
+      const endFormatted = endDate ? formatDateDisplay(endDate.toISOString()) : '—';
+
+      entries.push({
+        type: 'complimentary',
+        startDate,
+        endDate,
+        label: isActive ? 'Complimentary' : 'Complimentary (expired)',
+        statusLine: endDate
+          ? `${isActive ? 'Expires' : 'Expired'}: ${endFormatted}`
+          : 'Complimentary access window unavailable.',
+        helperLine: isActive
+          ? 'Unlocked with your personalized report purchase.'
+          : null,
+        accentColor: '#6BA3D1',
+        badgeBackground: '#6BA3D120',
+        badgeColor: '#6BA3D1',
+        isActive,
+      });
+    }
+
+    if (!entries.length) {
+      return {
+        ...defaultDetails,
+        isLoading: billingLoading,
+      };
+    }
+
+    let chosen: AccessEntry | null = null;
+    const activeSubscription = entries.find(
+      (entry) => entry.type === 'subscription' && entry.isActive,
+    );
+    if (activeSubscription) {
+      chosen = activeSubscription;
+    } else {
+      const activeEntries = entries.filter((entry) => entry.isActive && entry.endDate);
+      if (activeEntries.length) {
+        activeEntries.sort(
+          (a, b) => (b.endDate!.getTime() - a.endDate!.getTime()),
+        );
+        chosen = activeEntries[0];
+      } else {
+        entries.sort(
+          (a, b) => (b.endDate?.getTime() ?? 0) - (a.endDate?.getTime() ?? 0),
+        );
+        chosen = entries[0];
+      }
+    }
+
+    if (!chosen) {
+      return {
+        ...defaultDetails,
+        isLoading: billingLoading,
+      };
+    }
+
+    const endDate = chosen.endDate;
+    const startDate = chosen.startDate;
+    const msRemaining = endDate ? endDate.getTime() - now : null;
+    const hasAccess = Boolean(endDate && msRemaining !== null && msRemaining > 0);
+
+    let percentRemaining = 0;
+    if (endDate && startDate && msRemaining !== null) {
+      const totalMs = endDate.getTime() - startDate.getTime();
+      if (totalMs > 0) {
+        percentRemaining = clamp(msRemaining / totalMs);
+      }
+    } else if (hasAccess) {
+      percentRemaining = 1;
+    }
+
+    const percentLabel = `${Math.round(percentRemaining * 100)}%`;
+
+    let circleSubtitle = 'No access';
+    if (msRemaining !== null) {
+      if (msRemaining > 0) {
+        const daysLeft = Math.ceil(msRemaining / MS_PER_DAY);
+        circleSubtitle =
+          daysLeft <= 0
+            ? 'Less than 1 day left'
+            : daysLeft === 1
+              ? '1 day left'
+              : `${daysLeft} days left`;
+      } else {
+        circleSubtitle = 'Expired';
+      }
+    } else if (chosen.endDate) {
+      circleSubtitle = 'Expired';
+    }
+
+    let daysSummaryValue = '0';
+    let daysSummaryCaption = 'days remaining';
+    if (msRemaining !== null) {
+      if (msRemaining > 0) {
+        const daysLeft = Math.ceil(msRemaining / MS_PER_DAY);
+        daysSummaryValue = `${daysLeft}`;
+        daysSummaryCaption = daysLeft === 1 ? 'day remaining' : 'days remaining';
+      } else if (msRemaining === 0) {
+        daysSummaryValue = '0';
+        daysSummaryCaption = 'days remaining';
+      } else {
+        daysSummaryValue = '0';
+        daysSummaryCaption = 'days remaining';
+      }
+    } else if (!endDate) {
+      daysSummaryValue = hasAccess ? '—' : '0';
+      daysSummaryCaption = hasAccess ? 'remaining' : 'days remaining';
+    }
+
+    let helperLine = chosen.helperLine;
+    if (
+      chosen.type === 'subscription' &&
+      complimentary?.active &&
+      complimentary.expiresAt
+    ) {
+      const complimentaryFormatted = formatDateDisplay(complimentary.expiresAt);
+      if (complimentaryFormatted !== '—') {
+        helperLine =
+          helperLine ??
+          `Complimentary access active through ${complimentaryFormatted}.`;
+      }
+    }
+
+    return {
+      isLoading: billingLoading,
+      hasAccess,
+      badgeLabel: chosen.label,
+      badgeBackground: chosen.badgeBackground,
+      badgeColor: chosen.badgeColor,
+      accentColor: chosen.accentColor,
+      percentRemaining,
+      percentLabel,
+      circleSubtitle,
+      daysSummaryValue,
+      daysSummaryCaption,
+      statusLine: chosen.statusLine,
+      helperLine,
+    };
+  }, [billingSnapshot, billingLoading, formatDateDisplay, isSubscriptionActive]);
 
   const usageChartData = useMemo(() => {
     const formatter = new Intl.DateTimeFormat("en-US", {
@@ -714,10 +981,15 @@ export function AccountPage({
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item)}
+                disabled={item.id === 'report' && navigateToDashboardLoading}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                   activeSection === item.id
                     ? 'text-white'
                     : 'text-foreground hover:bg-muted'
+                } ${
+                  item.id === 'report' && navigateToDashboardLoading
+                    ? 'opacity-70 cursor-not-allowed'
+                    : ''
                 }`}
                 style={
                   activeSection === item.id
@@ -725,10 +997,16 @@ export function AccountPage({
                     : {}
                 }
               >
-                <span style={activeSection === item.id ? { color: 'white' } : { color: '#9E5DAB' }}>
-                  {item.icon}
+                <span className="flex items-center gap-3" style={{ color: activeSection === item.id ? 'white' : undefined }}>
+                  <span style={activeSection === item.id ? { color: 'white' } : { color: '#9E5DAB' }}>
+                    {item.id === 'report' && navigateToDashboardLoading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      item.icon
+                    )}
+                  </span>
+                  <span style={{ color: activeSection === item.id ? 'white' : 'black' }}>{item.label}</span>
                 </span>
-                <span>{item.label}</span>
               </button>
             ))}
           </nav>
@@ -779,10 +1057,15 @@ export function AccountPage({
                     <button
                       key={item.id}
                       onClick={() => handleNavClick(item)}
+                      disabled={item.id === 'report' && navigateToDashboardLoading}
                       className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                         activeSection === item.id
                           ? 'text-white'
                           : 'text-foreground hover:bg-muted'
+                      } ${
+                        item.id === 'report' && navigateToDashboardLoading
+                          ? 'opacity-70 cursor-not-allowed'
+                          : ''
                       }`}
                       style={
                         activeSection === item.id
@@ -790,10 +1073,16 @@ export function AccountPage({
                           : {}
                       }
                     >
-                      <span style={activeSection === item.id ? { color: 'white' } : { color: '#9E5DAB' }}>
-                        {item.icon}
+                      <span className="flex items-center gap-3" style={{ color: activeSection === item.id ? 'white' : undefined }}>
+                        <span style={activeSection === item.id ? { color: 'white' } : { color: '#9E5DAB' }}>
+                          {item.id === 'report' && navigateToDashboardLoading ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : (
+                            item.icon
+                          )}
+                        </span>
+                        <span style={{ color: activeSection === item.id ? 'white' : 'black' }}>{item.label}</span>
                       </span>
-                      <span>{item.label}</span>
                     </button>
                   ))}
                 </nav>
@@ -1426,9 +1715,9 @@ export function AccountPage({
                   <div className="flex items-start gap-4">
                     <div 
                       className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: '#9E5DAB20' }}
+                      style={{ backgroundColor: `${accessDetails.accentColor}20` }}
                     >
-                      <Timer className="w-6 h-6" style={{ color: '#9E5DAB' }} />
+                      <Timer className="w-6 h-6" style={{ color: accessDetails.accentColor }} />
                     </div>
                     <div>
                       <h3 className="mb-1">Access Time Left</h3>
@@ -1437,9 +1726,9 @@ export function AccountPage({
                   </div>
                   <Badge 
                     className="px-3 py-1" 
-                    style={{ backgroundColor: '#9E5DAB20', color: '#9E5DAB' }}
+                    style={{ backgroundColor: accessDetails.badgeBackground, color: accessDetails.badgeColor }}
                   >
-                    Active
+                    {accessDetails.badgeLabel}
                   </Badge>
                 </div>
 
@@ -1458,40 +1747,53 @@ export function AccountPage({
                         cx="64"
                         cy="64"
                         r="56"
-                        stroke="#9E5DAB"
+                        stroke={accessDetails.accentColor}
                         strokeWidth="8"
                         fill="none"
-                        strokeDasharray={`${(67 / 90) * 351.86} 351.86`}
+                        strokeDasharray={`${Math.max(0, Math.min(accessDetails.percentRemaining, 1)) * (2 * Math.PI * 56)} ${(2 * Math.PI * 56)}`}
                         strokeLinecap="round"
                       />
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-sm text-muted-foreground">74%</span>
-                      <span className="text-xs text-muted-foreground">67 days left</span>
+                      <span className="text-sm text-muted-foreground">{accessDetails.percentLabel}</span>
+                      <span className="text-xs text-muted-foreground text-center leading-tight">
+                        {accessDetails.circleSubtitle}
+                      </span>
                     </div>
                   </div>
 
                   <div className="flex-1 space-y-4 min-w-[220px]">
                     <div>
                       <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-muted-foreground">67 days</span>
-                        <span className="text-sm text-muted-foreground">remaining</span>
+                        <span className="text-muted-foreground">
+                          {accessDetails.daysSummaryValue}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {accessDetails.daysSummaryCaption}
+                        </span>
                       </div>
                       <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                         <div 
                           className="h-full rounded-full transition-all duration-500"
                           style={{ 
-                            width: '74%',
-                            background: 'linear-gradient(90deg, #9E5DAB 0%, #B481C0 100%)'
+                            width: `${Math.round(Math.max(0, Math.min(accessDetails.percentRemaining, 1)) * 100)}%`,
+                            background: accessDetails.hasAccess
+                              ? `linear-gradient(90deg, ${accessDetails.accentColor} 0%, ${accessDetails.accentColor} 100%)`
+                              : '#E5E7EB'
                           }}
                         />
                       </div>
                     </div>
                     
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="w-4 h-4" style={{ color: '#9E5DAB' }} />
-                      <span>Expires: Feb 1, 2026</span>
+                      <Clock className="w-4 h-4" style={{ color: accessDetails.accentColor }} />
+                      <span>{accessDetails.statusLine}</span>
                     </div>
+                    {accessDetails.helperLine && (
+                      <p className="text-xs text-muted-foreground">
+                        {accessDetails.helperLine}
+                      </p>
+                    )}
                   </div>
                 </div>
               </Card>

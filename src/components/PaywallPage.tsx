@@ -5,9 +5,11 @@ import { BecomeFamousLogo } from './BecomeFamousLogo';
 interface PaywallPageProps {
   onUnlock: () => void;
   onBack: () => void;
+  isProcessing?: boolean;
+  errorMessage?: string | null;
 }
 
-export function PaywallPage({ onUnlock, onBack }: PaywallPageProps) {
+export function PaywallPage({ onUnlock, onBack, isProcessing = false, errorMessage }: PaywallPageProps) {
   return (
     <div className="min-h-screen bg-white relative overflow-hidden">
       {/* Blurred Background Preview */}
@@ -112,11 +114,17 @@ export function PaywallPage({ onUnlock, onBack }: PaywallPageProps) {
           <div className="text-center">
             <Button
               onClick={onUnlock}
+              disabled={isProcessing}
               className="px-12 py-6 rounded-full w-full md:w-auto"
               style={{ backgroundColor: '#9E5DAB' }}
             >
-              Unlock Your Dashboard
+              {isProcessing ? 'Redirecting...' : 'Unlock Your Dashboard'}
             </Button>
+            {errorMessage && (
+              <p className="text-sm text-destructive mt-3">
+                {errorMessage}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground mt-4">
               One-time payment • Lifetime access • 30-day money-back guarantee
             </p>

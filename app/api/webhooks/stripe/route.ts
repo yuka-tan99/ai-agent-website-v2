@@ -350,12 +350,14 @@ async function handleCheckoutSessionCompleted(
       end,
       status: subscription?.status ?? "active",
     });
+    await markOnboardingAsPaid(admin, userId);
   } else {
     await upsertAccessGrant({
       userId,
       product,
       paymentId,
     });
+    await markOnboardingAsPaid(admin, userId);
   }
 }
 
@@ -571,6 +573,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     end,
     status: invoice.status ?? "paid",
   });
+  await markOnboardingAsPaid(admin, userId);
 }
 
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
@@ -620,6 +623,8 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     end,
     status: subscription.status,
   });
+  const admin = supabaseAdmin();
+  await markOnboardingAsPaid(admin, userId);
 }
 
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
@@ -879,5 +884,20 @@ async function upsertAccessGrant(input: AccessGrantInput) {
         error,
       );
     }
+  }
+}
+
+async function markOnboardingAsPaid(admin: ReturnType<typeof supabaseAdmin>, userId: string) {
+  try {
+    await admin
+      .from("onboarding_sessions")
+      .update({ purchase_status: "paid", claimed_at: new Date().toISOString() })
+      .eq("user_id", userId);
+  } catch (error) {
+    console.error(
+      "[subscription] Failed to update onboarding purchase status",
+      userId,
+      error,
+    );
   }
 }

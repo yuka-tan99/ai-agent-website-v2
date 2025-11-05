@@ -14,6 +14,7 @@ export const SECTION_TITLES = [
   "Revenue & Offers",
   "Binge-Worthy Content",
   "Mental Health & Sustainability",
+  "Monetization Strategies",
   "Advanced Marketing Types & Case Studies",
 ] as const;
 
@@ -63,7 +64,7 @@ export type ReportPlan = FameMetrics & {
    BOOK INTEGRATION PROMPT (RAG REFERENCE)
 --------------------------------------------- */
 const BOOK_INTEGRATION_PROMPT = `
-When generating the eight report sections, integrate relevant frameworks from your internal marketing knowledge base without naming books or authors.
+When generating the nine report sections, integrate relevant frameworks from your internal marketing knowledge base without naming books or authors.
 
 Section 1: Diagnose the main blocker and offer the first breakthrough using imperfectionism, clarity, or messaging psychology.
 Section 2: Build execution habits through a binary mindset, mini-actions, and permission to post imperfectly.
@@ -72,7 +73,8 @@ Section 4: Shape personal brand—visual and verbal identity, brand story, posit
 Section 5: Deliver marketing strategy—hooks, storytelling flow, funnel logic, and value-first positioning.
 Section 6: Establish systems—batching, scheduling, analytics, content calendars, and platform-native adaptation.
 Section 7: Support sustainability—burnout prevention, confidence loops, boundary setting, and energy management.
-Section 8: Illustrate advanced cases—luxury, celebrity, viral, and community marketing examples.
+Section 8: Engineer monetization—translate onboarding pain points into revenue plan, diversify income, and map laddered offers.
+Section 9: Illustrate advanced cases—luxury, celebrity, viral, and community marketing examples.
 
 Blend strategy with psychology and authenticity. Express concepts as your own timeless expertise—no references. Focus on clarity, progress, and achievable action that compounds into long-term influence.
 `;
@@ -138,6 +140,9 @@ ${COMMUNICATION_AND_RAG_RULES}
 Goal:
 Transform struggling creators into thriving digital entrepreneurs through personalized, actionable insight that feels obvious in hindsight.
 Focus on sustainable progress — clarity, confidence, consistency, and authentic growth.
+
+Special section guidance:
+- When producing "Monetization Strategies", anchor every recommendation in the user\'s onboarding responses (goals, audience size, platforms, time capacity, current offers). Spell out diversified revenue plays, pricing ranges, and quick validations tailored to their context.
 
 Generate a JSON-only response with fields:
 {
@@ -319,12 +324,24 @@ async function fetchExistingPlan(admin: SupabaseAdminClient, userId: string): Pr
 function buildSectionPrompt(title: SectionTitle, answers: Record<string, unknown>, metrics: FameMetrics): string {
   const serializedAnswers = JSON.stringify(answers, null, 2);
   const serializedMetrics = JSON.stringify(metrics, null, 2);
+  const monetizationDirective =
+    title === "Monetization Strategies"
+      ? `
+Specific requirements for this section:
+- Translate the onboarding answers (niche, audience size, growth stage, constraints, revenue goals) into monetization paths.
+- Provide distinct card topics covering revenue blockers, mindset shifts, and diversified income systems.
+- Every action tip, action step, and advanced move should suggest a concrete monetization experiment (offer idea, partnership, pricing test, funnel) the user can try immediately.
+- Surface at least one recurring/compounding offer (membership, subscription, retainer) and one premium/high-ticket option tied to their niche.
+`
+      : "";
   return `Generate the section titled "${title}".
 User onboarding responses:
 ${serializedAnswers}
 
 Current metrics:
 ${serializedMetrics}
+
+${monetizationDirective}
 
 Return JSON only using the structure defined in SYSTEM_PROMPT.`;
 }

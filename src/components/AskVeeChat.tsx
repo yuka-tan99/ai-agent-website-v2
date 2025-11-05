@@ -55,9 +55,19 @@ interface AskVeeChatProps {
   creatorType?: string;
   onboardingAnswers?: OnboardingAnswer[];
   userName?: string;
+  userId?: string;
+  onUpgrade?: () => void;
+  upgradeLoading?: boolean;
+  upgradeError?: string | null;
 }
 
 const SESSIONS_STORAGE_KEY = "askvee_sessions_v1";
+const FREE_USAGE_STORAGE_PREFIX = "askvee_free_usage_v1";
+
+const getFreeUsageKey = (userId?: string) => {
+  const normalized = typeof userId === "string" && userId.trim() ? userId.trim() : "anon";
+  return `${FREE_USAGE_STORAGE_PREFIX}:${normalized}`;
+};
 
 function useChatSessionStorage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -127,14 +137,23 @@ export function AskVeeChat({
   isPaidUser = false,
   creatorType = "content creator",
   onboardingAnswers = [],
-  userName = ''
+  userName = '',
+  userId,
+  onUpgrade,
+  upgradeLoading = false,
+  upgradeError,
 }: AskVeeChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const { sessions, setSessions, sessionsLoadedRef } = useChatSessionStorage();
   const [currentSessionId, setCurrentSessionId] = useState<string>('');
   const [inputValue, setInputValue] = useState('');
-  const [questionsUsed, setQuestionsUsed] = useState(0);
+  const [questionsUsed, setQuestionsUsed] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    const raw = window.localStorage.getItem(getFreeUsageKey(userId));
+    const parsed = raw != null ? Number.parseInt(raw, 10) : 0;
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  });
   const [isListening, setIsListening] = useState(false);
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'pinned'>('chat');
@@ -142,10 +161,42 @@ export function AskVeeChat({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const maxFreeQuestions = 3;
+  const usageStorageKey = useMemo(() => getFreeUsageKey(userId), [userId]);
+
+  const maxFreeQuestions = 5;
   const questionsRemaining = isPaidUser
     ? Number.POSITIVE_INFINITY
     : Math.max(0, maxFreeQuestions - questionsUsed);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isPaidUser) {
+      window.localStorage.removeItem(usageStorageKey);
+      if (questionsUsed !== 0) {
+        setQuestionsUsed(0);
+      }
+      return;
+    }
+    const raw = window.localStorage.getItem(usageStorageKey);
+    const parsed = raw != null ? Number.parseInt(raw, 10) : 0;
+    const normalized =
+      Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, maxFreeQuestions) : 0;
+    if (normalized !== questionsUsed) {
+      setQuestionsUsed(normalized);
+    }
+  }, [isPaidUser, maxFreeQuestions, usageStorageKey, questionsUsed]);
+
+  const persistFreeUsage = useCallback(
+    (count: number) => {
+      if (typeof window === 'undefined') return;
+      if (isPaidUser) {
+        window.localStorage.removeItem(usageStorageKey);
+        return;
+      }
+      window.localStorage.setItem(usageStorageKey, String(count));
+    },
+    [isPaidUser, usageStorageKey],
+  );
 
   const displayName = useMemo(() => {
     const trimmed = typeof userName === 'string' ? userName.trim() : '';
@@ -465,7 +516,11 @@ export function AskVeeChat({
       );
 
       if (!isPaidUser && !data?.reason && !requiresSignIn) {
-        setQuestionsUsed((prev) => Math.min(maxFreeQuestions, prev + 1));
+        setQuestionsUsed((prev) => {
+          const next = Math.min(maxFreeQuestions, prev + 1);
+          persistFreeUsage(next);
+          return next;
+        });
       }
       if (requiresSignIn) {
         return;
@@ -1092,10 +1147,17 @@ export function AskVeeChat({
                               size="sm"
                               className="text-white rounded-full shadow-md"
                               style={{ background: 'linear-gradient(135deg, #9E5DAB 0%, #B481C0 100%)' }}
+                              onClick={onUpgrade}
+                              disabled={upgradeLoading || !onUpgrade}
                             >
-                              ✨ Upgrade Now - $6/month
+                              {upgradeLoading ? 'Redirecting…' : '✨ Upgrade Now - $6/month'}
                             </Button>
                           </motion.div>
+                          {upgradeError && (
+                            <p className="text-xs text-destructive mt-3">
+                              {upgradeError}
+                            </p>
+                          )}
                         </motion.div>
                       )}
                     </div>

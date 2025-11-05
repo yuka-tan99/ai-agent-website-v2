@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { LandingPage } from './components/LandingPage';
 import { PricingPage } from './components/PricingPage';
@@ -31,7 +31,8 @@ import {
   TrendingUp, 
   FolderKanban, 
   Heart, 
-  Rocket 
+  Rocket,
+  DollarSign
 } from 'lucide-react';
 import { ScrollArea } from './components/ui/scroll-area';
 import { supabase } from './lib/supabaseClient';
@@ -194,6 +195,7 @@ export default function App({ initialView }: AppProps = {}) {
   const { user, loading: authLoading } = useSupabaseAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const viewToPath = useMemo<Partial<Record<ViewType, string>>>(() => ({
     landing: '/',
@@ -259,10 +261,69 @@ export default function App({ initialView }: AppProps = {}) {
     setCurrentView(view);
   }, []);
 
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(DEV_MODE);
+
+  const [hasPaid, setHasPaid] = useState<boolean>(DEV_MODE);
+
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(
+    DEV_MODE,
+  );
+
+  const [onboardingAnswers, setOnboardingAnswers] = useState<OnboardingAnswer[]>(
+    [],
+  );
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [reportSections, setReportSections] = useState<SectionData[] | null>(null);
+  const reportSectionsRef = useRef<SectionData[] | null>(null);
+  const [planStatus, setPlanStatus] = useState<PlanStatus>('idle');
+  const [planProgress, setPlanProgress] = useState(0);
+  const planAutoNavigationDoneRef = useRef(false);
+  const isRoutingRef = useRef(false);
+  const planRequestRef = useRef(false);
+  const planSettledRef = useRef(false);
+  const previousUserIdRef = useRef<string | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState(false);
+  const planPollTimeoutRef = useRef<number | null>(null);
+  const lastSectionsReadyRef = useRef(0);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const checkoutLoadingRef = useRef(false);
+  const checkoutHandledRef = useRef(false);
+  const chatCheckoutHandledRef = useRef(false);
+  const [chatAccessUntil, setChatAccessUntil] = useState<string | null>(null);
+  const [chatCheckoutLoading, setChatCheckoutLoading] = useState(false);
+  const chatCheckoutLoadingRef = useRef(false);
+  const [chatCheckoutError, setChatCheckoutError] = useState<string | null>(null);
+  const [openingReport, setOpeningReport] = useState(false);
+  const [paywallError, setPaywallError] = useState<string | null>(null);
+
+  const changeView = useCallback(
+    (view: ViewType) => {
+      const hasRoute = Boolean(viewToPath[view]);
+      isRoutingRef.current = hasRoute;
+      if (view !== 'dashboard') {
+        planAutoNavigationDoneRef.current = true;
+      }
+      setView(view);
+    },
+    [setView, viewToPath],
+  );
+
+  const hasChatAccess = useMemo(() => {
+    if (hasPaid) return true;
+    if (!chatAccessUntil) return false;
+    const expiresAt = new Date(chatAccessUntil).getTime();
+    if (Number.isNaN(expiresAt)) return false;
+    return expiresAt > Date.now();
+  }, [hasPaid, chatAccessUntil]);
+
   const [hasHydrated, setHasHydrated] = useState(false);
   useEffect(() => {
     setHasHydrated(true);
   }, []);
+
+  useEffect(() => {
+    reportSectionsRef.current = reportSections;
+  }, [reportSections]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -295,30 +356,6 @@ export default function App({ initialView }: AppProps = {}) {
     }
   }, [hasHydrated, currentView, pathname, router, viewToPath]);
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(DEV_MODE);
-
-  const [hasPaid, setHasPaid] = useState<boolean>(DEV_MODE);
-
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(
-    DEV_MODE,
-  );
-
-  const [onboardingAnswers, setOnboardingAnswers] = useState<OnboardingAnswer[]>(
-    [],
-  );
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [reportSections, setReportSections] = useState<SectionData[] | null>(null);
-  const [planStatus, setPlanStatus] = useState<PlanStatus>('idle');
-  const [planProgress, setPlanProgress] = useState(0);
-  const planRequestRef = useRef(false);
-  const planSettledRef = useRef(false);
-  const planAutoNavigationDoneRef = useRef(false);
-  const isRoutingRef = useRef(false);
-  const previousUserIdRef = useRef<string | null>(null);
-  const [loadingPlan, setLoadingPlan] = useState(false);
-  const planPollTimeoutRef = useRef<number | null>(null);
-  const lastSectionsReadyRef = useRef(0);
-
   const getAuthHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const {
       data: { session },
@@ -344,6 +381,12 @@ export default function App({ initialView }: AppProps = {}) {
     window.localStorage.setItem('becomefamous_session_id', generated);
     setSessionId(generated);
   }, []);
+
+  useEffect(() => {
+    if (hasChatAccess) {
+      setChatCheckoutError(null);
+    }
+  }, [hasChatAccess]);
 
   const answersArrayToRecord = useCallback((answers: OnboardingAnswer[]) => {
     const record: Record<string, unknown> = {};
@@ -389,17 +432,44 @@ export default function App({ initialView }: AppProps = {}) {
     }
   }, [answersArrayToRecord, onboardingAnswers, sessionId, user?.id, getAuthHeaders]);
 
-  const changeView = useCallback(
-    (view: ViewType) => {
-      const hasRoute = Boolean(viewToPath[view]);
-      isRoutingRef.current = hasRoute;
-      if (view !== 'dashboard') {
-        planAutoNavigationDoneRef.current = true;
+  const refreshAccess = useCallback(async () => {
+    if (!user?.id) {
+      setChatAccessUntil(null);
+      return;
+    }
+
+    try {
+      const authHeaders = await getAuthHeaders();
+      const response = await fetch(`/api/access?userId=${user.id}`, {
+        headers: {
+          Accept: 'application/json',
+          ...authHeaders,
+        },
+      });
+
+      if (!response.ok) {
+        return;
       }
-      setView(view);
-    },
-    [setView, viewToPath],
-  );
+
+      const data = await response.json();
+      if (typeof data?.chatUntil === 'string' || data?.chatUntil === null) {
+        setChatAccessUntil(data.chatUntil);
+      }
+      if (data?.report) {
+        setHasPaid(true);
+      }
+    } catch (error) {
+      console.error('Failed to refresh access', error);
+    }
+  }, [getAuthHeaders, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setChatAccessUntil(null);
+      return;
+    }
+    void refreshAccess();
+  }, [user?.id, refreshAccess]);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileEmail, setProfileEmail] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -1139,6 +1209,99 @@ export default function App({ initialView }: AppProps = {}) {
     },
     {
       id: 8,
+      title: "Monetization Strategies",
+      icon: <DollarSign className="w-6 h-6" />,
+      summary: "Turn your passion into profit with smart monetization",
+      cards: [
+        {
+          title: "Revenue Roadblocks",
+          content: "Creating great content but not monetizing effectively. Relying on single income stream (ad revenue or brand deals). Missing opportunities for passive income through digital products, memberships, or affiliate partnerships that could provide financial stability.",
+          icon: "Target"
+        },
+        {
+          title: "The Money Mindset",
+          content: "Many creators feel uncomfortable 'selling' to their audience or believe they need millions of followers before monetizing. Truth: You can start monetizing with 1,000 engaged followers. Your audience wants to support you—give them ways to do it.",
+          icon: "Sparkles"
+        },
+        {
+          title: "Multiple Revenue Streams",
+          content: "Diversify income across 5-7 streams: sponsorships, digital products, courses, memberships, affiliate marketing, consulting, and ad revenue. When one dips, others sustain you. Financial stability enables better content and reduces creator anxiety.",
+          icon: "TrendingUp"
+        }
+      ],
+      personalizedSummary: "Based on your onboarding responses, you're creating valuable content but haven't developed a clear monetization strategy beyond hoping for brand deals or ad revenue. You mentioned feeling uncomfortable with 'selling' to your audience, worrying it might seem pushy or damage trust. This mindset is costing you financial stability and growth potential. The truth is, your engaged audience wants ways to support you and go deeper with your content—you just haven't created those opportunities yet. You're leaving money on the table by not offering digital products, courses, memberships, or strategic affiliate partnerships that align with your content. Your current financial uncertainty around content creation is creating stress that affects your creative output and sustainability. By implementing diverse monetization strategies, you can reduce financial anxiety, invest back into better content, and build a sustainable creator business that doesn't rely on unpredictable algorithm changes or brand deal timing.",
+      personalizedTips: [
+        "Start with a simple digital product this month: Create a $7-27 guide, template, or resource that solves a specific problem your audience asks about repeatedly. Use Gumroad or Stan Store. Even 20 sales proves people will pay you, shifting your creator identity from 'hobbyist' to 'business owner.'",
+        "Implement strategic affiliate marketing immediately: Make a list of 5-10 products/services you genuinely use and recommend in your niche. Sign up for their affiliate programs (Amazon Associates, ShareASale, individual brand programs). Add affiliate links to your bio, pin comments, and naturally mention them in relevant content. This requires zero product creation but can generate $100-500+ monthly.",
+        "Test a membership or Patreon tier: Offer exclusive content, early access, or community access for $5-15/month. Even 50 members = $250-750 monthly recurring revenue that's more stable than sponsorships. Create 1 exclusive post weekly—could be behind-the-scenes, extended content, or Q&A access.",
+        "Develop a signature course or workshop: Package your expertise into a structured learning experience. Start small—a $97-297 mini-course teaching one specific skill. Pre-sell it to your audience before creating all the content. 20 sales = $2,000-6,000, validating demand before major time investment.",
+        "Create a 'monetization tracking spreadsheet': Track all income sources monthly (sponsorships, affiliates, products, memberships, etc.). This visibility helps you see what's working, what to scale, and where you're over-reliant. Goal: No single source represents more than 40% of income for true stability."
+      ],
+      keyInsights: [
+        "Launch one digital product this month (guide, template, or resource)",
+        "Add affiliate links for products you already recommend",
+        "Test a membership tier offering exclusive content or community access",
+        "Track all income sources to identify diversification opportunities",
+        "Remember: monetization serves your audience by providing deeper value"
+      ],
+      learnMoreContent: {
+        description: "Smart monetization isn't about 'selling out'—it's about building a sustainable business that allows you to create your best work. Diversified income streams provide financial stability and creative freedom.",
+        actionSteps: [
+          "Audit your current income sources and identify gaps in your monetization strategy",
+          "Survey your audience about what products or services they'd find valuable",
+          "Research affiliate programs for products you already use and recommend",
+          "Outline a simple digital product you could create in the next 2 weeks",
+          "Set up a basic sales/tracking system to monitor monetization performance"
+        ],
+        tips: [
+          "You don't need millions of followers to start monetizing—1,000 engaged fans is enough",
+          "Monetization that serves your audience builds trust, not breaks it",
+          "Passive income (products, memberships) provides more stability than active income (brand deals)"
+        ]
+      },
+      elaborateContent: {
+        overview: "Professional creator monetization involves building a diversified revenue portfolio that provides both stability and growth potential. This includes understanding the full monetization spectrum (from ad revenue to premium products), implementing pricing psychology, creating passive income systems, building strategic brand partnerships, and developing premium offerings. Elite creators treat monetization as a core business function, not an afterthought, and systematically optimize each revenue stream.",
+        advancedTechniques: {
+          title: "Advanced Techniques & Edge Cases",
+          items: [
+            "The Revenue Diversification Matrix: Map 7 income streams across Active (trading time for money) vs. Passive (earning while you sleep) and Scalable vs. Non-scalable. Focus on building at least 2 Passive + Scalable streams (digital products, courses, memberships).",
+            "Value Ladder Strategy: Create offerings at multiple price points—free content → $10-30 entry product → $100-300 mid-tier course → $1,000+ premium consulting/mastermind. Each tier serves different audience segments and maximizes customer lifetime value.",
+            "Pricing Psychology Mastery: Use charm pricing ($97 not $100), decoy pricing (3 tiers where middle looks best), and value anchoring (show original price vs. discount). Strategic pricing can increase revenue 30-50% without changing the product.",
+            "Evergreen Product Funnels: Create automated sales systems where free content leads to email sequences that sell products on autopilot. Once built, this generates income 24/7 without active selling.",
+            "Edge Case - Premium Positioning: Sometimes charging MORE increases sales by signaling higher value. Test premium pricing ($500-2,000+) for exclusive access, consulting, or masterminds. High prices filter for committed buyers."
+          ]
+        },
+        troubleshooting: {
+          title: "Troubleshooting Common Failures",
+          items: [
+            "Problem: 'My audience doesn't buy anything I create' → Diagnosis: Product-audience mismatch. You're solving problems YOU find interesting, not problems THEY actively struggle with. Solution: Survey your audience, analyze their most common questions, create products that solve real pain points.",
+            "Problem: 'I feel gross selling to my audience' → Mindset shift: You're not 'selling'—you're serving. If your product genuinely helps them, you're doing them a disservice by NOT offering it. Monetization that serves builds trust, not breaks it.",
+            "Problem: 'I launched a product and only got 3 sales' → Common mistakes: No pre-launch marketing, unclear value proposition, or price mismatch. Solution: Build hype for 2-4 weeks before launch, clearly articulate transformation/outcome, test pricing with early bird discount.",
+            "Problem: 'Brand deals are inconsistent and I need stable income' → Reality: Sponsorships are active income. Build passive streams (products, courses, memberships, affiliate) for stability. Treat sponsorships as bonus income, not primary revenue.",
+            "Problem: 'I don't know what price to charge' → Strategy: Start by asking—survey your audience about willingness to pay. Research competitor pricing. Test multiple price points with A/B testing. Generally, creators underprice by 30-50% due to imposter syndrome."
+          ]
+        },
+        longTermStrategy: {
+          title: "Long-Term Strategy Development",
+          items: [
+            "Building Multiple Revenue Engines: Develop 5-7 distinct income streams that complement each other. Example: Ad revenue (platform) + Sponsorships (brands) + Digital products (courses) + Membership (Patreon) + Affiliate (recommendations) + Consulting (high-ticket) + Physical products (merch).",
+            "The Product Ecosystem Model: Create a suite of products at different price points that naturally lead to each other. Free content → Email list → $27 guide → $197 course → $997 mastermind. Each product is both valuable standalone AND a pathway to the next level.",
+            "Automated Passive Income Systems: Build evergreen funnels that sell products without active involvement. This might include: automated email sequences, product recommendation bots, course platforms with self-service purchase, affiliate income from evergreen content.",
+            "Strategic Brand Partnership Development: Move beyond one-off sponsorships to long-term brand partnerships and ambassadorships. These provide 6-12 month contracts with predictable income. Position yourself as a strategic partner, not just an influencer for hire.",
+            "Premium Offer Scaling: As your authority grows, introduce high-ticket offers ($1,000-10,000+): private consulting, done-for-you services, exclusive masterminds, licensing deals. Even 5-10 premium clients can match income from thousands of low-ticket sales.",
+            "Exit Strategy Planning: Build a creator business with equity value—something you could sell. This means: owning your email list, having diversified income, documented systems, and potentially a team. Plan for the option to exit at peak value or transition to CEO role while others run operations."
+          ]
+        },
+        expertResources: [
+          "Framework: The Revenue Diversification Matrix—mapping active vs passive and scalable vs non-scalable income streams",
+          "Template: Product creation roadmap—from idea validation to launch to evergreen automation",
+          "Case Study: Creators who built 6-figure+ businesses with under 50K followers through strategic monetization"
+        ]
+      },
+      accentColor: "#00CC66"
+    },
+    {
+      id: 9,
       title: "Advanced Marketing Types & Case Studies",
       icon: <Rocket className="w-6 h-6" />,
       summary: "Learn from successful creators and advanced strategies",
@@ -1843,6 +2006,58 @@ export default function App({ initialView }: AppProps = {}) {
     defaultSections,
   ]);
 
+  const waitForReportCompletion = useCallback(async (): Promise<boolean> => {
+    const isComplete = () => {
+      const sections = reportSectionsRef.current;
+      if (!Array.isArray(sections) || sections.length === 0) return false;
+      return sections.every((section) => !section.isPlaceholder);
+    };
+
+    if (isComplete()) {
+      return true;
+    }
+
+    if (typeof window === 'undefined') {
+      return isComplete();
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let attempts = 0;
+      const maxAttempts = 120;
+      const check = () => {
+        if (isComplete()) {
+          resolve(true);
+          return;
+        }
+        if (attempts >= maxAttempts) {
+          resolve(false);
+          return;
+        }
+        attempts += 1;
+        window.requestAnimationFrame(check);
+      };
+      check();
+    });
+  }, []);
+
+  const ensureReportReady = useCallback(async () => {
+    if (reportSectionsRef.current && reportSectionsRef.current.every((section) => !section.isPlaceholder)) {
+      return true;
+    }
+    if (await waitForReportCompletion()) {
+      return true;
+    }
+    const fetched = await fetchPlan();
+    if (fetched && (await waitForReportCompletion())) {
+      return true;
+    }
+    const generated = await generatePlan();
+    if (generated && (await waitForReportCompletion())) {
+      return true;
+    }
+    return false;
+  }, [fetchPlan, generatePlan, waitForReportCompletion]);
+
   useEffect(() => {
     if (!user?.id) return;
     if (planStatus === 'complete') return;
@@ -1928,9 +2143,20 @@ export default function App({ initialView }: AppProps = {}) {
     if (!hasCompletedOnboarding) return;
 
     if (reportSections) {
+      const allSectionsReady = reportSections.every((section) => !section.isPlaceholder);
+
+      if (!allSectionsReady) {
+        planSettledRef.current = false;
+        if (currentView === 'dashboard') {
+          setView('preparing');
+        }
+        return;
+      }
+
       if (!planSettledRef.current) {
         planSettledRef.current = true;
       }
+
       if (
         allowAutoDashboardRef.current &&
         !planAutoNavigationDoneRef.current &&
@@ -2014,6 +2240,9 @@ export default function App({ initialView }: AppProps = {}) {
   }, [authLoading, user?.id, fetchPlan]);
 
   const renderSections = reportSections ?? placeholderSections;
+  const hasCompleteReport = Boolean(
+    reportSections && reportSections.every((section) => !section.isPlaceholder),
+  );
 
   // Handler Functions
   const handleStartOnboarding = () => {
@@ -2173,12 +2402,14 @@ export default function App({ initialView }: AppProps = {}) {
     }
   };
 
-  const handleUnlockDashboard = useCallback(async () => {
+  const startReportGeneration = useCallback(async () => {
     if (!user?.id) {
       changeView('signin');
-      return;
+      return false;
     }
 
+    checkoutLoadingRef.current = false;
+    setCheckoutLoading(false);
     setReportSections(null);
     setPlanProgress(0);
     setPlanStatus('pending');
@@ -2193,7 +2424,7 @@ export default function App({ initialView }: AppProps = {}) {
 
     try {
       const authHeaders = await getAuthHeaders();
-      await fetch('/api/report/start', {
+      const response = await fetch('/api/report/start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2201,8 +2432,256 @@ export default function App({ initialView }: AppProps = {}) {
         },
         body: JSON.stringify({ userId: user.id }),
       });
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          setPaywallError('We’re still confirming your purchase. Try again in a few seconds.');
+        } else {
+          setPaywallError('Could not start preparing your dashboard. Please try again.');
+        }
+        setPlanStatus('idle');
+        setPlanProgress(0);
+        changeView('paywall');
+        return false;
+      }
+
+      setHasPaid(true);
+      setPaywallError(null);
+      await refreshAccess();
+      return true;
     } catch (error) {
       console.error('Failed to start report generation', error);
+      setPaywallError('We hit a snag preparing your dashboard. Please try again.');
+      setPlanStatus('idle');
+      setPlanProgress(0);
+      changeView('paywall');
+      return false;
+    }
+  }, [user?.id, changeView, getAuthHeaders, refreshAccess]);
+
+  useEffect(() => {
+    if (!searchParams) return;
+    const checkoutStatus = searchParams.get('checkout');
+    if (!checkoutStatus) return;
+
+    checkoutLoadingRef.current = false;
+    setCheckoutLoading(false);
+    chatCheckoutLoadingRef.current = false;
+    setChatCheckoutLoading(false);
+
+    if (typeof window !== 'undefined') {
+      if (checkoutStatus === 'plan_success' || checkoutStatus === 'ai_success') {
+        window.localStorage.setItem('becomefamous_pending_checkout', checkoutStatus);
+      } else {
+        window.localStorage.removeItem('becomefamous_pending_checkout');
+      }
+    }
+
+    if (checkoutStatus === 'plan_success') {
+      if (user?.id && !checkoutHandledRef.current) {
+        checkoutHandledRef.current = true;
+        (async () => {
+          const started = await startReportGeneration();
+          if (started && typeof window !== 'undefined') {
+            window.localStorage.removeItem('becomefamous_pending_checkout');
+          }
+          if (!started) {
+            checkoutHandledRef.current = false;
+          }
+        })();
+      } else if (!user?.id) {
+        setPaywallError('Sign in to finish unlocking your dashboard.');
+        changeView('signin');
+      }
+    } else if (checkoutStatus === 'ai_success') {
+      setChatCheckoutError(null);
+      if (user?.id && !chatCheckoutHandledRef.current) {
+        chatCheckoutHandledRef.current = true;
+        (async () => {
+          await refreshAccess();
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('becomefamous_pending_checkout');
+          }
+          chatCheckoutHandledRef.current = false;
+        })();
+      } else if (!user?.id) {
+        setChatCheckoutError('Sign in to finish activating AI Mentor.');
+        changeView('signin');
+      }
+    } else if (checkoutStatus === 'plan_cancelled') {
+      setPaywallError('Checkout was cancelled. No charge was made.');
+      changeView('paywall');
+    } else if (checkoutStatus === 'ai_cancelled') {
+      setChatCheckoutError('Checkout cancelled. No charge was made.');
+    }
+
+    const basePath = pathname ?? '/';
+    router.replace(basePath, { scroll: false });
+  }, [
+    changeView,
+    pathname,
+    refreshAccess,
+    router,
+    searchParams,
+    startReportGeneration,
+    user?.id,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!user?.id) return;
+    const pending = window.localStorage.getItem('becomefamous_pending_checkout');
+    if (pending === 'plan_success' && !checkoutHandledRef.current) {
+      window.localStorage.removeItem('becomefamous_pending_checkout');
+      checkoutHandledRef.current = true;
+      (async () => {
+        const started = await startReportGeneration();
+        if (started && typeof window !== 'undefined') {
+          window.localStorage.removeItem('becomefamous_pending_checkout');
+        }
+        if (!started) {
+          checkoutHandledRef.current = false;
+        }
+      })();
+    }
+    if (pending === 'ai_success' && !chatCheckoutHandledRef.current) {
+      window.localStorage.removeItem('becomefamous_pending_checkout');
+      chatCheckoutHandledRef.current = true;
+      (async () => {
+        await refreshAccess();
+        chatCheckoutHandledRef.current = false;
+      })();
+    }
+  }, [refreshAccess, startReportGeneration, user?.id]);
+
+  const handleOpenReport = useCallback(async () => {
+    if (!user?.id) {
+      changeView('signin');
+      return;
+    }
+    if (openingReport) {
+      return;
+    }
+    if (reportSectionsRef.current && reportSectionsRef.current.every((section) => !section.isPlaceholder)) {
+      changeView('dashboard');
+      return;
+    }
+    setOpeningReport(true);
+    try {
+      const ready = await ensureReportReady();
+      if (ready) {
+        changeView('dashboard');
+      }
+    } finally {
+      setOpeningReport(false);
+    }
+  }, [changeView, ensureReportReady, openingReport, user?.id]);
+
+  const handleUnlockDashboard = useCallback(async () => {
+    if (!user?.id) {
+      changeView('signin');
+      return;
+    }
+
+    if (checkoutLoadingRef.current) {
+      return;
+    }
+
+    checkoutLoadingRef.current = true;
+    setCheckoutLoading(true);
+    setPaywallError(null);
+
+    try {
+      const authHeaders = await getAuthHeaders();
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : undefined;
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          productKey: 'report_plan',
+          userId: user.id,
+          successUrl: origin ? `${origin}/?checkout=plan_success` : undefined,
+          cancelUrl: origin ? `${origin}/paywall?checkout=plan_cancelled` : undefined,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.url) {
+        const errorMessage =
+          typeof data?.error === 'string'
+            ? data.error
+            : 'Unable to start checkout. Please try again.';
+        setPaywallError(errorMessage);
+        setCheckoutLoading(false);
+        checkoutLoadingRef.current = false;
+        return;
+      }
+
+      window.location.href = data.url as string;
+    } catch (error) {
+      console.error('Failed to start checkout session', error);
+      setPaywallError('Unable to connect to the payment provider. Please try again.');
+      setCheckoutLoading(false);
+      checkoutLoadingRef.current = false;
+    }
+  }, [changeView, getAuthHeaders, user?.id]);
+
+  const handleStartChatCheckout = useCallback(async () => {
+    if (!user?.id) {
+      changeView('signin');
+      return;
+    }
+
+    if (chatCheckoutLoadingRef.current) {
+      return;
+    }
+
+    chatCheckoutLoadingRef.current = true;
+    setChatCheckoutLoading(true);
+    setChatCheckoutError(null);
+
+    try {
+      const authHeaders = await getAuthHeaders();
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : undefined;
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          productKey: 'ai_subscription',
+          userId: user.id,
+          successUrl: origin ? `${origin}/?checkout=ai_success` : undefined,
+          cancelUrl: origin ? `${origin}/?checkout=ai_cancelled` : undefined,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.url) {
+        const errorMessage =
+          typeof data?.error === 'string'
+            ? data.error
+            : 'Unable to start subscription checkout. Please try again.';
+        setChatCheckoutError(errorMessage);
+        setChatCheckoutLoading(false);
+        chatCheckoutLoadingRef.current = false;
+        return;
+      }
+
+      window.location.href = data.url as string;
+    } catch (error) {
+      console.error('Failed to start AI subscription checkout', error);
+      setChatCheckoutError('Unable to connect to the payment provider. Please try again.');
+      setChatCheckoutLoading(false);
+      chatCheckoutLoadingRef.current = false;
     }
   }, [changeView, getAuthHeaders, user?.id]);
 
@@ -2212,15 +2691,23 @@ export default function App({ initialView }: AppProps = {}) {
     setPlanProgress(100);
     // After first payment, show account page with Usage section
     setAccountInitialSection('usage');
-    changeView('dashboard');
+    if (
+      reportSections &&
+      reportSections.every((section) => !section.isPlaceholder)
+    ) {
+      changeView('dashboard');
+    }
+    void refreshAccess();
   };
 
   const handleBackToAccount = () => {
     setAccountInitialSection('usage');
+    setPaywallError(null);
     changeView('account');
   };
 
   const handleBecomeFamousNow = () => {
+    setPaywallError(null);
     // From account page, start onboarding if not completed
     if (!hasCompletedOnboarding) {
       changeView('onboarding');
@@ -2244,10 +2731,17 @@ export default function App({ initialView }: AppProps = {}) {
     setScoreTrend(DEFAULT_SCORE_TREND);
     allowAutoDashboardRef.current = false;
     planAutoNavigationDoneRef.current = false;
+    setChatAccessUntil(null);
+    setChatCheckoutError(null);
+    setChatCheckoutLoading(false);
+    chatCheckoutLoadingRef.current = false;
     changeView('landing');
     setProfileName(null);
     setProfileEmail(null);
     setProfileError(null);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('becomefamous_pending_checkout');
+    }
 
     if (typeof window !== 'undefined') {
       localStorage.removeItem('becomefamous_isAuthenticated');
@@ -2395,6 +2889,8 @@ export default function App({ initialView }: AppProps = {}) {
       <PaywallPage 
         onUnlock={handleUnlockDashboard}
         onBack={handleBackToAccount}
+        isProcessing={checkoutLoading}
+        errorMessage={paywallError}
       />
     );
   }
@@ -2414,7 +2910,7 @@ export default function App({ initialView }: AppProps = {}) {
     return (
       <>
         <AccountPage 
-          onNavigateToDashboard={() => changeView('dashboard')}
+          onNavigateToDashboard={handleOpenReport}
           hasCompletedOnboarding={hasCompletedOnboarding}
           hasPaid={hasPaid}
           onBecomeFamousNow={handleBecomeFamousNow}
@@ -2428,15 +2924,30 @@ export default function App({ initialView }: AppProps = {}) {
           onChangePassword={handleChangePassword}
           passwordUpdating={passwordUpdating}
           getAuthHeaders={getAuthHeaders}
+          navigateToDashboardLoading={openingReport}
         />
         {/* Ask Vee Chat - Available in Account Page */}
         <AskVeeChat 
-          isPaidUser={hasPaid}
+          isPaidUser={hasChatAccess}
           creatorType="content creator"
           onboardingAnswers={onboardingAnswers}
           userName={userDisplayName}
+          userId={user?.id ?? undefined}
+          onUpgrade={handleStartChatCheckout}
+          upgradeLoading={chatCheckoutLoading}
+          upgradeError={chatCheckoutError}
         />
       </>
+    );
+  }
+
+  if (currentView === 'dashboard' && !hasCompleteReport) {
+    return (
+      <PreparingDashboard
+        onComplete={handlePreparingComplete}
+        progress={planProgress}
+        status={planStatus}
+      />
     );
   }
 
@@ -2538,10 +3049,14 @@ export default function App({ initialView }: AppProps = {}) {
 
       {/* Ask Vee Chat - Available in Dashboard */}
       <AskVeeChat 
-        isPaidUser={hasPaid}
+        isPaidUser={hasChatAccess}
         creatorType="content creator"
         onboardingAnswers={onboardingAnswers}
         userName={userDisplayName}
+        userId={user?.id ?? undefined}
+        onUpgrade={handleStartChatCheckout}
+        upgradeLoading={chatCheckoutLoading}
+        upgradeError={chatCheckoutError}
       />
     </>
   );

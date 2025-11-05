@@ -1,3 +1,5 @@
+'use client';
+
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { AnimatePresence, motion, type PanInfo } from 'motion/react';
 import { Button } from './ui/button';

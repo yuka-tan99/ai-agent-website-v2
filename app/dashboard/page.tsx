@@ -1,9 +1,14 @@
 'use client';
 
+import { Suspense } from "react";
 import App from '../../src/App';
 
 export const dynamic = 'force-dynamic';
 
 export default function DashboardPage() {
-  return <App initialView="dashboard" />;
+  return (
+    <Suspense fallback={null}>
+      <App initialView="dashboard" />
+    </Suspense>
+  );
 }

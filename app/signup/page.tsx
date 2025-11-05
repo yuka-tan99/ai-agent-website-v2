@@ -1,9 +1,14 @@
 'use client';
 
+import { Suspense } from "react";
 import App from '../../src/App';
 
 export const dynamic = 'force-dynamic';
 
 export default function SignUpPage() {
-  return <App initialView="signup" />;
+  return (
+    <Suspense fallback={null}>
+      <App initialView="signup" />
+    </Suspense>
+  );
 }

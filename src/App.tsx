@@ -22,7 +22,9 @@ import { FameScoreCard } from './components/FameScoreCard';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { ActionPriorityMatrix } from './components/ActionPriorityMatrix';
 import { LessonView } from './components/LessonView';
+import { InteractiveLessons } from './components/InteractiveLessons';
 import { AskVeeChat } from './components/AskVeeChat';
+import { Button } from './components/ui/button';
 import { 
   Target, 
   Zap, 
@@ -32,9 +34,12 @@ import {
   FolderKanban, 
   Heart, 
   Rocket,
-  DollarSign
+  DollarSign,
+  BookOpen,
+  Sparkles
 } from 'lucide-react';
 import { ScrollArea } from './components/ui/scroll-area';
+import { motion } from 'motion/react';
 import { supabase } from './lib/supabaseClient';
 import { useSupabaseAuth } from './lib/useSupabaseAuth';
 import { ResetPasswordPage } from './components/ResetPasswordPage';
@@ -189,6 +194,7 @@ const PROTECTED_VIEWS = new Set<ViewType>([
   'preparing',
   'paywall',
 ]);
+const LESSON_COMPLETION_KEY_PREFIX = 'becomefamous_completed_lessons';
 
 export default function App({ initialView }: AppProps = {}) {
   const DEV_MODE = false;
@@ -294,7 +300,11 @@ export default function App({ initialView }: AppProps = {}) {
   const chatCheckoutLoadingRef = useRef(false);
   const [chatCheckoutError, setChatCheckoutError] = useState<string | null>(null);
   const [openingReport, setOpeningReport] = useState(false);
+  const [isInteractiveLessonsOpen, setInteractiveLessonsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [completedLessonIds, setCompletedLessonIds] = useState<number[]>([]);
   const [paywallError, setPaywallError] = useState<string | null>(null);
+  const completedLessonsLoadedKeyRef = useRef<string | null>(null);
 
   const changeView = useCallback(
     (view: ViewType) => {
@@ -382,11 +392,84 @@ export default function App({ initialView }: AppProps = {}) {
     setSessionId(generated);
   }, []);
 
+  const lessonCompletionStorageKey = useMemo(() => {
+    if (user?.id) return `${LESSON_COMPLETION_KEY_PREFIX}_${user.id}`;
+    if (sessionId) return `${LESSON_COMPLETION_KEY_PREFIX}_${sessionId}`;
+    return null;
+  }, [sessionId, user?.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const update = () => setIsMobile(window.innerWidth < 768);
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    if (typeof window === 'undefined') return;
+
+    if (!lessonCompletionStorageKey) {
+      completedLessonsLoadedKeyRef.current = null;
+      setCompletedLessonIds((prev) => (prev.length ? [] : prev));
+      return;
+    }
+
+    if (completedLessonsLoadedKeyRef.current === lessonCompletionStorageKey) {
+      return;
+    }
+
+    completedLessonsLoadedKeyRef.current = lessonCompletionStorageKey;
+
+    const stored = window.localStorage.getItem(lessonCompletionStorageKey);
+    if (!stored) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored);
+      const sanitized = Array.isArray(parsed)
+        ? Array.from(
+            new Set(
+              parsed
+                .map((value) => Number(value))
+                .filter((value) => Number.isInteger(value)),
+            ),
+          ).sort((a, b) => a - b)
+        : [];
+      setCompletedLessonIds((prev) => {
+        if (
+          prev.length === sanitized.length &&
+          prev.every((value, index) => value === sanitized[index])
+        ) {
+          return prev;
+        }
+        return sanitized;
+      });
+    } catch {
+      // Ignore malformed data and keep current in-memory progress.
+    }
+  }, [hasHydrated, lessonCompletionStorageKey]);
+
   useEffect(() => {
     if (hasChatAccess) {
       setChatCheckoutError(null);
     }
   }, [hasChatAccess]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!lessonCompletionStorageKey) return;
+    if (completedLessonsLoadedKeyRef.current !== lessonCompletionStorageKey) return;
+    const uniqueSorted = Array.from(new Set(completedLessonIds)).sort(
+      (a, b) => a - b,
+    );
+    window.localStorage.setItem(
+      lessonCompletionStorageKey,
+      JSON.stringify(uniqueSorted),
+    );
+  }, [completedLessonIds, lessonCompletionStorageKey]);
 
   const answersArrayToRecord = useCallback((answers: OnboardingAnswer[]) => {
     const record: Record<string, unknown> = {};
@@ -495,7 +578,6 @@ export default function App({ initialView }: AppProps = {}) {
     return candidates[0] || 'friend';
   }, [profileName, user?.email, user?.user_metadata?.display_name, user?.user_metadata?.name]);
 
-  const [progress] = useState(35);
   const [fameScore, setFameScore] = useState<number>(DEFAULT_FAME_SCORE);
   const [scoreTrend, setScoreTrend] = useState<number>(DEFAULT_SCORE_TREND);
   const [activeLessonSection, setActiveLessonSection] = useState<SectionData | null>(null);
@@ -2239,12 +2321,61 @@ export default function App({ initialView }: AppProps = {}) {
     fetchPlan();
   }, [authLoading, user?.id, fetchPlan]);
 
+  const interactiveSections = useMemo(() => {
+    const base = reportSections ?? placeholderSections;
+    return base.filter((section) => !section.isPlaceholder);
+  }, [reportSections, placeholderSections]);
+
+  const validLessonIds = useMemo(
+    () => new Set(interactiveSections.map((section) => section.id)),
+    [interactiveSections],
+  );
+
+  useEffect(() => {
+    if (!validLessonIds.size) return;
+    setCompletedLessonIds((prev) => {
+      const filtered = prev.filter((id) => validLessonIds.has(id));
+      if (filtered.length === prev.length) {
+        return prev;
+      }
+      return filtered;
+    });
+  }, [validLessonIds]);
+
+  const reportProgress = useMemo(() => {
+    if (!validLessonIds.size) return 0;
+    const completedCount = completedLessonIds.filter((id) =>
+      validLessonIds.has(id),
+    ).length;
+    return Math.round((completedCount / validLessonIds.size) * 100);
+  }, [completedLessonIds, validLessonIds]);
+
   const renderSections = reportSections ?? placeholderSections;
   const hasCompleteReport = Boolean(
     reportSections && reportSections.every((section) => !section.isPlaceholder),
   );
 
+  useEffect(() => {
+    if (currentView !== 'dashboard' || !isMobile) {
+      setInteractiveLessonsOpen(false);
+    }
+  }, [currentView, isMobile]);
+
+  useEffect(() => {
+    if (isInteractiveLessonsOpen && interactiveSections.length === 0) {
+      setInteractiveLessonsOpen(false);
+    }
+  }, [interactiveSections.length, isInteractiveLessonsOpen]);
+
   // Handler Functions
+  const handleLessonCompleted = useCallback((lessonId: number) => {
+    setCompletedLessonIds((prev) => {
+      if (!validLessonIds.has(lessonId)) return prev;
+      if (prev.includes(lessonId)) return prev;
+      return [...prev, lessonId].sort((a, b) => a - b);
+    });
+  }, [validLessonIds]);
+
   const handleStartOnboarding = () => {
     changeView('onboarding');
   };
@@ -2553,6 +2684,18 @@ export default function App({ initialView }: AppProps = {}) {
       })();
     }
   }, [refreshAccess, startReportGeneration, user?.id]);
+
+  const handleOpenLessons = useCallback(() => {
+    if (!interactiveSections.length) return;
+    setInteractiveLessonsOpen(true);
+  }, [interactiveSections.length]);
+
+  const handleCloseLessons = useCallback(() => {
+    setInteractiveLessonsOpen(false);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
 
   const handleOpenReport = useCallback(async () => {
     if (!user?.id) {
@@ -2969,12 +3112,22 @@ export default function App({ initialView }: AppProps = {}) {
         />
       )}
 
+      {isMobile && (
+        <InteractiveLessons
+          isOpen={isInteractiveLessonsOpen}
+          onClose={handleCloseLessons}
+          sections={interactiveSections}
+          completedLessonIds={completedLessonIds}
+          onMarkLessonComplete={handleLessonCompleted}
+        />
+      )}
+
       {/* Main Dashboard */}
       <div className="min-h-screen bg-background">
         <ScrollArea className="h-screen">
           <div className="max-w-7xl mx-auto p-6 lg:p-8">
-            <ReportHeader 
-              progress={progress}
+            <ReportHeader
+              progress={reportProgress}
               onBackToAccount={() => changeView('account')}
             />
 
@@ -2983,37 +3136,120 @@ export default function App({ initialView }: AppProps = {}) {
               <FameScoreCard score={fameScore} trend={scoreTrend} />
             </div>
 
-            {/* Personalized Action Plan */}
-            <div className="mb-8">
-              <div className="text-center mb-8">
-                <h2 className="inline-block pb-1" style={{ color: '#9E5DAB' }}>
-                  Your Personalized Action Plan
-                </h2>
-                <p className="text-muted-foreground mt-2">
-                  Follow these strategic steps to accelerate your growth
-                </p>
-              </div>
-              <div className="space-y-6">
-                {renderSections.map((section) => (
-                  <ReportSection
-                    key={section.id}
-                    sectionNumber={section.id}
-                    title={section.title}
-                    icon={section.icon}
-                    summary={section.summary}
-                    cards={section.cards}
-                    personalizedSummary={section.personalizedSummary}
-                    personalizedTips={section.personalizedTips}
-                    keyInsights={section.keyInsights}
-                    learnMoreContent={section.learnMoreContent}
-                    elaborateContent={section.elaborateContent}
-                    accentColor={section.accentColor}
-                    isPlaceholder={section.isPlaceholder}
-                    onLearnMore={() => setActiveLessonSection(section)}
+            {isMobile && interactiveSections.length > 0 && (
+              <div className="mb-8 max-w-2xl mx-auto">
+                <motion.button
+                  onClick={handleOpenLessons}
+                  className="group relative w-full overflow-hidden rounded-[36px]"
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    scale: [1, 1.02, 1],
+                    boxShadow: [
+                      '0 16px 48px rgba(158, 93, 171, 0.12)',
+                      '0 24px 56px rgba(158, 93, 171, 0.22)',
+                      '0 16px 48px rgba(158, 93, 171, 0.12)',
+                    ],
+                  }}
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{
+                    duration: 0.6,
+                    ease: 'easeOut',
+                    scale: { duration: 3.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
+                    boxShadow: { duration: 3.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
+                  }}
+                >
+                  <motion.div
+                    className="absolute inset-0"
+                    style={{
+                      background: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.6), transparent 60%)',
+                    }}
+                    animate={{
+                      opacity: [0.5, 0.8, 0.5],
+                    }}
+                    transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
                   />
-                ))}
+                  <div
+                    className="relative rounded-[36px] border-2 border-[#9E5DAB30] p-6"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(158, 93, 171, 0.08) 0%, rgba(143, 217, 251, 0.08) 100%)',
+                      boxShadow: '0 16px 48px rgba(158, 93, 171, 0.16)',
+                    }}
+                  >
+                    <motion.div
+                      className="absolute -right-6 top-0 h-20 w-20 rounded-full opacity-0 group-hover:opacity-40"
+                      style={{ background: 'radial-gradient(circle, rgba(143, 217, 251, 0.4), transparent 70%)' }}
+                      animate={{ scale: [1, 1.2, 1] }}
+                      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                    />
+
+                    <div className="relative flex items-center gap-4">
+                      <motion.div
+                        className="flex h-14 w-14 items-center justify-center rounded-[22px] shadow-xl"
+                        style={{
+                          background: 'linear-gradient(135deg, #F8E8F5 0%, #D4E5F9 100%)',
+                        }}
+                        animate={{ rotate: [0, 6, -6, 0], scale: [1, 1.05, 1] }}
+                        transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                      >
+                        <BookOpen className="h-7 w-7" style={{ color: '#9E5DAB' }} />
+                      </motion.div>
+                      <div className="flex-1 text-left">
+                        <h3 className="text-base font-semibold" style={{ color: '#9E5DAB' }}>
+                          Start Interactive Lessons
+                        </h3>
+                        <p className="text-xs text-muted-foreground">
+                          Learn your personalized action plan with a swipe-friendly storybook experience.
+                        </p>
+                      </div>
+                      <motion.div
+                        className="hidden items-center gap-2 rounded-full bg-[#9E5DAB] px-4 py-2 text-xs font-medium text-white sm:flex"
+                        animate={{ x: [0, 6, 0] }}
+                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                      >
+                        9 chapters
+                        <Sparkles className="h-4 w-4" />
+                      </motion.div>
+                    </div>
+                  </div>
+                </motion.button>
               </div>
-            </div>
+            )}
+
+            {!isMobile && (
+              <div className="mb-8">
+                <div className="text-center mb-8">
+                  <h2 className="inline-block pb-1" style={{ color: '#9E5DAB' }}>
+                    Your Personalized Action Plan
+                  </h2>
+                  <p className="text-muted-foreground mt-2">
+                    Follow these strategic steps to accelerate your growth
+                  </p>
+                </div>
+                <div className="space-y-6">
+                  {renderSections.map((section) => (
+                    <ReportSection
+                      key={section.id}
+                      sectionNumber={section.id}
+                      title={section.title}
+                      icon={section.icon}
+                      summary={section.summary}
+                      cards={section.cards}
+                      personalizedSummary={section.personalizedSummary}
+                      personalizedTips={section.personalizedTips}
+                      keyInsights={section.keyInsights}
+                      learnMoreContent={section.learnMoreContent}
+                      elaborateContent={section.elaborateContent}
+                      accentColor={section.accentColor}
+                      isPlaceholder={section.isPlaceholder}
+                      onLearnMore={() => setActiveLessonSection(section)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Analytics Overview Section */}
             <div className="mb-8 space-y-6">

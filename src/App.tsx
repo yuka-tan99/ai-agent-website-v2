@@ -3154,7 +3154,7 @@ export default function App({ initialView }: AppProps = {}) {
                       '0 16px 48px rgba(158, 93, 171, 0.12)',
                     ],
                   }}
-                  whileHover={{ scale: 1.04 }}
+                  whileHover={{ scale: 1.04, boxShadow: '0 28px 64px rgba(158, 93, 171, 0.28)' }}
                   whileTap={{ scale: 0.98 }}
                   transition={{
                     duration: 0.6,
@@ -3162,7 +3162,7 @@ export default function App({ initialView }: AppProps = {}) {
                     scale: { duration: 3.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                     boxShadow: { duration: 3.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                   }}
-                >
+                  >
                   <motion.div
                     className="absolute inset-0"
                     style={{

@@ -22,13 +22,26 @@ function isMeaningfulText(value: unknown): boolean {
   return trimmed.toLowerCase() !== PLACEHOLDER_TEXT;
 }
 
+function cardsMeetRequirement(cards: unknown, expectedCount: number): boolean {
+  if (!Array.isArray(cards) || cards.length < expectedCount) return false;
+  return cards.slice(0, expectedCount).every((card) =>
+    isMeaningfulText((card as { content?: string })?.content),
+  );
+}
+
 function isReportSectionComplete(section: ReportSection | undefined | null): boolean {
   if (!section) return false;
-  if (!isMeaningfulText(section.content)) return false;
-  if (!Array.isArray(section.action_tips) || section.action_tips.length < 5) {
-    return false;
-  }
-  return section.action_tips.every((tip) => isMeaningfulText(tip));
+  const reportLevel = section.report_level;
+  const learnMore = section.learn_more_level;
+  const mastery = section.unlock_mastery_level;
+  if (!reportLevel || !learnMore || !mastery) return false;
+
+  const reportCardsComplete = cardsMeetRequirement(reportLevel.cards, 5);
+  const learnMoreComplete = cardsMeetRequirement(learnMore.cards, 6);
+  const masteryComplete = cardsMeetRequirement(mastery.cards, 6);
+  const actionTipsComplete = Array.isArray(reportLevel.action_tips) && reportLevel.action_tips.length >= 5 && reportLevel.action_tips.every((tip) => isMeaningfulText(tip));
+
+  return reportCardsComplete && learnMoreComplete && masteryComplete && actionTipsComplete;
 }
 
 function isReportPlanComplete(plan: unknown): plan is ReportPlan {
@@ -36,7 +49,7 @@ function isReportPlanComplete(plan: unknown): plan is ReportPlan {
   const typed = plan as ReportPlan;
   if (!Array.isArray(typed.sections) || typed.sections.length === 0) return false;
   return SECTION_TITLES.every((title) => {
-    const section = typed.sections.find((item) => item.title === title);
+    const section = typed.sections.find((item) => item.section_title === title);
     return isReportSectionComplete(section);
   });
 }

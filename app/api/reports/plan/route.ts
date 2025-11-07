@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseRoute } from "@/lib/supabase/route";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { calculateFameScoreFromAnswers } from "@/lib/personalization/fameScore";
-import { reportPlanToLegacy } from "../../../../lib/report/legacy";
 import type { ReportPlan } from "../../../../lib/report/generate";
 
 export async function GET(req: NextRequest) {
@@ -52,7 +51,7 @@ export async function GET(req: NextRequest) {
   if (Array.isArray(rawPlan)) {
     planPayload = rawPlan;
   } else if (isReportPlanObject(rawPlan)) {
-    planPayload = reportPlanToLegacy(rawPlan);
+    planPayload = rawPlan.sections ?? [];
     if (typeof rawPlan.fame_score === "number") {
       fameScore = {
         score: rawPlan.fame_score,

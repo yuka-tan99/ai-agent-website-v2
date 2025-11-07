@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { reportPlanToLegacy } from "../../../../lib/report/legacy";
 import { generateReportForUser } from "../../../../lib/report/generate";
 import { supabaseRoute } from "@/lib/supabase/route";
 
@@ -17,7 +16,7 @@ export async function POST(req: NextRequest) {
     const report = await generateReportForUser(user.id);
 
     return NextResponse.json({
-      plan: reportPlanToLegacy(report),
+      plan: report.sections ?? [],
       fameScore: {
         score: report.fame_score,
         trend: report.success_probability,

@@ -27,6 +27,7 @@ type ClaudeRequest = {
   temperature?: number;
   timeoutMs?: number;
   retries?: number;
+  responseFormat?: Anthropic.Messages.MessageCreateParamsNonStreaming["response_format"];
 };
 
 export async function callClaudeJson({
@@ -36,6 +37,7 @@ export async function callClaudeJson({
   temperature = 0.6,
   timeoutMs = TIMEOUT_MS,
   retries = RETRIES,
+  responseFormat,
 }: ClaudeRequest): Promise<string> {
   if (!anthropicClient) {
     throw new Error("Claude client not configured");
@@ -54,6 +56,7 @@ export async function callClaudeJson({
           max_tokens: Math.min(maxTokens ?? MAX_TOKENS, MAX_TOKENS),
           temperature,
           system,
+          response_format: responseFormat,
           messages: [
             {
               role: "user",

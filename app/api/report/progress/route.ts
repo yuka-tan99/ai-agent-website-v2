@@ -1,27 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { SECTION_TITLES, type ReportSection } from "../../../../lib/report/generate";
 
 type ProgressPayload = {
   userId?: string;
 };
 
-const TOTAL_SECTIONS = 8;
+const TOTAL_SECTIONS = SECTION_TITLES.length;
+const PLACEHOLDER_TEXT = "content is generating...";
 
-function isCompleteSection(section: any): boolean {
+function isMeaningfulText(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return trimmed.toLowerCase() !== PLACEHOLDER_TEXT;
+}
+
+function cardsMeetRequirement(cards: unknown, expectedCount: number): boolean {
+  if (!Array.isArray(cards) || cards.length < expectedCount) return false;
+  return cards.slice(0, expectedCount).every((card) =>
+    isMeaningfulText((card as { content?: string })?.content),
+  );
+}
+
+function isCompleteSection(section: ReportSection | undefined | null): boolean {
   if (!section) return false;
-  const content = typeof section.content === "string" ? section.content.trim() : "";
-  if (!content || content.toLowerCase() === "content is generating...") {
-    return false;
-  }
+  const reportLevel = section.report_level;
+  const learnMore = section.learn_more_level;
+  const mastery = section.unlock_mastery_level;
+  if (!reportLevel || !learnMore || !mastery) return false;
 
-  if (!Array.isArray(section.action_tips)) return false;
-  if (section.action_tips.length < 5) return false;
+  const reportCardsComplete = cardsMeetRequirement(reportLevel.cards, 5);
+  const learnMoreComplete = cardsMeetRequirement(learnMore.cards, 6);
+  const masteryComplete = cardsMeetRequirement(mastery.cards, 6);
+  const actionTipsComplete = Array.isArray(reportLevel.action_tips) && reportLevel.action_tips.length >= 5 && reportLevel.action_tips.every((tip) => isMeaningfulText(tip));
 
-  return section.action_tips.every((tip: unknown) => {
-    if (typeof tip !== "string") return false;
-    return tip.trim().length > 0 && tip !== "Tip will be available soon.";
-  });
+  return reportCardsComplete && learnMoreComplete && masteryComplete && actionTipsComplete;
 }
 
 export async function POST(req: NextRequest) {
@@ -71,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
 
   const plan = data.plan as Record<string, any>;
-  const sections = Array.isArray(plan.sections) ? plan.sections : [];
+  const sections = Array.isArray(plan.sections) ? (plan.sections as ReportSection[]) : [];
   const sectionsReady = sections.filter(isCompleteSection).length;
   const percent = Math.min(
     100,

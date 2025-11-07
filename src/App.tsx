@@ -70,7 +70,8 @@ interface SectionData {
 type CardIconKey = 'Target' | 'Sparkles' | 'TrendingUp' | 'Rocket' | 'Compass' | 'Zap' | 'User' | 'Heart' | 'FolderKanban';
 
 interface SectionCard {
-  title: string;
+  conceptualRole: string;
+  aiTitle: string;
   content: string;
   icon: CardIconKey;
 }

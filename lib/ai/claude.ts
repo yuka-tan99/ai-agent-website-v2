@@ -20,6 +20,11 @@ function sleep(ms: number) {
 
 export const isClaudeAvailable = Boolean(anthropicClient);
 
+type ClaudeResponseFormat =
+  | { type: "json_schema"; json_schema: { name: string; schema: Record<string, unknown> } }
+  | { type: "json_object" }
+  | undefined;
+
 type ClaudeRequest = {
   system?: string;
   prompt: string;
@@ -27,7 +32,7 @@ type ClaudeRequest = {
   temperature?: number;
   timeoutMs?: number;
   retries?: number;
-  responseFormat?: Anthropic.Messages.MessageCreateParamsNonStreaming["response_format"];
+  responseFormat?: ClaudeResponseFormat;
 };
 
 export async function callClaudeJson({

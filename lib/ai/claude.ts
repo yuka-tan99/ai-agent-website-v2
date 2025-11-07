@@ -61,7 +61,6 @@ export async function callClaudeJson({
           max_tokens: Math.min(maxTokens ?? MAX_TOKENS, MAX_TOKENS),
           temperature,
           system,
-          response_format: responseFormat,
           messages: [
             {
               role: "user",

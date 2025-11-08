@@ -287,32 +287,6 @@ const sectionHasGeneratedContent = (section: SectionData) => {
   return section.reportLevel.actionTips.some((tip) => !isPlaceholderContent(tip));
 };
 
-type SectionProgressMap = Record<number, string[]>;
-
-const getSectionStepKeys = (section: SectionData): string[] =>
-  section.reportLevel.cards.map((_, idx) => `report-${idx}`);
-
-const calculateSectionProgressPercent = (
-  section: SectionData,
-  progressMap: SectionProgressMap,
-): number => {
-  const keys = getSectionStepKeys(section);
-  if (!keys.length) return 0;
-  const completed = new Set(progressMap[section.id] ?? []);
-  const doneCount = keys.filter((key) => completed.has(key)).length;
-  return Math.round((doneCount / keys.length) * 100);
-};
-
-const countCompletedSteps = (
-  section: SectionData,
-  progressMap: SectionProgressMap,
-): { completed: number; total: number } => {
-  const keys = getSectionStepKeys(section);
-  const completed = new Set(progressMap[section.id] ?? []);
-  const doneCount = keys.filter((key) => completed.has(key)).length;
-  return { completed: doneCount, total: keys.length };
-};
-
 function createPlaceholderSection(base: SectionData): SectionData {
   const cloneLevel = (level: SectionLevelData, offset = 0): SectionLevelData => ({
     title: level.title,
@@ -353,7 +327,7 @@ const PROTECTED_VIEWS = new Set<ViewType>([
   'preparing',
   'paywall',
 ]);
-const LESSON_PROGRESS_KEY_PREFIX = 'becomefamous_lesson_progress';
+const SECTION_COMPLETION_KEY_PREFIX = 'becomefamous_section_completion';
 
 export default function App({ initialView }: AppProps = {}) {
   const DEV_MODE = false;
@@ -461,9 +435,9 @@ export default function App({ initialView }: AppProps = {}) {
   const [openingReport, setOpeningReport] = useState(false);
   const [isInteractiveLessonsOpen, setInteractiveLessonsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [sectionProgressMap, setSectionProgressMap] = useState<Record<number, string[]>>({});
+  const [completedSectionIds, setCompletedSectionIds] = useState<number[]>([]);
   const [paywallError, setPaywallError] = useState<string | null>(null);
-  const lessonProgressLoadedKeyRef = useRef<string | null>(null);
+  const sectionCompletionLoadedKeyRef = useRef<string | null>(null);
 
   const changeView = useCallback(
     (view: ViewType) => {
@@ -551,9 +525,9 @@ export default function App({ initialView }: AppProps = {}) {
     setSessionId(generated);
   }, []);
 
-  const lessonProgressStorageKey = useMemo(() => {
-    if (user?.id) return `${LESSON_PROGRESS_KEY_PREFIX}_${user.id}`;
-    if (sessionId) return `${LESSON_PROGRESS_KEY_PREFIX}_${sessionId}`;
+  const sectionCompletionStorageKey = useMemo(() => {
+    if (user?.id) return `${SECTION_COMPLETION_KEY_PREFIX}_${user.id}`;
+    if (sessionId) return `${SECTION_COMPLETION_KEY_PREFIX}_${sessionId}`;
     return null;
   }, [sessionId, user?.id]);
 
@@ -569,51 +543,38 @@ export default function App({ initialView }: AppProps = {}) {
     if (!hasHydrated) return;
     if (typeof window === 'undefined') return;
 
-    if (!lessonProgressStorageKey) {
-      lessonProgressLoadedKeyRef.current = null;
-      setSectionProgressMap({});
+    if (!sectionCompletionStorageKey) {
+      sectionCompletionLoadedKeyRef.current = null;
+      setCompletedSectionIds([]);
       return;
     }
 
-    if (lessonProgressLoadedKeyRef.current === lessonProgressStorageKey) {
+    if (sectionCompletionLoadedKeyRef.current === sectionCompletionStorageKey) {
       return;
     }
+    sectionCompletionLoadedKeyRef.current = sectionCompletionStorageKey;
 
-    lessonProgressLoadedKeyRef.current = lessonProgressStorageKey;
-
-    const stored = window.localStorage.getItem(lessonProgressStorageKey);
+    const stored = window.localStorage.getItem(sectionCompletionStorageKey);
     if (!stored) {
-      setSectionProgressMap({});
+      setCompletedSectionIds([]);
       return;
     }
-
     try {
       const parsed = JSON.parse(stored);
-      if (!parsed || typeof parsed !== 'object') {
-        setSectionProgressMap({});
-        return;
-      }
-      const sanitized: Record<number, string[]> = {};
-      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-        const sectionId = Number(key);
-        if (!Number.isInteger(sectionId)) continue;
-        if (!Array.isArray(value)) continue;
-        const deduped = Array.from(
-          new Set(
-            value
-              .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-              .filter((entry): entry is string => entry.length > 0),
-          ),
-        );
-        if (deduped.length) {
-          sanitized[sectionId] = deduped;
-        }
-      }
-      setSectionProgressMap(sanitized);
+      const sanitized = Array.isArray(parsed)
+        ? Array.from(
+            new Set(
+              parsed
+                .map((value) => Number(value))
+                .filter((value) => Number.isInteger(value)),
+            ),
+          ).sort((a, b) => a - b)
+        : [];
+      setCompletedSectionIds(sanitized);
     } catch {
-      setSectionProgressMap({});
+      setCompletedSectionIds([]);
     }
-  }, [hasHydrated, lessonProgressStorageKey]);
+  }, [hasHydrated, sectionCompletionStorageKey]);
 
   useEffect(() => {
     if (hasChatAccess) {
@@ -623,13 +584,11 @@ export default function App({ initialView }: AppProps = {}) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!lessonProgressStorageKey) return;
-    if (lessonProgressLoadedKeyRef.current !== lessonProgressStorageKey) return;
-    window.localStorage.setItem(
-      lessonProgressStorageKey,
-      JSON.stringify(sectionProgressMap),
-    );
-  }, [sectionProgressMap, lessonProgressStorageKey]);
+    if (!sectionCompletionStorageKey) return;
+    if (sectionCompletionLoadedKeyRef.current !== sectionCompletionStorageKey) return;
+    const uniqueSorted = Array.from(new Set(completedSectionIds)).sort((a, b) => a - b);
+    window.localStorage.setItem(sectionCompletionStorageKey, JSON.stringify(uniqueSorted));
+  }, [completedSectionIds, sectionCompletionStorageKey]);
 
   const answersArrayToRecord = useCallback((answers: OnboardingAnswer[]) => {
     const record: Record<string, unknown> = {};
@@ -1390,6 +1349,16 @@ export default function App({ initialView }: AppProps = {}) {
       }
       if (Array.isArray(data.plan) && data.plan.length) {
         const merged = mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]);
+        const generatedSections = merged.filter((section) => !section.isPlaceholder);
+        const wasEmpty =
+          !reportSectionsRef.current ||
+          reportSectionsRef.current.every((section) => section.isPlaceholder);
+        if (wasEmpty && generatedSections.length) {
+          setCompletedSectionIds((prev) => (prev.length ? [] : prev));
+          if (typeof window !== 'undefined' && sectionCompletionStorageKey) {
+            window.localStorage.removeItem(sectionCompletionStorageKey);
+          }
+        }
         setReportSections(merged);
 
         const totalSections = merged.length || defaultSections.length || 1;
@@ -1441,6 +1410,8 @@ export default function App({ initialView }: AppProps = {}) {
     changeView,
     planStatus,
     defaultSections,
+    sectionCompletionStorageKey,
+    setCompletedSectionIds,
   ]);
 
   const generatePlan = useCallback(async () => {
@@ -1598,11 +1569,11 @@ export default function App({ initialView }: AppProps = {}) {
         const sectionsReady = Number(data.sectionsReady) || 0;
         if (sectionsReady > lastSectionsReadyRef.current) {
           lastSectionsReadyRef.current = sectionsReady;
-          await fetchPlan();
         }
 
+        await fetchPlan();
+
         if (status === 'complete') {
-          await fetchPlan();
           setPlanProgress(100);
           setPlanStatus('complete');
           return;
@@ -1746,38 +1717,31 @@ export default function App({ initialView }: AppProps = {}) {
   );
 
   const reportProgress = useMemo(() => {
-    let completed = 0;
-    let total = 0;
-    for (const section of interactiveSections) {
-      const { completed: done, total: steps } = countCompletedSteps(section, sectionProgressMap);
-      completed += done;
-      total += steps;
-    }
-    if (!total) return 0;
-    return Math.round((completed / total) * 100);
-  }, [interactiveSections, sectionProgressMap]);
+    if (!interactiveSections.length) return 0;
+    const completed = completedSectionIds.filter((id) =>
+      interactiveSections.some((section) => section.id === id),
+    ).length;
+    return Math.round((completed / interactiveSections.length) * 100);
+  }, [completedSectionIds, interactiveSections]);
 
   const overviewSections = useMemo(
     () =>
       renderSections.map((section) => {
-        const progress = calculateSectionProgressPercent(section, sectionProgressMap);
+        const progress = completedSectionIds.includes(section.id) ? 100 : 0;
         return {
           id: section.id,
           title: section.title,
           icon: section.icon,
           accentColor: section.accentColor,
-          completed: !section.isPlaceholder && progress === 100,
+          completed: progress === 100,
           progress,
         };
       }),
-    [renderSections, sectionProgressMap],
+    [renderSections, completedSectionIds],
   );
   const completedLessonIds = useMemo(
-    () =>
-      renderSections
-        .filter((section) => calculateSectionProgressPercent(section, sectionProgressMap) === 100)
-        .map((section) => section.id),
-    [renderSections, sectionProgressMap],
+    () => completedSectionIds,
+    [completedSectionIds],
   );
   const totalSections = renderSections.length;
   const hasCompleteReport = Boolean(
@@ -1855,33 +1819,12 @@ export default function App({ initialView }: AppProps = {}) {
   }, [interactiveSections.length, isInteractiveLessonsOpen]);
 
   // Handler Functions
-  const handleLessonCompleted = useCallback((lessonId: number) => {
-    const section = renderSections.find((item) => item.id === lessonId);
-    if (!section) return;
-    const validKeys = getSectionStepKeys(section);
-    if (!validKeys.length) return;
-    setSectionProgressMap((prev) => {
-      const existing = new Set(prev[section.id] ?? []);
-      let changed = false;
-      for (const key of validKeys) {
-        if (!existing.has(key)) {
-          existing.add(key);
-          changed = true;
-        }
+  const handleToggleSectionComplete = useCallback((sectionId: number) => {
+    setCompletedSectionIds((prev) => {
+      if (prev.includes(sectionId)) {
+        return prev.filter((id) => id !== sectionId);
       }
-      if (!changed) return prev;
-      return { ...prev, [section.id]: Array.from(existing) };
-    });
-  }, [renderSections]);
-
-  const handleSectionStepComplete = useCallback((section: SectionData, stepKey: string) => {
-    const validKeys = getSectionStepKeys(section);
-    if (!validKeys.includes(stepKey)) return;
-    setSectionProgressMap((prev) => {
-      const existing = new Set(prev[section.id] ?? []);
-      if (existing.has(stepKey)) return prev;
-      existing.add(stepKey);
-      return { ...prev, [section.id]: Array.from(existing) };
+      return [...prev, sectionId].sort((a, b) => a - b);
     });
   }, []);
 
@@ -2634,8 +2577,8 @@ export default function App({ initialView }: AppProps = {}) {
           onPreviousSection={
             previousDetailSection ? () => setActiveDetailSection(previousDetailSection) : undefined
           }
-          completedStepKeys={sectionProgressMap[activeDetailSection.id] ?? []}
-          onCompleteStep={(stepKey) => handleSectionStepComplete(activeDetailSection, stepKey)}
+          isSectionComplete={completedSectionIds.includes(activeDetailSection.id)}
+          onToggleSectionComplete={() => handleToggleSectionComplete(activeDetailSection.id)}
         />
       )}
 
@@ -2644,8 +2587,8 @@ export default function App({ initialView }: AppProps = {}) {
           isOpen={isInteractiveLessonsOpen}
           onClose={handleCloseLessons}
           sections={interactiveSections}
-          completedLessonIds={completedLessonIds}
-          onMarkLessonComplete={handleLessonCompleted}
+          completedSectionIds={completedSectionIds}
+          onToggleSectionComplete={handleToggleSectionComplete}
         />
       )}
 

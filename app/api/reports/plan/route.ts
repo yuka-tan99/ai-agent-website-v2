@@ -86,5 +86,9 @@ export async function GET(req: NextRequest) {
     console.warn("[report-plan] usage log failed", logError);
   }
 
+  if (process.env.DEBUG_PLAN === "true" && Array.isArray(planPayload) && planPayload.length) {
+    console.info("[report-plan] sample section", JSON.stringify(planPayload[0]?.report_level ?? {}, null, 2));
+  }
+
   return NextResponse.json({ plan: planPayload, fameScore, hasOnboarding });
 }

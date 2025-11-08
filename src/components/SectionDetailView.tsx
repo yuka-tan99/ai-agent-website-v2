@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft,
@@ -47,8 +47,8 @@ interface SectionDetailViewProps {
   onBack: () => void;
   onNextSection?: () => void;
   onPreviousSection?: () => void;
-  completedStepKeys: string[];
-  onCompleteStep: (stepKey: string) => void;
+  isSectionComplete: boolean;
+  onToggleSectionComplete: () => void;
 }
 
 export function SectionDetailView({
@@ -64,8 +64,8 @@ export function SectionDetailView({
   onBack,
   onNextSection,
   onPreviousSection,
-  completedStepKeys,
-  onCompleteStep,
+  isSectionComplete,
+  onToggleSectionComplete,
 }: SectionDetailViewProps) {
   const [isLearnMoreExpanded, setIsLearnMoreExpanded] = useState(false);
   const [learnMorePageIndex, setLearnMorePageIndex] = useState(0);
@@ -74,19 +74,7 @@ export function SectionDetailView({
   const [masteryPageIndex, setMasteryPageIndex] = useState(0);
 
   const PLACEHOLDER = 'content is generating...';
-  const reportStepKeys = useMemo(
-    () => mainCards.map((_, idx) => `report-${idx}`),
-    [mainCards],
-  );
-  const completedStepsSet = useMemo(
-    () => new Set(completedStepKeys),
-    [completedStepKeys],
-  );
-  const completedStepCount = reportStepKeys.filter((key) => completedStepsSet.has(key)).length;
-  const totalStepCount = reportStepKeys.length;
-  const cardProgress = totalStepCount
-    ? Math.round((completedStepCount / totalStepCount) * 100)
-    : 0;
+  const cardProgress = isSectionComplete ? 100 : 0;
 
   const getCardColorByIndex = (index: number) => {
     const colors = ['#d4183d', '#6BA3D1', '#9E5DAB', '#00CC66', '#FF6B9D'];
@@ -205,31 +193,22 @@ export function SectionDetailView({
               animate={{ opacity: 1, y: 0 }}
             >
               <div>
-                <p className="text-sm text-muted-foreground">Dive into your personalized insight</p>
-                <h3 style={{ color: accentColor }}>Your 5-Part Understanding</h3>
+                <p className="text-base font-medium text-muted-foreground">Dive into your personalized insight</p>
+                <h3 className="text-2xl font-semibold" style={{ color: accentColor }}>Your 5-Part Understanding</h3>
               </div>
               <div className="w-full md:w-64">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                  <span>{cardProgress}% explored</span>
-                  <span>
-                    {completedStepCount}/{totalStepCount} cards
-                  </span>
+                  <span>{cardProgress}% complete</span>
+                  <span>{isSectionComplete ? 'All insights digested' : 'Not started'}</span>
                 </div>
                 <Progress value={cardProgress} className="h-2" />
               </div>
             </motion.div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-4 lg:gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 md:gap-5">
               {mainCards.map((card, idx) => {
                 const cardColor = getCardColorByIndex(idx);
                 const accentIcon = floatingIcons[idx];
-                const stepKey = reportStepKeys[idx];
-                const isCompleted = completedStepsSet.has(stepKey);
-
-                const handleActivate = () => {
-                  onCompleteStep(stepKey);
-                };
-
                 return (
                   <motion.div
                     key={`${card.title}-${idx}`}
@@ -240,16 +219,7 @@ export function SectionDetailView({
                     className="relative"
                   >
                     <Card
-                      role="button"
-                      tabIndex={0}
-                      onClick={handleActivate}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          handleActivate();
-                        }
-                      }}
-                      className={`p-4 lg:p-5 relative overflow-hidden h-full transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2`}
+                      className="p-4 lg:p-5 relative overflow-hidden h-full"
                       style={{
                         borderWidth: '4px',
                         borderStyle: 'solid',
@@ -257,18 +227,8 @@ export function SectionDetailView({
                         backgroundColor: `${cardColor}0d`,
                         borderRadius: '24px',
                         boxShadow: `0 10px 40px -10px ${cardColor}40`,
-                        cursor: 'pointer',
-                        outline: 'none',
                       }}
-                      aria-pressed={isCompleted}
-                      data-completed={isCompleted}
                     >
-                      {isCompleted && (
-                        <div className="absolute top-3 right-3 z-20">
-                          <CheckCircle2 className="w-5 h-5 text-white drop-shadow" style={{ color: cardColor }} />
-                        </div>
-                      )}
-
                       <motion.div
                         className="absolute inset-0 rounded-[20px] pointer-events-none"
                         style={{ boxShadow: `inset 0 0 20px ${cardColor}20, 0 0 30px ${cardColor}30` }}
@@ -303,10 +263,10 @@ export function SectionDetailView({
                       </motion.div>
 
                       <div className="space-y-3 relative z-10">
-                        <h3 className="text-sm lg:text-base leading-tight" style={{ color: cardColor }}>
+                        <h3 className="text-base lg:text-lg leading-tight font-semibold" style={{ color: cardColor }}>
                           {card.title}
                         </h3>
-                        <p className="text-xs lg:text-sm leading-relaxed text-muted-foreground">{card.content}</p>
+                        <p className="text-sm lg:text-base leading-relaxed text-muted-foreground">{card.content}</p>
                       </div>
 
                       <motion.div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-[20px]" style={{ backgroundColor: cardColor }} animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 2, repeat: Infinity, delay: idx * 0.4 }} />
@@ -315,6 +275,29 @@ export function SectionDetailView({
                 );
               })}
             </div>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+            <div className="text-sm text-muted-foreground">
+              {isSectionComplete ? 'Section marked complete' : 'Tap when you feel confident about this section.'}
+            </div>
+            <Button
+              onClick={onToggleSectionComplete}
+              className="rounded-full px-6"
+              style={{
+                backgroundColor: isSectionComplete ? '#ffffff' : accentColor,
+                color: isSectionComplete ? accentColor : '#fff',
+                border: isSectionComplete ? `2px solid ${accentColor}` : undefined,
+              }}
+            >
+              {isSectionComplete ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Mark as incomplete
+                </>
+              ) : (
+                'Mark section complete'
+              )}
+            </Button>
           </div>
 
           <Separator />

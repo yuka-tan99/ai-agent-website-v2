@@ -14,8 +14,8 @@ interface InteractiveLessonsProps {
   isOpen: boolean;
   onClose: () => void;
   sections: SectionData[];
-  completedLessonIds: number[];
-  onMarkLessonComplete: (lessonId: number) => void;
+  completedSectionIds: number[];
+  onToggleSectionComplete: (sectionId: number) => void;
 }
 
 const PLACEHOLDER = 'content is generating...';
@@ -42,15 +42,15 @@ export function InteractiveLessons({
   isOpen,
   onClose,
   sections,
-  completedLessonIds,
-  onMarkLessonComplete,
+  completedSectionIds,
+  onToggleSectionComplete,
 }: InteractiveLessonsProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const sanitizedSections = useMemo(() => sections.filter((section) => !section.isPlaceholder), [sections]);
   const totalLessons = sanitizedSections.length;
   const currentSection = sanitizedSections[currentIndex];
-  const completedSet = useMemo(() => new Set(completedLessonIds), [completedLessonIds]);
+  const completedSet = useMemo(() => new Set(completedSectionIds), [completedSectionIds]);
 
   const handleNext = () => {
     setCurrentIndex((prev) => (prev + 1) % totalLessons);
@@ -60,10 +60,9 @@ export function InteractiveLessons({
     setCurrentIndex((prev) => (prev - 1 + totalLessons) % totalLessons);
   };
 
-  const handleCompleteLesson = () => {
+  const handleToggleLesson = () => {
     if (!currentSection) return;
-    if (completedSet.has(currentSection.id)) return;
-    onMarkLessonComplete(currentSection.id);
+    onToggleSectionComplete(currentSection.id);
   };
 
   if (!isOpen || totalLessons === 0 || !currentSection) {
@@ -218,14 +217,17 @@ export function InteractiveLessons({
               </div>
               <div className="flex items-center gap-3">
                 <Button
-                  variant="outline"
-                  onClick={handleCompleteLesson}
-                  disabled={completedSet.has(currentSection.id)}
+                  variant={completedSet.has(currentSection.id) ? 'outline' : 'default'}
+                  onClick={handleToggleLesson}
                   className="rounded-full"
-                  style={{ borderColor: `${accentColor}60`, color: accentColor }}
+                  style={
+                    completedSet.has(currentSection.id)
+                      ? { borderColor: `${accentColor}60`, color: accentColor }
+                      : { backgroundColor: accentColor, color: '#fff' }
+                  }
                 >
                   <CheckCircle2 className="w-4 h-4 mr-2" />
-                  {completedSet.has(currentSection.id) ? 'Completed' : 'Mark complete'}
+                  {completedSet.has(currentSection.id) ? 'Mark as incomplete' : 'Mark complete'}
                 </Button>
               </div>
             </div>

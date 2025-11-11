@@ -142,7 +142,9 @@ function normalizeAccessWindow(
   startAt: Date | undefined,
   endAt: Date | undefined,
 ): { start: Date; end: Date } {
-  const start = startAt ?? new Date();
+  const now = new Date();
+  const candidateStart = startAt ?? now;
+  const start = candidateStart > now ? now : candidateStart;
 
   if (endAt) {
     return { start, end: endAt };
@@ -797,6 +799,7 @@ type AccessGrantInput = {
   start?: Date | null | undefined;
   end?: Date | null | undefined;
   status?: string | null;
+  source?: string;
 };
 
 async function upsertAccessGrant(input: AccessGrantInput) {
@@ -811,7 +814,7 @@ async function upsertAccessGrant(input: AccessGrantInput) {
   const grantPayload = {
     user_id: input.userId,
     product_key: input.product.key,
-    source: "stripe",
+    source: input.source ?? "stripe",
     status:
       input.status && ["canceled", "inactive"].includes(input.status)
         ? "canceled"
@@ -827,7 +830,7 @@ async function upsertAccessGrant(input: AccessGrantInput) {
     .select("id, access_ends_at")
     .eq("user_id", input.userId)
     .eq("product_key", input.product.key)
-    .eq("source", "stripe")
+    .eq("source", input.source ?? "stripe")
     .order("access_ends_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -865,6 +868,24 @@ async function upsertAccessGrant(input: AccessGrantInput) {
         input.userId,
         error,
       );
+    }
+  }
+
+  if (
+    input.product.key !== "report_chat_bonus" &&
+    input.product.access.report &&
+    !input.product.access.chatMonths
+  ) {
+    const chatBonusProduct = getProductByKey("report_chat_bonus");
+    if (chatBonusProduct) {
+      await upsertAccessGrant({
+        userId: input.userId,
+        product: chatBonusProduct,
+        paymentId: input.paymentId,
+        start,
+        status: input.status,
+        source: "system",
+      });
     }
   }
 

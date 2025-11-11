@@ -51,6 +51,17 @@ export async function GET(req: NextRequest) {
       if (!chatUntil || candidate.getTime() > chatUntil.getTime()) {
         chatUntil = candidate;
       }
+    } else if (product.access.report) {
+      const startDate = grant.access_starts_at
+        ? new Date(grant.access_starts_at)
+        : null;
+      if (startDate && Number.isFinite(startDate.getTime())) {
+        const candidate = new Date(startDate);
+        candidate.setMonth(candidate.getMonth() + 3);
+        if (!chatUntil || candidate.getTime() > chatUntil.getTime()) {
+          chatUntil = candidate;
+        }
+      }
     }
   }
 

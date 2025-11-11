@@ -71,7 +71,7 @@ export function PaywallPage({ onUnlock, onBack, isProcessing = false, errorMessa
                 <Target className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h4 className="mb-1">8 Personalized Action Sections</h4>
+                <h4 className="mb-1">9 Personalized Action Sections</h4>
                 <p className="text-sm text-muted-foreground">
                   From identifying your main problem to advanced marketing strategies
                 </p>

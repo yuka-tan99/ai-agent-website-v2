@@ -2,7 +2,8 @@ export type ProductKey =
   | "report_plan"
   | "ai_subscription"
   | "ai_one_time"
-  | "expert_bundle";
+  | "expert_bundle"
+  | "report_chat_bonus";
 
 export type ProductMode = "payment" | "subscription";
 
@@ -20,9 +21,10 @@ export type ProductConfig = {
 
 type Definition = {
   key: ProductKey;
-  env: keyof NodeJS.ProcessEnv;
+  env?: keyof NodeJS.ProcessEnv;
   mode: ProductMode;
   access: ProductAccess;
+  priceId?: string;
 };
 
 const DEFINITIONS: Definition[] = [
@@ -50,6 +52,12 @@ const DEFINITIONS: Definition[] = [
     mode: "payment",
     access: { report: true, chatMonths: 3 },
   },
+  {
+    key: "report_chat_bonus",
+    mode: "payment",
+    access: { chatMonths: 3 },
+    priceId: "virtual-report-chat-bonus",
+  },
 ];
 
 function requireEnv(name: keyof NodeJS.ProcessEnv): string {
@@ -61,9 +69,12 @@ function requireEnv(name: keyof NodeJS.ProcessEnv): string {
 }
 
 function buildProduct(definition: Definition): ProductConfig {
+  const priceId = definition.env
+    ? requireEnv(definition.env)
+    : definition.priceId ?? `virtual-${definition.key}`;
   return {
     key: definition.key,
-    priceId: requireEnv(definition.env),
+    priceId,
     mode: definition.mode,
     access: definition.access,
   };

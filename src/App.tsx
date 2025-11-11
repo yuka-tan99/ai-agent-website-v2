@@ -27,14 +27,14 @@ import { InteractiveLessons } from './components/InteractiveLessons';
 import { AskVeeChat } from './components/AskVeeChat';
 import { SectionDetailView } from './components/SectionDetailView';
 import { Button } from './components/ui/button';
-import { 
-  Target, 
-  Zap, 
-  Compass, 
-  User, 
-  TrendingUp, 
-  FolderKanban, 
-  Heart, 
+import {
+  Target,
+  Zap,
+  Compass,
+  User,
+  TrendingUp,
+  FolderKanban,
+  Heart,
   Rocket,
   DollarSign,
   BookOpen,
@@ -70,37 +70,10 @@ interface SectionData {
 type CardIconKey = 'Target' | 'Sparkles' | 'TrendingUp' | 'Rocket' | 'Compass' | 'Zap' | 'User' | 'Heart' | 'FolderKanban';
 
 interface SectionCard {
-  conceptualRole: string;
   aiTitle: string;
   content: string;
   icon: CardIconKey;
 }
-
-const REPORT_LEVEL_CONCEPTUAL_ROLES = [
-  'MIRROR MOMENT',
-  'THE CORE INSIGHT',
-  'YOUR CURRENT REALITY',
-  'YOUR OPPORTUNITY',
-  'THE MINDSET SHIFT',
-] as const;
-
-const LEARN_MORE_LEVEL_CONCEPTUAL_ROLES = [
-  'THE DEEP DIVE',
-  'THE FRAMEWORK',
-  'THE PROGRESSION',
-  'THE PATTERNS',
-  'THE COMMON MISTAKES',
-  'THE STRATEGIC THINKING',
-] as const;
-
-const UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES = [
-  'THE ADVANCED MECHANICS',
-  'THE STRATEGIC LAYER',
-  'THE INTEGRATION',
-  'THE EDGE CASES',
-  'THE MASTERY INDICATORS',
-  'THE CUTTING EDGE',
-] as const;
 
 type SectionMeta = {
   id: number;
@@ -110,21 +83,19 @@ type SectionMeta = {
 };
 
 function assignCardIcons(
-  cards: Array<{ conceptualRole: string; aiTitle: string; content: string }>,
+  cards: Array<{ aiTitle: string; content: string }>,
   offset = 0,
 ): SectionCard[] {
   return cards.map((card, index) => ({
-    conceptualRole: card.conceptualRole,
     aiTitle: card.aiTitle,
     content: card.content,
     icon: CARD_ICON_KEYS[(offset + index) % CARD_ICON_KEYS.length],
   }));
 }
 
-function createLevelFromRoles(title: string, roles: readonly string[], offset = 0): SectionLevelData {
-  const cards = roles.map((role) => ({
-    conceptualRole: role,
-    aiTitle: role,
+function createLevelPlaceholder(title: string, count: number, offset = 0): SectionLevelData {
+  const cards = Array.from({ length: count }, (_, index) => ({
+    aiTitle: `Insight ${index + 1}`,
     content: PLACEHOLDER_MARKER,
   }));
   return {
@@ -137,9 +108,8 @@ function createReportLevelPlaceholder(sectionTitle: string): ReportLevelData {
   return {
     title: `${sectionTitle}: Why & What`,
     cards: assignCardIcons(
-      REPORT_LEVEL_CONCEPTUAL_ROLES.map((role) => ({
-        conceptualRole: role,
-        aiTitle: role,
+      Array.from({ length: REPORT_LEVEL_CARD_COUNT }, (_, index) => ({
+        aiTitle: `Insight ${index + 1}`,
         content: PLACEHOLDER_MARKER,
       })),
     ),
@@ -148,30 +118,34 @@ function createReportLevelPlaceholder(sectionTitle: string): ReportLevelData {
 }
 
 function normalizeActionTips(tips?: string[]): string[] {
-  const cleaned = Array.isArray(tips)
-    ? tips
-        .map((tip) => (typeof tip === 'string' ? tip.trim() : ''))
-        .filter((tip) => tip.length > 0)
-    : [];
+  const cleaned: string[] = [];
+  if (Array.isArray(tips)) {
+    for (const tip of tips) {
+      const trimmed = typeof tip === 'string' ? tip.trim() : '';
+      if (!trimmed || isPlaceholderContent(trimmed)) continue;
+      cleaned.push(trimmed);
+      if (cleaned.length === 5) break;
+    }
+  }
   while (cleaned.length < 5) {
     cleaned.push(PLACEHOLDER_MARKER);
   }
-  return cleaned.slice(0, 5);
+  return cleaned;
 }
 
 function normalizeCardsFromPayload(
-  cards: Array<{ conceptual_role?: string; ai_generated_title?: string; content?: string }> | undefined,
-  roles: readonly string[],
+  cards: Array<{ ai_generated_title?: string; content?: string }> | undefined,
+  expectedCount: number,
   offset = 0,
 ): SectionCard[] {
-  const normalized = roles.map((role, index) => {
+  const normalized = Array.from({ length: expectedCount }, (_, index) => {
     const raw = cards?.[index];
     const aiTitle = typeof raw?.ai_generated_title === 'string' && raw.ai_generated_title.trim().length
       ? raw.ai_generated_title.trim()
-      : role;
-    const content = typeof raw?.content === 'string' && raw.content.trim().length ? raw.content.trim() : PLACEHOLDER_MARKER;
+      : `Insight ${index + 1}`;
+    const contentValue = typeof raw?.content === 'string' ? raw.content.trim() : '';
+    const content = !contentValue || isPlaceholderContent(contentValue) ? PLACEHOLDER_MARKER : contentValue;
     return {
-      conceptualRole: role,
       aiTitle,
       content,
     };
@@ -186,8 +160,8 @@ function createBaseSection(meta: SectionMeta): SectionData {
     icon: meta.icon,
     accentColor: meta.accentColor,
     reportLevel: createReportLevelPlaceholder(meta.title),
-    learnMoreLevel: createLevelFromRoles('Learn More', LEARN_MORE_LEVEL_CONCEPTUAL_ROLES, 1),
-    unlockMasteryLevel: createLevelFromRoles('Unlock Mastery', UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES, 2),
+    learnMoreLevel: createLevelPlaceholder('Learn More', LEARN_MORE_LEVEL_CARD_COUNT, 1),
+    unlockMasteryLevel: createLevelPlaceholder('Unlock Mastery', UNLOCK_MASTERY_LEVEL_CARD_COUNT, 2),
     isPlaceholder: true,
   };
 }
@@ -201,8 +175,13 @@ const SECTION_META: SectionMeta[] = [
   { id: 6, title: 'Platform Organization & Systems', icon: <FolderKanban className="w-6 h-6" />, accentColor: '#B481C0' },
   { id: 7, title: 'Mental Health & Sustainability', icon: <Heart className="w-6 h-6" />, accentColor: '#9E5DAB' },
   { id: 8, title: 'Advanced Marketing Types & Case Studies', icon: <Rocket className="w-6 h-6" />, accentColor: '#D1A5DD' },
-  { id: 9, title: 'Monetization', icon: <DollarSign className="w-6 h-6" />, accentColor: '#00CC66' },
+  { id: 9, title: 'Monetization Strategies', icon: <DollarSign className="w-6 h-6" />, accentColor: '#00CC66' },
 ];
+
+const TOTAL_REPORT_SECTIONS = SECTION_META.length;
+const REPORT_LEVEL_CARD_COUNT = 5;
+const LEARN_MORE_LEVEL_CARD_COUNT = 6;
+const UNLOCK_MASTERY_LEVEL_CARD_COUNT = 6;
 
 const CARD_ICON_KEYS: readonly CardIconKey[] = [
   'Target',
@@ -248,16 +227,16 @@ type GeneratedSectionPayload = {
   section_title?: string;
   report_level?: {
     title?: string;
-    cards?: Array<{ conceptual_role?: string; ai_generated_title?: string; content?: string }>;
+    cards?: Array<{ ai_generated_title?: string; content?: string }>;
     action_tips?: string[];
   };
   learn_more_level?: {
     title?: string;
-    cards?: Array<{ conceptual_role?: string; ai_generated_title?: string; content?: string }>;
+    cards?: Array<{ ai_generated_title?: string; content?: string }>;
   };
   unlock_mastery_level?: {
     title?: string;
-    cards?: Array<{ conceptual_role?: string; ai_generated_title?: string; content?: string }>;
+    cards?: Array<{ ai_generated_title?: string; content?: string }>;
   };
   accentColor?: string;
 };
@@ -292,7 +271,6 @@ function createPlaceholderSection(base: SectionData): SectionData {
     title: level.title,
     cards: assignCardIcons(
       level.cards.map((card) => ({
-        conceptualRole: card.conceptualRole,
         aiTitle: card.aiTitle,
         content: PLACEHOLDER_MARKER,
       })),
@@ -306,7 +284,6 @@ function createPlaceholderSection(base: SectionData): SectionData {
       title: base.reportLevel.title,
       cards: assignCardIcons(
         base.reportLevel.cards.map((card) => ({
-          conceptualRole: card.conceptualRole,
           aiTitle: card.aiTitle,
           content: PLACEHOLDER_MARKER,
         })),
@@ -416,6 +393,8 @@ export default function App({ initialView }: AppProps = {}) {
   const reportSectionsRef = useRef<SectionData[] | null>(null);
   const [planStatus, setPlanStatus] = useState<PlanStatus>('idle');
   const [planProgress, setPlanProgress] = useState(0);
+  const [backendSectionsReady, setBackendSectionsReady] = useState(0);
+  const [hasFameScore, setHasFameScore] = useState(false);
   const planAutoNavigationDoneRef = useRef(false);
   const isRoutingRef = useRef(false);
   const planRequestRef = useRef(false);
@@ -424,6 +403,7 @@ export default function App({ initialView }: AppProps = {}) {
   const [loadingPlan, setLoadingPlan] = useState(false);
   const planPollTimeoutRef = useRef<number | null>(null);
   const lastSectionsReadyRef = useRef(0);
+  const generationTokenRef = useRef(0);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const checkoutLoadingRef = useRef(false);
   const checkoutHandledRef = useRef(false);
@@ -439,6 +419,38 @@ export default function App({ initialView }: AppProps = {}) {
   const [paywallError, setPaywallError] = useState<string | null>(null);
   const sectionCompletionLoadedKeyRef = useRef<string | null>(null);
 
+  const recordSectionsReady = useCallback((count: number, token?: number) => {
+    if (token != null && token !== generationTokenRef.current) return;
+    if (!Number.isFinite(count)) return;
+    const clamped = Math.max(
+      0,
+      Math.min(TOTAL_REPORT_SECTIONS, Math.floor(count)),
+    );
+    if (clamped > backendSectionsReady) {
+      setBackendSectionsReady(clamped);
+    }
+    if (clamped <= lastSectionsReadyRef.current) {
+      if (clamped >= TOTAL_REPORT_SECTIONS) {
+        setPlanProgress(100);
+        setPlanStatus('complete');
+      }
+      return;
+    }
+    lastSectionsReadyRef.current = clamped;
+    const percent = TOTAL_REPORT_SECTIONS
+      ? Math.min(
+          100,
+          Math.round((lastSectionsReadyRef.current / TOTAL_REPORT_SECTIONS) * 100),
+        )
+      : 0;
+    setPlanProgress(percent);
+    if (clamped >= TOTAL_REPORT_SECTIONS) {
+      setPlanStatus('complete');
+    } else if (clamped > 0) {
+      setPlanStatus((prev) => (prev === 'complete' ? prev : 'in-progress'));
+    }
+  }, [backendSectionsReady, setPlanProgress, setPlanStatus]);
+
   const changeView = useCallback(
     (view: ViewType) => {
       const hasRoute = Boolean(viewToPath[view]);
@@ -450,14 +462,15 @@ export default function App({ initialView }: AppProps = {}) {
     },
     [setView, viewToPath],
   );
+  const changeViewRef = useRef(changeView);
+  changeViewRef.current = changeView;
 
   const hasChatAccess = useMemo(() => {
-    if (hasPaid) return true;
     if (!chatAccessUntil) return false;
     const expiresAt = new Date(chatAccessUntil).getTime();
     if (Number.isNaN(expiresAt)) return false;
     return expiresAt > Date.now();
-  }, [hasPaid, chatAccessUntil]);
+  }, [chatAccessUntil]);
 
   const [hasHydrated, setHasHydrated] = useState(false);
   useEffect(() => {
@@ -467,6 +480,7 @@ export default function App({ initialView }: AppProps = {}) {
   useEffect(() => {
     reportSectionsRef.current = reportSections;
   }, [reportSections]);
+
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -563,12 +577,12 @@ export default function App({ initialView }: AppProps = {}) {
       const parsed = JSON.parse(stored);
       const sanitized = Array.isArray(parsed)
         ? Array.from(
-            new Set(
-              parsed
-                .map((value) => Number(value))
-                .filter((value) => Number.isInteger(value)),
-            ),
-          ).sort((a, b) => a - b)
+          new Set(
+            parsed
+              .map((value) => Number(value))
+              .filter((value) => Number.isInteger(value)),
+          ),
+        ).sort((a, b) => a - b)
         : [];
       setCompletedSectionIds(sanitized);
     } catch {
@@ -664,14 +678,16 @@ export default function App({ initialView }: AppProps = {}) {
       console.error('Failed to refresh access', error);
     }
   }, [getAuthHeaders, user?.id]);
+  const refreshAccessRef = useRef(refreshAccess);
+  refreshAccessRef.current = refreshAccess;
 
   useEffect(() => {
     if (!user?.id) {
       setChatAccessUntil(null);
       return;
     }
-    void refreshAccess();
-  }, [user?.id, refreshAccess]);
+    void refreshAccessRef.current?.();
+  }, [user?.id]);
   const [profileName, setProfileName] = useState<string | null>(null);
   const [profileEmail, setProfileEmail] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -702,7 +718,7 @@ export default function App({ initialView }: AppProps = {}) {
   const [activeDetailSection, setActiveDetailSection] = useState<SectionData | null>(null);
   const [accountInitialSection, setAccountInitialSection] = useState<'report' | 'usage' | 'rewards' | 'referrals' | 'profile'>('usage');
   const initialPlanFetchRef = useRef(false);
-  
+
   const applyFameScoreFromAnswers = useCallback(
     (source: OnboardingAnswersSource) => {
       if (!source) return;
@@ -717,13 +733,14 @@ export default function App({ initialView }: AppProps = {}) {
         if (Number.isFinite(result.trend)) {
           setScoreTrend(result.trend);
         }
+        setHasFameScore(true);
       } catch (error) {
         console.error('Failed to calculate fame score', error);
         setFameScore(DEFAULT_FAME_SCORE);
         setScoreTrend(DEFAULT_SCORE_TREND);
       }
     },
-    [setFameScore, setScoreTrend],
+    [setFameScore, setScoreTrend, setHasFameScore],
   );
 
   const loadProfile = useCallback(async (supabaseUser: SupabaseUser) => {
@@ -895,7 +912,7 @@ export default function App({ initialView }: AppProps = {}) {
 
   const defaultSections = useMemo<SectionData[]>(() =>
     SECTION_META.map((meta) => createBaseSection(meta)),
-  [],
+    [],
   );
 
 
@@ -915,7 +932,7 @@ export default function App({ initialView }: AppProps = {}) {
         const learnLevelPayload = generated.learn_more_level;
         const masteryPayload = generated.unlock_mastery_level;
 
-        return {
+        const normalizedSection: SectionData = {
           ...section,
           title: typeof generated.section_title === 'string' && generated.section_title.trim().length
             ? generated.section_title.trim()
@@ -924,23 +941,28 @@ export default function App({ initialView }: AppProps = {}) {
             title: typeof reportLevelPayload?.title === 'string' && reportLevelPayload.title.trim().length
               ? reportLevelPayload.title.trim()
               : section.reportLevel.title,
-            cards: normalizeCardsFromPayload(reportLevelPayload?.cards, REPORT_LEVEL_CONCEPTUAL_ROLES),
+            cards: normalizeCardsFromPayload(reportLevelPayload?.cards, REPORT_LEVEL_CARD_COUNT),
             actionTips: normalizeActionTips(reportLevelPayload?.action_tips),
           },
           learnMoreLevel: {
             title: typeof learnLevelPayload?.title === 'string' && learnLevelPayload.title.trim().length
               ? learnLevelPayload.title.trim()
               : section.learnMoreLevel.title,
-            cards: normalizeCardsFromPayload(learnLevelPayload?.cards, LEARN_MORE_LEVEL_CONCEPTUAL_ROLES, 1),
+            cards: normalizeCardsFromPayload(learnLevelPayload?.cards, LEARN_MORE_LEVEL_CARD_COUNT, 1),
           },
           unlockMasteryLevel: {
             title: typeof masteryPayload?.title === 'string' && masteryPayload.title.trim().length
               ? masteryPayload.title.trim()
               : section.unlockMasteryLevel.title,
-            cards: normalizeCardsFromPayload(masteryPayload?.cards, UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES, 2),
+            cards: normalizeCardsFromPayload(masteryPayload?.cards, UNLOCK_MASTERY_LEVEL_CARD_COUNT, 2),
           },
           accentColor: generated.accentColor ?? section.accentColor,
           isPlaceholder: false,
+        };
+        const hasRealContent = sectionHasGeneratedContent(normalizedSection);
+        return {
+          ...normalizedSection,
+          isPlaceholder: !hasRealContent,
         };
       });
     },
@@ -1325,6 +1347,7 @@ export default function App({ initialView }: AppProps = {}) {
 
   const fetchPlan = useCallback(async () => {
     if (!user?.id) return false;
+    const generationToken = generationTokenRef.current;
     try {
       const authHeaders = await getAuthHeaders();
       const response = await fetch('/api/reports/plan', {
@@ -1332,6 +1355,9 @@ export default function App({ initialView }: AppProps = {}) {
       });
       if (!response.ok) return false;
       const data = await response.json();
+      if (generationToken !== generationTokenRef.current) {
+        return false;
+      }
       if (data?.fameScore) {
         const scoreValue = Number(data.fameScore.score);
         if (Number.isFinite(scoreValue)) {
@@ -1341,6 +1367,7 @@ export default function App({ initialView }: AppProps = {}) {
         if (Number.isFinite(trendValue)) {
           setScoreTrend(trendValue);
         }
+        setHasFameScore(true);
       } else if (onboardingAnswers.length) {
         applyFameScoreFromAnswers(onboardingAnswers);
       }
@@ -1349,10 +1376,10 @@ export default function App({ initialView }: AppProps = {}) {
       }
       if (Array.isArray(data.plan) && data.plan.length) {
         const merged = mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]);
-        const generatedSections = merged.filter((section) => !section.isPlaceholder);
+        const generatedSections = merged.filter((section) => sectionHasGeneratedContent(section));
         const wasEmpty =
           !reportSectionsRef.current ||
-          reportSectionsRef.current.every((section) => section.isPlaceholder);
+          reportSectionsRef.current.every((section) => !sectionHasGeneratedContent(section));
         if (wasEmpty && generatedSections.length) {
           setCompletedSectionIds((prev) => (prev.length ? [] : prev));
           if (typeof window !== 'undefined' && sectionCompletionStorageKey) {
@@ -1361,12 +1388,17 @@ export default function App({ initialView }: AppProps = {}) {
         }
         setReportSections(merged);
 
-        const totalSections = merged.length || defaultSections.length || 1;
-        const readyCount = merged.filter((section) => !section.isPlaceholder).length;
-        const percentage = Math.round((readyCount / totalSections) * 100);
-
-        setPlanProgress(percentage);
-        lastSectionsReadyRef.current = readyCount;
+        const totalSections = merged.length || TOTAL_REPORT_SECTIONS || 1;
+        const readyCount = merged.filter((section) => sectionHasGeneratedContent(section)).length;
+        setBackendSectionsReady((prev) => Math.max(prev, readyCount));
+        if (readyCount > lastSectionsReadyRef.current) {
+          lastSectionsReadyRef.current = readyCount;
+        }
+        const percent = totalSections
+          ? Math.min(100, Math.round((readyCount / totalSections) * 100))
+          : 0;
+        setPlanProgress((prev) => (percent > prev ? percent : prev));
+        recordSectionsReady(readyCount, generationToken);
 
         if (readyCount === 0) {
           if (planStatus === 'idle') {
@@ -1384,6 +1416,7 @@ export default function App({ initialView }: AppProps = {}) {
         setHasCompletedOnboarding(true);
         setHasPaid(true);
         if (
+          readyCount === totalSections &&
           allowAutoDashboardRef.current &&
           !planAutoNavigationDoneRef.current &&
           currentView !== 'dashboard'
@@ -1409,13 +1442,16 @@ export default function App({ initialView }: AppProps = {}) {
     currentView,
     changeView,
     planStatus,
-    defaultSections,
     sectionCompletionStorageKey,
     setCompletedSectionIds,
+    recordSectionsReady,
+    setPlanProgress,
+    setBackendSectionsReady,
   ]);
 
   const generatePlan = useCallback(async () => {
-    if (!user?.id) return false;
+    if (!user?.id || !hasPaid) return false;
+    const generationToken = generationTokenRef.current;
     setLoadingPlan(true);
     try {
       const authHeaders = await getAuthHeaders();
@@ -1425,6 +1461,9 @@ export default function App({ initialView }: AppProps = {}) {
       });
       if (response.ok) {
         const data = await response.json();
+        if (generationToken !== generationTokenRef.current) {
+          return false;
+        }
         if (data?.fameScore) {
           const scoreValue = Number(data.fameScore.score);
           if (Number.isFinite(scoreValue)) {
@@ -1434,17 +1473,16 @@ export default function App({ initialView }: AppProps = {}) {
           if (Number.isFinite(trendValue)) {
             setScoreTrend(trendValue);
           }
+          setHasFameScore(true);
         } else if (onboardingAnswers.length) {
           applyFameScoreFromAnswers(onboardingAnswers);
         }
         if (Array.isArray(data.plan) && data.plan.length) {
           const merged = mergePlanWithDefaults(data.plan as GeneratedSectionPayload[]);
           setReportSections(merged);
-          const totalSections = merged.length || defaultSections.length || 1;
-          const readyCount = merged.filter((section) => !section.isPlaceholder).length;
-          const percentage = Math.round((readyCount / totalSections) * 100);
-          setPlanProgress(percentage);
-          lastSectionsReadyRef.current = readyCount;
+          const totalSections = merged.length || TOTAL_REPORT_SECTIONS || 1;
+          const readyCount = merged.filter((section) => sectionHasGeneratedContent(section)).length;
+          recordSectionsReady(readyCount, generationToken);
           if (readyCount === totalSections) {
             setPlanStatus('complete');
           } else if (readyCount > 0 && planStatus !== 'complete') {
@@ -1467,20 +1505,21 @@ export default function App({ initialView }: AppProps = {}) {
     fetchPlan,
     mergePlanWithDefaults,
     user?.id,
+    hasPaid,
     getAuthHeaders,
     setFameScore,
     setScoreTrend,
     onboardingAnswers,
     applyFameScoreFromAnswers,
     planStatus,
-    defaultSections,
+    recordSectionsReady,
   ]);
 
   const waitForReportCompletion = useCallback(async (): Promise<boolean> => {
     const isComplete = () => {
       const sections = reportSectionsRef.current;
       if (!Array.isArray(sections) || sections.length === 0) return false;
-      return sections.every((section) => !section.isPlaceholder);
+      return sections.every((section) => sectionHasGeneratedContent(section));
     };
 
     if (isComplete()) {
@@ -1511,7 +1550,8 @@ export default function App({ initialView }: AppProps = {}) {
   }, []);
 
   const ensureReportReady = useCallback(async () => {
-    if (reportSectionsRef.current && reportSectionsRef.current.every((section) => !section.isPlaceholder)) {
+    if (!hasPaid) return false;
+    if (reportSectionsRef.current && reportSectionsRef.current.every((section) => sectionHasGeneratedContent(section))) {
       return true;
     }
     if (await waitForReportCompletion()) {
@@ -1526,16 +1566,18 @@ export default function App({ initialView }: AppProps = {}) {
       return true;
     }
     return false;
-  }, [fetchPlan, generatePlan, waitForReportCompletion]);
+  }, [fetchPlan, generatePlan, waitForReportCompletion, hasPaid]);
 
   useEffect(() => {
     if (!user?.id) return;
-    if (planStatus === 'complete') return;
+    if (!hasPaid) return;
     if (currentView !== 'preparing' && currentView !== 'dashboard') return;
+    if (planStatus === 'complete' && lastSectionsReadyRef.current >= TOTAL_REPORT_SECTIONS) return;
 
     let cancelled = false;
 
     const pollProgress = async () => {
+      const generationToken = generationTokenRef.current;
       try {
         const authHeaders = await getAuthHeaders();
         const response = await fetch('/api/report/progress', {
@@ -1553,28 +1595,32 @@ export default function App({ initialView }: AppProps = {}) {
 
         const data = await response.json();
         if (cancelled) return;
-
-        const percent = Number(data.percent);
-        if (Number.isFinite(percent)) {
-          setPlanProgress((prev) => (percent > prev ? percent : prev));
-        }
+        if (generationToken !== generationTokenRef.current) return;
 
         const status = (typeof data.status === 'string' ? data.status : 'pending') as PlanStatus;
         if (status === 'pending' && planStatus === 'idle') {
           setPlanStatus('pending');
         } else if (status === 'in-progress') {
-          setPlanStatus('in-progress');
+          setPlanStatus((prev) => (prev === 'complete' ? prev : 'in-progress'));
         }
 
-        const sectionsReady = Number(data.sectionsReady) || 0;
-        if (sectionsReady > lastSectionsReadyRef.current) {
-          lastSectionsReadyRef.current = sectionsReady;
+        const sectionsReadyRaw = Number(data.sectionsReady);
+        if (Number.isFinite(sectionsReadyRaw)) {
+          const clampedReady = Math.max(
+            0,
+            Math.min(TOTAL_REPORT_SECTIONS, Math.floor(sectionsReadyRaw)),
+          );
+          recordSectionsReady(clampedReady, generationToken);
+          if (clampedReady >= TOTAL_REPORT_SECTIONS) {
+            setPlanStatus('complete');
+          } else if (clampedReady > 0 && planStatus === 'idle') {
+            setPlanStatus('in-progress');
+          }
         }
 
         await fetchPlan();
 
-        if (status === 'complete') {
-          setPlanProgress(100);
+        if (lastSectionsReadyRef.current >= TOTAL_REPORT_SECTIONS) {
           setPlanStatus('complete');
           return;
         }
@@ -1601,21 +1647,40 @@ export default function App({ initialView }: AppProps = {}) {
   }, [
     currentView,
     user?.id,
+    hasPaid,
     planStatus,
     getAuthHeaders,
     fetchPlan,
+    recordSectionsReady,
   ]);
+
+  const renderSections = reportSections ?? placeholderSections;
+
+  const readySectionCount = useMemo(() => {
+    if (!reportSections) return 0;
+    return reportSections.filter((section) => sectionHasGeneratedContent(section)).length;
+  }, [reportSections]);
+  const hasAllSectionsReady = useMemo(
+    () => Math.max(readySectionCount, backendSectionsReady) >= TOTAL_REPORT_SECTIONS,
+    [backendSectionsReady, readySectionCount],
+  );
+  const hasBackendComplete = backendSectionsReady >= TOTAL_REPORT_SECTIONS;
+  const displayPlanProgress = useMemo(() => {
+    const backendPercent = TOTAL_REPORT_SECTIONS
+      ? Math.round((Math.max(readySectionCount, backendSectionsReady) / TOTAL_REPORT_SECTIONS) * 100)
+      : 0;
+    return Math.max(planProgress, backendPercent);
+  }, [backendSectionsReady, planProgress, readySectionCount]);
 
   useEffect(() => {
     if (pathname !== '/dashboard' && pathname !== '/preparing') return;
     if (authLoading) return;
     if (!user?.id) return;
     if (!hasCompletedOnboarding) return;
+    if (!hasPaid) return;
 
     if (reportSections) {
-      const allSectionsReady = reportSections.every((section) => !section.isPlaceholder);
-
-      if (!allSectionsReady) {
+      if (!hasAllSectionsReady) {
         planSettledRef.current = false;
         if (currentView === 'dashboard') {
           setView('preparing');
@@ -1628,12 +1693,29 @@ export default function App({ initialView }: AppProps = {}) {
       }
 
       if (
+        hasPaid &&
         allowAutoDashboardRef.current &&
         !planAutoNavigationDoneRef.current &&
         currentView !== 'dashboard'
       ) {
         planAutoNavigationDoneRef.current = true;
         setView('dashboard');
+      }
+      return;
+    }
+
+    if (hasBackendComplete) {
+      if (!planSettledRef.current) {
+        planSettledRef.current = true;
+      }
+      if (currentView === 'preparing') {
+        setView('dashboard');
+      }
+      if (!planRequestRef.current && !loadingPlan) {
+        planRequestRef.current = true;
+        fetchPlan().finally(() => {
+          planRequestRef.current = false;
+        });
       }
       return;
     }
@@ -1653,15 +1735,7 @@ export default function App({ initialView }: AppProps = {}) {
         if (!hasExistingPlan) {
           await generatePlan();
         }
-        if (
-          !cancelled &&
-          allowAutoDashboardRef.current &&
-          !planAutoNavigationDoneRef.current
-        ) {
-          setView('dashboard');
-          planSettledRef.current = true;
-          planAutoNavigationDoneRef.current = true;
-        } else if (!cancelled) {
+        if (!cancelled) {
           planSettledRef.current = true;
         }
       } catch (error) {
@@ -1680,6 +1754,7 @@ export default function App({ initialView }: AppProps = {}) {
   }, [
     authLoading,
     user?.id,
+    hasPaid,
     hasCompletedOnboarding,
     reportSections,
     loadingPlan,
@@ -1690,6 +1765,8 @@ export default function App({ initialView }: AppProps = {}) {
     currentView,
     setView,
     pathname,
+    hasAllSectionsReady,
+    hasBackendComplete,
   ]);
 
   useEffect(() => {
@@ -1709,10 +1786,11 @@ export default function App({ initialView }: AppProps = {}) {
     fetchPlan();
   }, [authLoading, user?.id, fetchPlan]);
 
-  const renderSections = reportSections ?? placeholderSections;
-
   const interactiveSections = useMemo(
-    () => renderSections.filter((section) => !section.isPlaceholder),
+    () =>
+      renderSections.filter(
+        (section) => !section.isPlaceholder && sectionHasGeneratedContent(section),
+      ),
     [renderSections],
   );
 
@@ -1744,9 +1822,37 @@ export default function App({ initialView }: AppProps = {}) {
     [completedSectionIds],
   );
   const totalSections = renderSections.length;
-  const hasCompleteReport = Boolean(
-    reportSections && reportSections.every((section) => !section.isPlaceholder),
-  );
+  const hasCompleteReport = hasAllSectionsReady;
+
+
+  useEffect(() => {
+    if (currentView !== 'dashboard') return;
+    if (hasAllSectionsReady || hasBackendComplete) return;
+    if (!reportSections || reportSections.length === 0) return;
+    changeView('preparing');
+  }, [changeView, currentView, hasAllSectionsReady, hasBackendComplete, reportSections]);
+
+  useEffect(() => {
+    if (currentView !== 'preparing') return;
+    if (!(hasAllSectionsReady || hasBackendComplete)) return;
+    if (displayPlanProgress < 100 && planStatus !== 'complete') return;
+    changeView('dashboard');
+  }, [
+    changeView,
+    currentView,
+    displayPlanProgress,
+    hasAllSectionsReady,
+    hasBackendComplete,
+    planStatus,
+  ]);
+
+  useEffect(() => {
+    if (!(hasAllSectionsReady || hasBackendComplete)) return;
+    setPlanProgress((prev) => (prev === 100 ? prev : 100));
+    if (planStatus !== 'complete') {
+      setPlanStatus('complete');
+    }
+  }, [hasAllSectionsReady, hasBackendComplete, planStatus]);
 
   useEffect(() => {
     if (!activeDetailSection || !reportSections) return;
@@ -1980,9 +2086,15 @@ export default function App({ initialView }: AppProps = {}) {
 
     if (!isAuthenticated) {
       changeView('signin');
-    } else {
-      changeView('dashboard');
+      return;
     }
+
+    if (!hasPaid) {
+      changeView('paywall');
+      return;
+    }
+
+    changeView('dashboard');
   };
 
   const startReportGeneration = useCallback(async () => {
@@ -1991,12 +2103,15 @@ export default function App({ initialView }: AppProps = {}) {
       return false;
     }
 
+    generationTokenRef.current += 1;
     checkoutLoadingRef.current = false;
     setCheckoutLoading(false);
     setReportSections(null);
     setPlanProgress(0);
     setPlanStatus('pending');
+    setBackendSectionsReady(0);
     lastSectionsReadyRef.current = 0;
+    setHasFameScore(false);
     if (planPollTimeoutRef.current) {
       window.clearTimeout(planPollTimeoutRef.current);
       planPollTimeoutRef.current = null;
@@ -2041,11 +2156,17 @@ export default function App({ initialView }: AppProps = {}) {
       return false;
     }
   }, [user?.id, changeView, getAuthHeaders, refreshAccess]);
+  const startReportGenerationRef = useRef(startReportGeneration);
+  startReportGenerationRef.current = startReportGeneration;
 
   useEffect(() => {
     if (!searchParams) return;
     const checkoutStatus = searchParams.get('checkout');
     if (!checkoutStatus) return;
+
+    const navigate = changeViewRef.current;
+    const triggerReport = startReportGenerationRef.current;
+    const refreshAccessSafe = refreshAccessRef.current;
 
     checkoutLoadingRef.current = false;
     setCheckoutLoading(false);
@@ -2064,7 +2185,7 @@ export default function App({ initialView }: AppProps = {}) {
       if (user?.id && !checkoutHandledRef.current) {
         checkoutHandledRef.current = true;
         (async () => {
-          const started = await startReportGeneration();
+          const started = triggerReport ? await triggerReport() : false;
           if (started && typeof window !== 'undefined') {
             window.localStorage.removeItem('becomefamous_pending_checkout');
           }
@@ -2072,43 +2193,36 @@ export default function App({ initialView }: AppProps = {}) {
             checkoutHandledRef.current = false;
           }
         })();
-      } else if (!user?.id) {
+      } else if (!user?.id && navigate) {
         setPaywallError('Sign in to finish unlocking your dashboard.');
-        changeView('signin');
+        navigate('signin');
       }
     } else if (checkoutStatus === 'ai_success') {
       setChatCheckoutError(null);
       if (user?.id && !chatCheckoutHandledRef.current) {
         chatCheckoutHandledRef.current = true;
         (async () => {
-          await refreshAccess();
+          await refreshAccessSafe?.();
           if (typeof window !== 'undefined') {
             window.localStorage.removeItem('becomefamous_pending_checkout');
           }
           chatCheckoutHandledRef.current = false;
         })();
-      } else if (!user?.id) {
+      } else if (!user?.id && navigate) {
         setChatCheckoutError('Sign in to finish activating AI Mentor.');
-        changeView('signin');
+        navigate('signin');
       }
     } else if (checkoutStatus === 'plan_cancelled') {
       setPaywallError('Checkout was cancelled. No charge was made.');
-      changeView('paywall');
+      setAccountInitialSection('report');
+      navigate?.('account');
     } else if (checkoutStatus === 'ai_cancelled') {
       setChatCheckoutError('Checkout cancelled. No charge was made.');
     }
 
     const basePath = pathname ?? '/';
     router.replace(basePath, { scroll: false });
-  }, [
-    changeView,
-    pathname,
-    refreshAccess,
-    router,
-    searchParams,
-    startReportGeneration,
-    user?.id,
-  ]);
+  }, [pathname, router, searchParams, user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2118,7 +2232,9 @@ export default function App({ initialView }: AppProps = {}) {
       window.localStorage.removeItem('becomefamous_pending_checkout');
       checkoutHandledRef.current = true;
       (async () => {
-        const started = await startReportGeneration();
+        const started = startReportGenerationRef.current
+          ? await startReportGenerationRef.current()
+          : false;
         if (started && typeof window !== 'undefined') {
           window.localStorage.removeItem('becomefamous_pending_checkout');
         }
@@ -2131,11 +2247,11 @@ export default function App({ initialView }: AppProps = {}) {
       window.localStorage.removeItem('becomefamous_pending_checkout');
       chatCheckoutHandledRef.current = true;
       (async () => {
-        await refreshAccess();
+        await refreshAccessRef.current?.();
         chatCheckoutHandledRef.current = false;
       })();
     }
-  }, [refreshAccess, startReportGeneration, user?.id]);
+  }, [user?.id]);
 
   const handleOpenLessons = useCallback(() => {
     if (!interactiveSections.length) return;
@@ -2157,7 +2273,16 @@ export default function App({ initialView }: AppProps = {}) {
     if (openingReport) {
       return;
     }
-    if (reportSectionsRef.current && reportSectionsRef.current.every((section) => !section.isPlaceholder)) {
+    if (
+      backendSectionsReady >= TOTAL_REPORT_SECTIONS ||
+      (reportSectionsRef.current &&
+        reportSectionsRef.current.every((section) => sectionHasGeneratedContent(section)))
+    ) {
+      if (!reportSectionsRef.current || reportSectionsRef.current.length === 0) {
+        await fetchPlan();
+      }
+      setPlanProgress(100);
+      setPlanStatus('complete');
       changeView('dashboard');
       return;
     }
@@ -2165,12 +2290,23 @@ export default function App({ initialView }: AppProps = {}) {
     try {
       const ready = await ensureReportReady();
       if (ready) {
+        setPlanProgress(100);
+        setPlanStatus('complete');
         changeView('dashboard');
       }
     } finally {
       setOpeningReport(false);
     }
-  }, [changeView, ensureReportReady, openingReport, user?.id]);
+  }, [
+    backendSectionsReady,
+    changeView,
+    ensureReportReady,
+    fetchPlan,
+    openingReport,
+    setPlanProgress,
+    setPlanStatus,
+    user?.id,
+  ]);
 
   const handleUnlockDashboard = useCallback(async () => {
     if (!user?.id) {
@@ -2196,12 +2332,12 @@ export default function App({ initialView }: AppProps = {}) {
           'Content-Type': 'application/json',
           ...authHeaders,
         },
-        body: JSON.stringify({
-          productKey: 'report_plan',
-          userId: user.id,
-          successUrl: origin ? `${origin}/?checkout=plan_success` : undefined,
-          cancelUrl: origin ? `${origin}/paywall?checkout=plan_cancelled` : undefined,
-        }),
+          body: JSON.stringify({
+            productKey: 'report_plan',
+            userId: user.id,
+            successUrl: origin ? `${origin}/?checkout=plan_success` : undefined,
+            cancelUrl: origin ? `${origin}/account?checkout=plan_cancelled` : undefined,
+          }),
       });
 
       const data = await response.json().catch(() => ({}));
@@ -2280,21 +2416,6 @@ export default function App({ initialView }: AppProps = {}) {
     }
   }, [changeView, getAuthHeaders, user?.id]);
 
-  const handlePreparingComplete = () => {
-    setHasPaid(true);
-    setPlanStatus('complete');
-    setPlanProgress(100);
-    // After first payment, show account page with Usage section
-    setAccountInitialSection('usage');
-    if (
-      reportSections &&
-      reportSections.every((section) => !section.isPlaceholder)
-    ) {
-      changeView('dashboard');
-    }
-    void refreshAccess();
-  };
-
   const handleBackToAccount = () => {
     setAccountInitialSection('usage');
     setPaywallError(null);
@@ -2360,7 +2481,7 @@ export default function App({ initialView }: AppProps = {}) {
   // View Routing
   if (currentView === 'landing') {
     return (
-      <LandingPage 
+      <LandingPage
         onStartOnboarding={handleStartOnboarding}
         onSignIn={handleNavigateToSignIn}
         onNavigateToPricing={() => changeView('pricing')}
@@ -2472,7 +2593,7 @@ export default function App({ initialView }: AppProps = {}) {
 
   if (currentView === 'onboarding') {
     return (
-      <OnboardingFlow 
+      <OnboardingFlow
         onComplete={handleOnboardingComplete}
         onBack={() => changeView('landing')}
       />
@@ -2481,7 +2602,7 @@ export default function App({ initialView }: AppProps = {}) {
 
   if (currentView === 'paywall') {
     return (
-      <PaywallPage 
+      <PaywallPage
         onUnlock={handleUnlockDashboard}
         onBack={handleBackToAccount}
         isProcessing={checkoutLoading}
@@ -2492,10 +2613,8 @@ export default function App({ initialView }: AppProps = {}) {
 
   if (currentView === 'preparing') {
     return (
-      <PreparingDashboard 
-        onComplete={handlePreparingComplete}
-        progress={planProgress}
-        status={planStatus}
+      <PreparingDashboard
+        progress={displayPlanProgress}
       />
     );
   }
@@ -2504,11 +2623,12 @@ export default function App({ initialView }: AppProps = {}) {
   if (currentView === 'account') {
     return (
       <>
-        <AccountPage 
+        <AccountPage
           onNavigateToDashboard={handleOpenReport}
           hasCompletedOnboarding={hasCompletedOnboarding}
           hasPaid={hasPaid}
           onBecomeFamousNow={handleBecomeFamousNow}
+          onUnlockDashboard={handleUnlockDashboard}
           onLogout={handleLogout}
           initialSection={accountInitialSection}
           profileName={profileName || ''}
@@ -2522,7 +2642,7 @@ export default function App({ initialView }: AppProps = {}) {
           navigateToDashboardLoading={openingReport}
         />
         {/* Ask Vee Chat - Available in Account Page */}
-        <AskVeeChat 
+        <AskVeeChat
           isPaidUser={hasChatAccess}
           creatorType="content creator"
           onboardingAnswers={onboardingAnswers}
@@ -2536,13 +2656,9 @@ export default function App({ initialView }: AppProps = {}) {
     );
   }
 
-  if (currentView === 'dashboard' && !hasCompleteReport) {
+  if (currentView === 'dashboard' && !hasAllSectionsReady && !hasBackendComplete) {
     return (
-      <PreparingDashboard
-        onComplete={handlePreparingComplete}
-        progress={planProgress}
-        status={planStatus}
-      />
+      <PreparingDashboard progress={displayPlanProgress} />
     );
   }
 
@@ -2637,7 +2753,7 @@ export default function App({ initialView }: AppProps = {}) {
                     scale: { duration: 3.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                     boxShadow: { duration: 3.5, repeat: Infinity, repeatType: 'reverse', ease: 'easeInOut' },
                   }}
-                  >
+                >
                   <motion.div
                     className="absolute inset-0"
                     style={{
@@ -2729,7 +2845,7 @@ export default function App({ initialView }: AppProps = {}) {
       </div>
 
       {/* Ask Vee Chat - Available in Dashboard */}
-      <AskVeeChat 
+      <AskVeeChat
         isPaidUser={hasChatAccess}
         creatorType="content creator"
         onboardingAnswers={onboardingAnswers}

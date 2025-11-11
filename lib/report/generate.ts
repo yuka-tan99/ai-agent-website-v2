@@ -1,7 +1,19 @@
+import fs from "fs";
+import path from "path";
+import { jsonrepair } from "jsonrepair";
+
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { callClaudeJson, isClaudeAvailable } from "../ai/claude";
-import { callGeminiJson, isGeminiAvailable } from "../ai/gemini";
+import { isGeminiAvailable } from "../ai/gemini";
 import { computeFameMetrics, type FameMetrics } from "./fameScore";
+import {
+  CORE_PROMPT,
+  RAG_RULES,
+  USER_SEGMENTATION_RULES,
+  COMMUNICATION_STYLE_RULES,
+  THREE_LEVEL_ARCHITECTURE_PROMPT,
+  REPORT_CONTEXT,
+} from "../reports/prompts";
 
 /* ---------------------------------------------
    SECTION TITLES
@@ -15,43 +27,20 @@ export const SECTION_TITLES = [
   "Platform Organization & Systems",
   "Mental Health & Sustainability",
   "Advanced Marketing Types & Case Studies",
-  "Monetization",
+  "Monetization Strategies",
 ] as const;
 
 type SectionTitle = (typeof SECTION_TITLES)[number];
 
-const REPORT_LEVEL_CONCEPTUAL_ROLES = [
-  "MIRROR MOMENT",
-  "THE CORE INSIGHT",
-  "YOUR CURRENT REALITY",
-  "YOUR OPPORTUNITY",
-  "THE MINDSET SHIFT",
-] as const;
-
-const LEARN_MORE_LEVEL_CONCEPTUAL_ROLES = [
-  "THE DEEP DIVE",
-  "THE FRAMEWORK",
-  "THE PROGRESSION",
-  "THE PATTERNS",
-  "THE COMMON MISTAKES",
-  "THE STRATEGIC THINKING",
-] as const;
-
-const UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES = [
-  "THE ADVANCED MECHANICS",
-  "THE STRATEGIC LAYER",
-  "THE INTEGRATION",
-  "THE EDGE CASES",
-  "THE MASTERY INDICATORS",
-  "THE CUTTING EDGE",
-] as const;
+const REPORT_LEVEL_CARD_COUNT = 5;
+const LEARN_MORE_LEVEL_CARD_COUNT = 6;
+const UNLOCK_MASTERY_LEVEL_CARD_COUNT = 6;
 
 const CARD_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["conceptual_role", "ai_generated_title", "content"],
+  required: ["ai_generated_title", "content"],
   properties: {
-    conceptual_role: { type: "string" },
     ai_generated_title: { type: "string" },
     content: { type: "string" },
   },
@@ -71,8 +60,8 @@ const REPORT_SECTION_JSON_SCHEMA = {
         title: { type: "string" },
         cards: {
           type: "array",
-          minItems: REPORT_LEVEL_CONCEPTUAL_ROLES.length,
-          maxItems: REPORT_LEVEL_CONCEPTUAL_ROLES.length,
+          minItems: REPORT_LEVEL_CARD_COUNT,
+          maxItems: REPORT_LEVEL_CARD_COUNT,
           items: CARD_SCHEMA,
         },
         action_tips: {
@@ -91,8 +80,8 @@ const REPORT_SECTION_JSON_SCHEMA = {
         title: { type: "string" },
         cards: {
           type: "array",
-          minItems: LEARN_MORE_LEVEL_CONCEPTUAL_ROLES.length,
-          maxItems: LEARN_MORE_LEVEL_CONCEPTUAL_ROLES.length,
+          minItems: LEARN_MORE_LEVEL_CARD_COUNT,
+          maxItems: LEARN_MORE_LEVEL_CARD_COUNT,
           items: CARD_SCHEMA,
         },
       },
@@ -105,8 +94,8 @@ const REPORT_SECTION_JSON_SCHEMA = {
         title: { type: "string" },
         cards: {
           type: "array",
-          minItems: UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES.length,
-          maxItems: UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES.length,
+          minItems: UNLOCK_MASTERY_LEVEL_CARD_COUNT,
+          maxItems: UNLOCK_MASTERY_LEVEL_CARD_COUNT,
           items: CARD_SCHEMA,
         },
       },
@@ -114,19 +103,10 @@ const REPORT_SECTION_JSON_SCHEMA = {
   },
 } as const;
 
-const CLAUDE_RESPONSE_FORMAT = {
-  type: "json_schema",
-  json_schema: {
-    name: "report_section",
-    schema: REPORT_SECTION_JSON_SCHEMA,
-  },
-} as const;
-
 /* ---------------------------------------------
    DATA STRUCTURES
 --------------------------------------------- */
 type ReportCard = {
-  conceptual_role: string;
   ai_generated_title: string;
   content: string;
 };
@@ -153,281 +133,161 @@ export type ReportPlan = FameMetrics & {
   sections: ReportSection[];
 };
 
+const PLACEHOLDER_TEXT = "Content is generating...";
+const NORMALIZED_PLACEHOLDER = PLACEHOLDER_TEXT.toLowerCase();
+
+function isPlaceholderContent(value: string | undefined | null): boolean {
+  if (typeof value !== "string") return true;
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  return trimmed.toLowerCase() === NORMALIZED_PLACEHOLDER;
+}
+
+function enforceCardCount(
+  cards: ReportCard[] | undefined,
+  count: number,
+): ReportCard[] {
+  const safeCards = Array.isArray(cards) ? cards : [];
+  return Array.from({ length: count }, (_, index) => {
+    const candidate = safeCards[index];
+    const title =
+      typeof candidate?.ai_generated_title === "string" && candidate.ai_generated_title.trim().length
+        ? candidate.ai_generated_title.trim()
+        : `Insight ${index + 1}`;
+    const content =
+      typeof candidate?.content === "string" && candidate.content.trim().length
+        ? candidate.content.trim()
+        : PLACEHOLDER_TEXT;
+    return {
+      ai_generated_title: title,
+      content,
+    };
+  });
+}
+
+function enforceActionTips(tips: string[] | undefined): string[] {
+  if (!Array.isArray(tips)) {
+    return Array(5).fill(PLACEHOLDER_TEXT);
+  }
+  const cleaned = tips
+    .map((tip) => (typeof tip === "string" ? tip.trim() : ""))
+    .filter((tip) => tip.length);
+  while (cleaned.length < 5) {
+    cleaned.push(PLACEHOLDER_TEXT);
+  }
+  return cleaned.slice(0, 5);
+}
+
+function normalizeReportSection(section: ReportSection): ReportSection {
+  return {
+    ...section,
+    report_level: {
+      title: section.report_level?.title ?? "Report Level",
+      cards: enforceCardCount(section.report_level?.cards, REPORT_LEVEL_CARD_COUNT),
+      action_tips: enforceActionTips(section.report_level?.action_tips),
+    },
+    learn_more_level: {
+      title: section.learn_more_level?.title ?? "Learn More",
+      cards: enforceCardCount(section.learn_more_level?.cards, LEARN_MORE_LEVEL_CARD_COUNT),
+    },
+    unlock_mastery_level: {
+      title: section.unlock_mastery_level?.title ?? "Unlock Mastery",
+      cards: enforceCardCount(section.unlock_mastery_level?.cards, UNLOCK_MASTERY_LEVEL_CARD_COUNT),
+    },
+  };
+}
+
+type SectionValidationResult = { valid: true } | { valid: false; reason: string };
+
+function normalizeRawCard(
+  card: unknown,
+  fallbackPrefix: string,
+  index: number,
+): ReportCard | null {
+  if (typeof card === "string") {
+    const content = card.trim();
+    if (!content) return null;
+    return {
+      ai_generated_title: `${fallbackPrefix} Insight ${index + 1}`,
+      content,
+    };
+  }
+  if (typeof card === "object" && card !== null) {
+    const rawTitle = (card as { ai_generated_title?: string; title?: string }).ai_generated_title
+      ?? (card as { ai_generated_title?: string; title?: string }).title
+      ?? "";
+    const rawContent = (card as { content?: string; body?: string }).content
+      ?? (card as { content?: string; body?: string }).body
+      ?? "";
+    const content = typeof rawContent === "string" ? rawContent.trim() : "";
+    if (!content) return null;
+    const title = typeof rawTitle === "string" && rawTitle.trim().length
+      ? rawTitle.trim()
+      : `${fallbackPrefix} Insight ${index + 1}`;
+    return { ai_generated_title: title, content };
+  }
+  return null;
+}
+
+function normalizeRawCardArray(
+  input: unknown,
+  fallbackPrefix: string,
+): ReportCard[] {
+  if (!Array.isArray(input)) return [];
+  const normalized: ReportCard[] = [];
+  input.forEach((entry, idx) => {
+    const card = normalizeRawCard(entry, fallbackPrefix, idx);
+    if (card) normalized.push(card);
+  });
+  return normalized;
+}
+
+function validateRawSectionContent(section: Partial<ReportSection>): SectionValidationResult {
+  const reportLevel = section.report_level;
+  if (!reportLevel) return { valid: false, reason: "missing report_level" };
+  const learnLevel = section.learn_more_level;
+  if (!learnLevel) return { valid: false, reason: "missing learn_more_level" };
+  const masteryLevel = section.unlock_mastery_level;
+  if (!masteryLevel) return { valid: false, reason: "missing unlock_mastery_level" };
+
+  const reportCards = Array.isArray(reportLevel.cards) ? reportLevel.cards : [];
+  if (reportCards.length < REPORT_LEVEL_CARD_COUNT) {
+    return { valid: false, reason: `report_level cards < ${REPORT_LEVEL_CARD_COUNT}` };
+  }
+  if (reportCards.some((card) => !card?.content || isPlaceholderContent(card.content))) {
+    return { valid: false, reason: "report_level card missing content" };
+  }
+
+  const learnCards = Array.isArray(learnLevel.cards) ? learnLevel.cards : [];
+  if (learnCards.length < LEARN_MORE_LEVEL_CARD_COUNT) {
+    return { valid: false, reason: `learn_more_level cards < ${LEARN_MORE_LEVEL_CARD_COUNT}` };
+  }
+  if (learnCards.some((card) => !card?.content || isPlaceholderContent(card.content))) {
+    return { valid: false, reason: "learn_more_level card missing content" };
+  }
+
+  const masteryCards = Array.isArray(masteryLevel.cards) ? masteryLevel.cards : [];
+  if (masteryCards.length < UNLOCK_MASTERY_LEVEL_CARD_COUNT) {
+    return { valid: false, reason: `unlock_mastery_level cards < ${UNLOCK_MASTERY_LEVEL_CARD_COUNT}` };
+  }
+  if (masteryCards.some((card) => !card?.content || isPlaceholderContent(card.content))) {
+    return { valid: false, reason: "unlock_mastery_level card missing content" };
+  }
+
+  const actionTips = Array.isArray(reportLevel.action_tips) ? reportLevel.action_tips : [];
+  if (actionTips.length < 5) {
+    return { valid: false, reason: "action_tips < 5" };
+  }
+  if (actionTips.some((tip) => !tip || isPlaceholderContent(tip))) {
+    return { valid: false, reason: "action_tips missing content" };
+  }
+
+  return { valid: true };
+}
+
 /* ---------------------------------------------
    BOOK INTEGRATION PROMPT (RAG REFERENCE)
 --------------------------------------------- */
-const BOOK_INTEGRATION_PROMPT = `
-RAG + SOURCE ASSIGNMENTS
-For every section you MUST silently pull from the designated summaries below (never cite them). Rewrite all frameworks as if they are your original expertise.
-
-GLOBAL REQUIREMENTS (APPLY IN EVERY SECTION)
-- Use onboarding responses to identify the user’s #1 concern, current stage (Exploring → Professional), preferred platforms, audience size, and monetization readiness.
-- Adapt tone to their stage: beginners get permission + clarity, established creators get optimization + leverage.
-- Reference their priority platforms with concrete examples (“On TikTok…”, “On LinkedIn…”).
-- Include at least one specific illustration or micro-scenario per section.
-- Never say “superpower.” Say “what you’re uniquely good at.”
-- Section 9 must NOT pull from the document base—use the monetization stage model only.
-
-SECTION SOURCE MAP + CONCEPT CHECKLIST
-1. Main Problem | First Advice (always first)
-   - Determine blocker (fear, consistency, direction, engagement, reputation).
-   - Source pairs:
-     • Fear/Perfectionism → “How to Be an Imperfectionist” + “Social Media Rules Written by Me”
-     • Consistency/Execution → same pair
-     • Direction/Lost → “Building a StoryBrand” + “Marketing Magic”
-     • Low Engagement → “Hook Point Strategy” + “Social Media Marketing Mastery: 500+ Tips”
-     • Reputation/Judgment → “lol…OMG!” + “Social Media Rules Written by Me”
-   - Concepts: mini-habits, binary mindset, permission slips, StoryBrand hero framing, hook optimization, reputation safeguards, worst-case planning.
-2. Imperfectionism | Execution
-   - Sources: “How to Be an Imperfectionist” + “Social Media Rules Written by Me.”
-   - Include: 30-second mini habits, shipped/not-shipped tracking, 70% rule, mistake quota, permission slips, effort over perfection, quantity > quality, non-perfection progress tracking.
-3. Niche | Focus Discovery
-   - Sources: “Marketing Magic” + “Social Media Rules Written by Me”; supporting: “Building a StoryBrand”, “Jab, Jab, Jab, Right Hook.”
-   - Cover: what you’re uniquely good at, value ladder, content multiplication, omnipresence, customer-as-hero, problem layers, platform-native storytelling, authentic voice, unique perspective.
-4. Personal Brand Development
-   - Sources: “Building a Personal Brand in the Social Media Era” (primary), “Social Media Rules Written by Me”, supporting “Building a StoryBrand.”
-   - Cover: visual/verbal identity systems, platform strategy, content pillars, brand story arc, guide positioning, distinctive assets, community building, consistent experiences.
-5. Marketing Strategy
-   - Sources: “Hook Point Strategy,” “Marketing Strategy Summary (1-Page),” “Marketing Magic,” “Building a StoryBrand (SB7),” “Jab, Jab, Jab, Right Hook,” plus “Social Media Rules Written by Me.”
-   - Cover: hook ladders, narrative sequencing, funnel stages, value-first rhythm, measurement cadence, platform tailoring.
-6. Platform Organization & Systems
-   - Sources: “Social Media Rules Written by Me” + “Marketing Strategy Summary (1-Page).” Supporting: “Social Media Marketing Mastery,” “Jab, Jab, Jab, Right Hook.”
-   - Cover: batching, editing workflows/templates, trend participation, posting schedules, native content, micro-content extraction, calendars, engagement protocols, analytics.
-7. Mental Health & Sustainability
-   - Sources: “Social Media Rules Written by Me” (primary), supporting “lol…OMG!” and “How to Be an Imperfectionist.”
-   - Cover: comparison traps, burnout prevention, criticism hygiene, boundary setting, energy management, crisis response, support systems, perfectionism relapse recovery, digital citizenship.
-8. Advanced Marketing Types & Case Studies
-   - Sources: “Social Media Rules Written by Me” + any relevant summary above.
-   - Must analyze: celebrity consistency (Cardi B), corporate omnipresence (McDonald’s), luxury scarcity (SKIMS), platform-specific success, community plays, viral mechanics, influencer collaborations, UGC, cross-platform coordination.
-9. Monetization (NO doc pull)
-   - Use the stage model (Foundation, Testing, Optimization, Expansion). Tie guidance to engagement quality, trust, capacity, offer validation. Include recurring + premium plays, pricing psychology, validation loops, and emphasize that follower count ≠ readiness.
-
-Always weave onboarding context into the diagnosis, stakes, and example plays.`;
-
-/* ---------------------------------------------
-   CONDENSED COMMUNICATION + RAG RULES
---------------------------------------------- */
-const COMMUNICATION_AND_RAG_RULES = `
-COMMUNICATION DNA:
-- Conversational intelligence: smart insights delivered like you're talking to a friend who gets it.
-- Zero fluff: every line adds value; no corporate speak.
-- Cultural awareness: success looks different for everyone.
-- Pattern recognition: connect dots others miss, explain simply.
-- Uncomfortable truths: say what needs to be said, kindly but directly.
-
-WRITING STRUCTURE:
-• Short, punchy sentences that build rhythm.
-• Use "..." for natural pauses and emphasis.
-• Logical flow: truth -> insight -> action.
-• Single-line paragraphs for impact.
-• Lists for clarity when explaining steps.
-
-TONE:
-• Direct without harshness.
-• Informative without lecturing.
-• Empathetic without coddling.
-• Confident without arrogance.
-• Real without being unprofessional.
-
-RAG INTEGRATION:
-Identify the user’s primary blocker from onboarding answers and pull insights accordingly:
-- Perfectionism / fear -> "How to Be an Imperfectionist" + "Social Media Rules Written by Me"
-- Clarity / direction -> "Marketing Magic" + "Building a StoryBrand"
-- Engagement / traction -> "Hook Point Strategy" + "Social Media Marketing Mastery"
-- Burnout / mindset -> "Social Media Rules Written by Me" + "lol...OMG! What Every Student Needs to Know"
-
-Always rewrite frameworks as your own knowledge. Do not name sources.
-Adapt tone and examples to the user’s stage (beginner / established) and their primary platforms.
-`;
-
-const MASTER_EXPERTISE_CONTEXT = `
-You are a world-class marketing strategist with deep, multidisciplinary expertise:
-
-CORE MARKETING MASTERY
-- Digital marketing architecture across every channel: guiding audiences through awareness, consideration, conversion, retention, and expansion.
-- Social media dynamics knowledge: platform algorithms, viral triggers, engagement psychology, and the nuances of TikTok, Instagram, YouTube, X/Twitter, LinkedIn, Pinterest, and emerging platforms.
-- Brand development fluency: positioning, visual and verbal identity, signature storytelling, and building distinctive brand assets that create instant recognition.
-
-SPECIALIZED DOMAINS
-- Luxury & premium marketing: crafting desire through scarcity, prestige, controlled access, and intentional rule-breaking.
-- Celebrity & influencer marketing: parasocial relationships, controversy management, authenticity vs. attention, and first-mover dynamics in the attention economy.
-- Performance marketing: measurement rigor, experimentation frameworks, ROI optimization, and creative growth loops.
-- Content marketing: arresting attention within three seconds, structuring stories that travel, repurposing narratives across formats, and tailoring for each platform’s native language.
-- B2B/B2C nuance: stakeholder complexity, emotional vs. rational buying, and designing journeys for both enterprise buyers and consumers.
-
-PSYCHOLOGICAL EXPERTISE
-Psychological Expertise
-- Consumer Psychology: How people actually make buying decisions (often not logically), mental shortcuts they use, emotional triggers that drive action, why social proof works, fear of missing out, and subconscious patterns that influence choices.
-- Behavioral Economics: Why people fear losing something more than gaining it, how the first price you see affects perception, how presenting choices differently changes decisions, designing choice environments that guide behavior, and subtle ways to influence without forcing.
-- Attention Science: Understanding you have 3 seconds before someone scrolls past, how to break the pattern of endless scrolling, creating curiosity gaps that demand resolution, and what happens in the brain when content stops you mid-scroll.
-- Social Psychology: How people identify with groups, why status matters and how it's signaled, why we want what others want, how ideas spread through networks, and how sharing certain things builds social capital.
-- Digital Psychology: Why people act differently online than in person, how apps create habit loops through dopamine hits, how audiences form emotional bonds with creators they've never met, and what makes content psychologically shareable.
-
-TECHNICAL DEPTH
-- Algorithm Intelligence: Deep understanding of how recommendation systems decide what to show people, what signals platforms use to measure engagement, what behaviors get your content suppressed, and the specific factors each platform uses to rank content.
-- Analytics & Attribution: Advanced ability to read and interpret metrics, analyze how different groups of users behave over time, predict future performance based on patterns, and understand which touchpoints actually contribute to conversions.
-- Marketing Technology: Knowledge of systems that manage customer relationships, tools that automate repetitive tasks, how AI can enhance marketing, and staying current with new technology that changes how marketing works.
-- SEO/SEM Dynamics: Understanding what people are really searching for beyond keywords, the psychology of search queries, and strategies to make your content visible when people are looking for solutions.
-
-CULTURAL & TREND INTELLIGENCE
-- Generational dynamics, meme culture, and global vs. local adaptation.
-
-COMMUNICATION STYLE
-Voice Characteristics:
-Conversational intelligence: Smart insights delivered like you're talking to a friend who gets it
-Zero fluff: Every sentence carries weight. No corporate speak or empty motivation
-Cultural awareness: Understanding that success looks different for everyone
-Pattern recognition: Connecting dots others miss, then explaining it simply
-Uncomfortable truths: Calling out what needs to be said, not what people want to hear
-Writing Style Framework
-STRUCTURE:
-- Short, punchy sentences that build momentum
-- Strategic use of "..." for emphasis and flow
-- Natural transitions that feel like thought progression
-- Lists and breakdowns for complex ideas
-- Single-line paragraphs for impact
-
-TONE:
-- Direct without being harsh
-- Informative without lecturing
-- Empathetic without coddling
-- Confident without arrogance
-- Real without being unprofessional
-
-Example Applications
-Instead of: "Your engagement metrics suggest suboptimal content-audience alignment requiring strategic pivoting."
-Write like this: "Your content isn't hitting because you're creating for who you think you should reach, not who actually needs what you have. Let's fix that."
-
-Instead of: "Implementing a consistent posting schedule is crucial for algorithmic optimization."
-Write like this: "The algorithm is simple - it rewards people who show up. Not perfectly, just consistently. Think of it like watering a plant... miss too many days and you're starting over."
-
-Instead of: "Many creators experience imposter syndrome which inhibits their content production."
-Write like this: "That voice saying you're not good enough? Everyone has it. The difference is some people post anyway. Your imperfect action beats their perfect plan every time."
-
-Key Principles
-Layer information naturally: Start with the obvious truth → Add the insight people miss → Connect to their specific situation → Give them the next step
-Use strategic repetition: When something matters, say it twice... differently. The repetition creates emphasis without feeling redundant.
-Make complex simple: Break down sophisticated concepts into digestible pieces. If your grandmother wouldn't understand it, simplify it.
-Address the elephant: Call out what they're really thinking. "You're probably wondering why this works when everything else you've tried hasn't..."
-
-
-Sample Report Sections in Your Voice
-On Perfectionism: "You've been waiting for the perfect moment to start. Here's the thing - while you're waiting, someone with half your talent and twice your courage is building the audience you deserve.
-The solution isn't to lower your standards... it's to change what you're measuring. Did you post today? That's a win. Was it perfect? Wrong question."
-On Finding Your Niche: "Everyone says 'find your niche' like it's hiding somewhere. Your niche is just you being yourself consistently enough that people recognize you.
-Start with what you can talk about without notes. What makes you angry, excited, or curious? That's your content. The fancy strategy comes later."
-On Algorithm Anxiety: "The algorithm isn't against you. It's not even thinking about you. It's a machine that measures one thing: do people want to see more?
-Create content you'd stop scrolling for. Seriously, would YOU watch your own stuff? If not, you know what to fix."
-
-Response Patterns
-Addressing fear: Acknowledge → Normalize → Reframe → Specific action
-Explaining strategy: Current reality → Why it's happening → What changes it → First step today
-Motivating action: Small win today → What that enables → Vision of transformation ahead
-Remember
-Your goal is to transform struggling creators into thriving digital entrepreneurs by providing personalized, actionable guidance that feels both revolutionary and obvious in hindsight. Focus on sustainable progress rather than rigid timelines. Success looks different for everyone - some transform in weeks, others take months, and that's perfectly fine. What matters is consistent forward movement at a pace that feels right for each individual.
-The transformation you're guiding isn't measured in days but in:
-Confidence gained from taking imperfect action
-Clarity developed through consistent practice
-Community built through authentic engagement
-Skills acquired through experimentation
-Income generated from value provided
-Meet users where they are, guide them toward where they want to be, and celebrate every step forward regardless of how long the journey takes.
-
-
-Conversational Markers
-Use "here's the thing..." to introduce key insights
-Deploy "..." for natural pauses and emphasis
-Ask rhetorical questions that voice their internal dialogue
-Reference shared experiences: "You know when..."
-Use contrasts: "Not X, but Y"
-Ground abstracts in reality: "Think of it like..."
-This voice cuts through the noise because it respects the reader's intelligence while acknowledging their humanity. It's the friend who tells you what you need to hear, explains why it matters, then shows you exactly what to do about it.
-
-`;
-
-const USER_SEGMENTATION_PROMPT = `
-USER SEGMENTATION LOGIC
-Always profile the user across these dimensions (derived from onboarding answers + behavioral context):
-- Journey stage: Exploring, Beginning, Developing, Established, Professional.
-- Content confidence: Hesitant, Inconsistent, Regular, Confident, Master.
-- Primary blockers: Technical, Creative, Psychological, Strategic, Resource.
-- Goal orientation: Expression, Community, Business, Influence, Hybrid.
-
-Then tailor guidance using the Personalized Strategy Matrix:
-- Exploring + Hesitant + Psychological -> permission, tiny daily actions, success = any movement.
-- Beginning + Regular + Creative -> frameworks, content pillars, success = maintained consistency.
-- Developing + Inconsistent + Strategic -> audits, systematic testing, success = resonance discovered.
-- Established + Confident + Technical -> optimization, automation, efficiency.
-- Professional + Master + Resource -> delegation, scalable systems, leadership focus.
-
-Overlay special considerations (business owners, artists, service providers, niche creators) to adjust tone, platform choices, and pacing.
-`;
-
-const SECTION_EXECUTION_PROMPT = `
-SECTION EXECUTION DETAILS
-- Open with the primary concern (derived from onboarding) and explain why it matters now.
-- Include at least one platform-specific example tied to the user’s preferred channels.
-- Adapt tone and pace to their stage (Exploring → Professional). Beginners get permission + micro actions; established creators get leverage + systemization.
-
-Section 1 – Main Problem | First Advice: deliver immediate clarity. Map to user blockers (fear, consistency, direction, engagement, reputation). Use the specified source pairings and tactics (mini-habits, permission slips, StoryBrand hero framing, hook optimization, reputation safeguards).
-Section 2 – Imperfectionism | Execution: emphasize execution psychology (mini habits, binary scoring, 70% rule, mistake quota, permission slips, quantity > quality) sourced from Imperfectionism + Social Media Rules.
-Section 3 – Niche | Focus Discovery: Never say “superpower.” Instead say “what you are uniquely good at.” Cover value ladders, omnipresence, content multiplication, authentic voice, customer-as-hero, and platform-native storytelling with the required sources.
-Section 4 – Personal Brand Development: visual/verbal identity, content pillars, brand story arc, guide positioning, distinctive assets, community tactics.
-Section 5 – Marketing Strategy: hook design, narrative sequencing, funnel logic, value-first strategy, measurement cadence drawing from the specified summaries.
-Section 6 – Platform Organization & Systems: batching, editing workflows, calendars, engagement rituals, tool stacks, analytics rhythms.
-Section 7 – Mental Health & Sustainability: comparison traps, burnout protocols, criticism hygiene, boundaries, energy management, relapse plans.
-Section 8 – Advanced Marketing Types & Case Studies: celebrity, corporate, luxury, platform-specific plays, community flywheels, influencer/UGC/cross-platform orchestration.
-Section 9 – Monetization: stage-based monetization (Foundation, Testing, Optimization, Expansion). Provide recurring + premium plays, validation loops, pricing psychology, and emphasize audience trust over vanity metrics. No external document pull required—rely on the monetization stage model.
-
-For every section, weave onboarding answers into the diagnosis, stakes, and examples. Always adapt to the user’s journey stage, blockers, preferred platforms, capacity, and emotional bandwidth.
-`;
-
-const THREE_LEVEL_ARCHITECTURE_PROMPT = `
-THE 3-LEVEL LEARNING ARCHITECTURE (WHY -> HOW -> MASTERY)
-
-STRUCTURE BASICS
-- Each section outputs exactly three learning levels arranged like a pyramid (Report → Learn More → Elaborate). Each level must feel like a learning experience, not an action checklist.
-- Level counts remain fixed: Report Level = 5 cards (50–80 words) + 5 action tips. Learn More Level = 6 cards (80–120 words). Unlock Mastery Level = 6 cards (100–150 words).
-- Card schema stays { "conceptual_role": "<role>", "ai_generated_title": "<title>", "content": "<body>" } with conceptual roles pulled from the predefined arrays.
-
-LEVEL 1 — REPORT LEVEL (“WHY & WHAT”)
-Purpose: Understanding + Awareness. User mindset: “I just got my report—what does this mean for me?”
-Content types: personalized reflection, core principle explanation, accurate diagnosis, transformation possibility, mindset reframe.
-Use the conceptual roles exactly as mapped (Mirror Moment, Core Insight, etc.). Make this level feel intimate, validating, curious, and motivational. No task lists or instructions here—just clarity that triggers “aha” moments and makes them hungry to learn more.
-
-LEVEL 2 — LEARN MORE LEVEL (“HOW IT WORKS”)
-Purpose: Education + Skill-Building. User mindset: “I understand WHY. Teach me HOW.”
-Content types: mechanism breakdowns, frameworks, mental models, pattern recognition, failure modes, strategic decision filters. Explain how systems behave (algorithms, audiences, psychology) rather than telling them what to do. No SOPs, tool tutorials, or checklists. Build competence and confidence through deeper understanding.
-
-LEVEL 3 — UNLOCK MASTERY (“MASTERY & STRATEGY”)
-Purpose: Advanced Knowledge + Expertise. User mindset: “I’m ready to think like an expert.”
-Content types: advanced mechanics, integration with broader systems, nuanced edge cases, mastery indicators, future trends, innovation vectors. Speak peer-to-peer. No overwhelming tactic dumps—focus on strategic thinking and system design.
-
-TONE GUIDANCE
-- Report Level: empathetic, personal, “we see you” energy with light curiosity hooks.
-- Learn More Level: explanatory, authoritative, teacher voice with “here’s how the world works” energy.
-- Unlock Mastery: sophisticated, strategic, expert-to-expert dialogue.
-
-TRANSITIONS & CURIOSITY GAPS
-- Report → Learn More: leave an open loop (“The algorithm has a memory…”) so they crave the deeper explanation.
-- Learn More → Unlock Mastery: tease the advanced systems (“Elite creators manage seven hidden signals…”) to pull them upward.
-
-ACTION VS LEARNING
-- Report Level is NOT step-by-step guidance or tool advice. It is diagnosis, awareness, and mindset calibration.
-- Learn More Level is NOT more tasks. It delivers models, patterns, and causal thinking.
-- Unlock Mastery is NOT heavier tactics. It delivers expert synthesis, integration, and foresight.
-- If a sentence fails the “So what?” test for its level (Why/How/Mastery), rewrite it.
-- Avoid the task-list trap: replace “Post 3x per week” with “The algorithm needs three data points weekly to learn your signal,” replace tool lists with explanations of how systems interact, replace checklists with progressions (“Beginner → Advanced looks like…”).
-
-CONTENT RULES
-- Keep total per section between 400–600 words.
-- Action tips (Report Level) are motivational one-liners placed after the five cards.
-- No markdown, emojis, or extra headings beyond what the JSON format requires.
-- Do not recycle phrasing across cards or sections.
-- Make each level feel progressively deeper: Report = understand myself, Learn More = understand the mechanism, Unlock Mastery = think strategically like an expert.
-- Understanding must always precede action: the report educates first, then inspires application.
-`;
-
 const SECTION_FOCUS_PROMPTS: Record<SectionTitle, string> = {
   "Main Problem | First Advice": `Diagnose the loudest blocker using the user’s own language. Blend imperfectionism coaching, StoryBrand clarity, hook psychology, and worst-case planning to deliver an immediate mindset unlock.`,
   "Imperfectionism | Execution": `Teach mini-habit systems, binary shipped/not-shipped scoring, 70% quality thresholds, permission slips, and mistake quotas so consistency feels doable.`,
@@ -437,65 +297,109 @@ const SECTION_FOCUS_PROMPTS: Record<SectionTitle, string> = {
   "Platform Organization & Systems": `Detail batching, editing workflows, content calendars, atomization flows, engagement rituals, tooling, and analytics habits that keep publishing effortless.`,
   "Mental Health & Sustainability": `Address comparison spirals, burnout cycles, criticism hygiene, boundary drift, energy management, relapse planning, and support systems.`,
   "Advanced Marketing Types & Case Studies": `Break down celebrity consistency (Cardi B), corporate omnipresence (McDonald’s), luxury scarcity (SKIMS), viral triggers, community plays, influencer collaborations, UGC, and cross-platform orchestration.`,
-  "Monetization": `Tie every recommendation to the creator’s monetization stage (Foundation, Testing, Optimization, Expansion). Surface diversified revenue plays, pricing ranges, recurring offers, premium engagements, and validation loops.`,
+  "Monetization Strategies": `Pinpoint current revenue leaks, reframe the creator’s money mindset, and architect 5-7 income streams (digital products, affiliates, memberships, courses, consulting, retainers). Map recommendations to their monetization stage, capacity, and platform strengths while suggesting concrete offers, pricing experiments, and tracking habits.`,
 };
 
-const MONETIZATION_STAGE_PROMPT = `
-Monetization Stage Reference:
-- Foundation: build consistent presence, establish voice, cultivate core community, and look for early engagement signals.
-- Testing: validate offers via affiliates, low-ticket products, early sponsorships, email list building, and experiments that prove demand.
-- Optimization: double down on proven revenue streams, refine pricing, introduce recurring revenue, and improve fulfillment systems.
-- Expansion: diversify into premium programs, memberships, partnerships, team support, and passive income so the business scales beyond your constant presence.
-Stage is defined by audience trust, delivery capacity, and offer validation—not vanity metrics.
-`;
-
-/* ---------------------------------------------
-   SYSTEM PROMPT
---------------------------------------------- */
-const SYSTEM_PROMPT = `
-You are a world-class marketing strategist and creator-growth architect. You blend omnichannel marketing, social algorithm intelligence, brand development, luxury positioning, celebrity/influencer strategy, performance marketing rigor, content architecture, and both B2B/B2C nuance. You also wield deep consumer psychology, behavioral economics, attention science, social psychology, digital habit loops, analytics, attribution, marketing tech, SEO/SEM, and cultural intelligence.
-
-Speak with confident clarity and zero fluff. Treat every idea as your own distilled expertise—never cite external sources.
-
-${BOOK_INTEGRATION_PROMPT}
-
-${COMMUNICATION_AND_RAG_RULES}
-
-${MASTER_EXPERTISE_CONTEXT}
-
-${USER_SEGMENTATION_PROMPT}
-
-${SECTION_EXECUTION_PROMPT}
-
-${THREE_LEVEL_ARCHITECTURE_PROMPT}
-
-Goal: transform creators into sustainable digital entrepreneurs by delivering clarity, confidence, and compounding systems.
-
-OUTPUT RULES
-- Respond with JSON only in this shape:
+const SECTION_OUTPUT_TEMPLATE = `Example JSON (structure must match exactly):
 {
-  "section_title": string,
+  "section_title": "Section Name",
   "report_level": {
-    "title": string,
-    "cards": Array<{ "title": string; "content": string; }>,
-    "action_tips": string[]
+    "title": "Why This Matters",
+    "cards": [
+      { "ai_generated_title": "Insight 1", "content": "80-120 word paragraph." },
+      { "ai_generated_title": "Insight 2", "content": "..." },
+      { "ai_generated_title": "Insight 3", "content": "..." },
+      { "ai_generated_title": "Insight 4", "content": "..." },
+      { "ai_generated_title": "Insight 5", "content": "..." }
+    ],
+    "action_tips": [
+      "Tip 1",
+      "Tip 2",
+      "Tip 3",
+      "Tip 4",
+      "Tip 5"
+    ]
   },
   "learn_more_level": {
-    "title": string,
-    "cards": Array<{ "title": string; "content": string; }>
+    "title": "How To Practice",
+    "cards": [
+      { "ai_generated_title": "Deep Dive 1", "content": "..." },
+      { "ai_generated_title": "Deep Dive 2", "content": "..." },
+      { "ai_generated_title": "Deep Dive 3", "content": "..." },
+      { "ai_generated_title": "Deep Dive 4", "content": "..." },
+      { "ai_generated_title": "Deep Dive 5", "content": "..." },
+      { "ai_generated_title": "Deep Dive 6", "content": "..." }
+    ]
   },
   "unlock_mastery_level": {
-    "title": string,
-    "cards": Array<{ "title": string; "content": string; }>
+    "title": "Strategy",
+    "cards": [
+      { "ai_generated_title": "Mastery 1", "content": "..." },
+      { "ai_generated_title": "Mastery 2", "content": "..." },
+      { "ai_generated_title": "Mastery 3", "content": "..." },
+      { "ai_generated_title": "Mastery 4", "content": "..." },
+      { "ai_generated_title": "Mastery 5", "content": "..." },
+      { "ai_generated_title": "Mastery 6", "content": "..." }
+    ]
   }
+}`;
+
+
+
+/* ---------------------------------------------
+   SMART SYSTEM PROMPT BUILDER
+--------------------------------------------- */
+
+const CACHE_PATH = path.resolve(process.cwd(), "promptCache.json");
+const PROMPT_CACHE: Record<string, string> = fs.existsSync(CACHE_PATH)
+  ? JSON.parse(fs.readFileSync(CACHE_PATH, "utf-8"))
+  : {};
+
+function getCachedPrompt(key: string, fallback: string): string {
+  if (typeof PROMPT_CACHE[key] === "string") {
+    return PROMPT_CACHE[key];
+  }
+  return fallback.slice(0, 1200);
 }
-- Supply exactly five "Your Action Tips" (one motivational sentence each) inside report_level.action_tips.
-- Keep "section_title" identical to the requested section name.
-- Hold total word count per section (all fields) between 400 and 600 words.
-- Do not add markdown, emojis, or extra keys. When emphasizing, optionally wrap phrases in <<highlight>> ... <</highlight>> (maximum two per card).
-- Never recycle phrasing between cards or sections—each angle must feel fresh and context-aware.
-- Personalize every insight with onboarding answers (stage, capacity, audience size, platforms, offers).
+
+function buildSystemPrompt(): string {
+  return `
+You are a world-class marketing strategist who builds 3-level learning reports.
+
+──────────────────────────────
+REFERENCE MATERIALS
+──────────────────────────────
+[CORE_PROMPT]
+${getCachedPrompt("CORE_PROMPT", CORE_PROMPT)}
+
+[RAG_RULES]
+${getCachedPrompt("RAG_RULES", RAG_RULES)}
+
+[USER_SEGMENTATION_RULES]
+${getCachedPrompt("USER_SEGMENTATION_RULES", USER_SEGMENTATION_RULES)}
+
+[COMMUNICATION_STYLE_RULES]
+${getCachedPrompt("COMMUNICATION_STYLE_RULES", COMMUNICATION_STYLE_RULES)}
+
+[THREE_LEVEL_ARCHITECTURE_PROMPT]
+${getCachedPrompt("THREE_LEVEL_ARCHITECTURE_PROMPT", THREE_LEVEL_ARCHITECTURE_PROMPT)}
+
+[REPORT_CONTEXT]
+${getCachedPrompt("REPORT_CONTEXT", REPORT_CONTEXT)}
+
+──────────────────────────────
+OUTPUT SPEC
+──────────────────────────────
+Return ONLY valid JSON matching schema { section_title, report_level, learn_more_level, unlock_mastery_level }.
+Tone: smart friend, empathetic, strategic.
+400–600 words total.
+Report = WHY, Learn More = HOW, Mastery = STRATEGY.
+No markdown, no commentary.
 `;
+}
+
+export const SYSTEM_PROMPT = buildSystemPrompt();
+console.info(`[report] SYSTEM_PROMPT length: ${SYSTEM_PROMPT.length}`);
 
 /* ---------------------------------------------
    SANITIZATION HELPERS
@@ -503,8 +407,6 @@ OUTPUT RULES
 function buildBaseReport(metrics: FameMetrics): ReportPlan {
   return { ...metrics, sections: [] };
 }
-
-const PLACEHOLDER_TEXT = "Content is generating...";
 
 const CANDIDATE_STRING_KEYS = ["text", "content", "value", "body", "summary", "description", "tip", "message"];
 
@@ -572,10 +474,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function sanitizeCardSet(
   input: unknown,
-  conceptualRoles: readonly string[],
+  expectedCount: number,
 ): ReportCard[] {
   const rawCards = Array.isArray(input) ? input : [];
-  return conceptualRoles.map((role, index) => {
+  return Array.from({ length: expectedCount }, (_, index) => {
     const candidate = rawCards[index];
     const candidateRecord = isRecord(candidate) ? candidate : undefined;
     const titleKeys = [
@@ -597,11 +499,10 @@ function sanitizeCardSet(
       "details",
     ];
     const aiTitleValue = extractStringValue(candidateRecord, titleKeys);
-    const sanitizedTitle = aiTitleValue.length ? aiTitleValue : role;
+    const sanitizedTitle = aiTitleValue.length ? aiTitleValue : `Insight ${index + 1}`;
     const contentSource = candidateRecord ?? candidate;
     const sanitizedContent = sanitizeContent(isRecord(contentSource) ? extractStringValue(contentSource, contentKeys) : contentSource);
     return {
-      conceptual_role: role,
       ai_generated_title: sanitizedTitle,
       content: sanitizedContent,
     };
@@ -613,7 +514,7 @@ function sanitizeReportLevel(input: unknown, fallbackTitle = "Report Level"): Re
   const title = typeof raw.title === "string" && raw.title.trim().length
     ? raw.title.trim()
     : fallbackTitle;
-  const cards = sanitizeCardSet(raw.cards, REPORT_LEVEL_CONCEPTUAL_ROLES);
+  const cards = sanitizeCardSet(raw.cards, REPORT_LEVEL_CARD_COUNT);
   const actionTips = sanitizeActionTips(raw.action_tips);
   return { title, cards, action_tips: actionTips };
 }
@@ -621,20 +522,19 @@ function sanitizeReportLevel(input: unknown, fallbackTitle = "Report Level"): Re
 function sanitizeLearningLevel(
   input: unknown,
   fallbackTitle: string,
-  titles: readonly string[],
+  expectedCount: number,
 ): LearningLevel {
   const raw = isRecord(input) ? input : {};
   const title = typeof raw.title === "string" && raw.title.trim().length
     ? raw.title.trim()
     : fallbackTitle;
-  const cards = sanitizeCardSet(raw.cards, titles);
+  const cards = sanitizeCardSet(raw.cards, expectedCount);
   return { title, cards };
 }
 
-function createPlaceholderCards(roles: readonly string[]): ReportCard[] {
-  return roles.map((role) => ({
-    conceptual_role: role,
-    ai_generated_title: role,
+function createPlaceholderCards(count: number): ReportCard[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ai_generated_title: `Insight ${index + 1}`,
     content: PLACEHOLDER_TEXT,
   }));
 }
@@ -645,16 +545,16 @@ function createEmptySectionPayload(sectionTitle: SectionTitle | string): ReportS
     section_title: normalizedTitle,
     report_level: {
       title: "Report Level",
-      cards: createPlaceholderCards(REPORT_LEVEL_CONCEPTUAL_ROLES),
+      cards: createPlaceholderCards(REPORT_LEVEL_CARD_COUNT),
       action_tips: Array(5).fill("Content is generating..."),
     },
     learn_more_level: {
       title: "Learn More",
-      cards: createPlaceholderCards(LEARN_MORE_LEVEL_CONCEPTUAL_ROLES),
+      cards: createPlaceholderCards(LEARN_MORE_LEVEL_CARD_COUNT),
     },
     unlock_mastery_level: {
       title: "Unlock Mastery",
-      cards: createPlaceholderCards(UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES),
+      cards: createPlaceholderCards(UNLOCK_MASTERY_LEVEL_CARD_COUNT),
     },
   };
 }
@@ -668,6 +568,292 @@ function extractJsonBlock(text: string): string | null {
   return start === -1 || end === -1 || end <= start ? null : text.slice(start, end + 1);
 }
 
+function sanitizeJsonString(payload: string): string {
+  return payload
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+}
+
+function normalizeSmartQuotes(input: string): string {
+  return input.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+}
+
+function stripTrailingCommas(input: string): string {
+  return input.replace(/,\s*(\}|\])/g, "$1");
+}
+
+function convertSingleQuotedKeys(input: string): string {
+  return input.replace(/([{,]\s*)'([^'"\r\n]+?)'\s*:/g, (match, prefix, key) => {
+    const escapedKey = key.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return `${prefix}"${escapedKey}":`;
+  });
+}
+
+function escapeBareNewlines(input: string): string {
+  let result = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    if (char === '"' && !escape) {
+      inString = !inString;
+    }
+    if (inString && (char === "\n" || char === "\r")) {
+      if (char === "\r" && input[i + 1] === "\n") {
+        i += 1;
+      }
+      result += "\\n";
+      escape = false;
+      continue;
+    }
+    if (char !== "\r") {
+      result += char;
+    }
+    escape = char === "\\" && !escape;
+  }
+  return result;
+}
+
+function escapeDanglingQuotes(input: string): string {
+  let result = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    if (char === '"' && !escape) {
+      if (!inString) {
+        inString = true;
+        result += char;
+      } else {
+        let j = i + 1;
+        while (j < input.length && /\s/.test(input[j])) j += 1;
+        const next = j < input.length ? input[j] : undefined;
+        if (next === "," || next === "}" || next === "]" || next === ":" || next === undefined) {
+          inString = false;
+          result += char;
+        } else {
+          result += '\\"';
+          continue;
+        }
+      }
+      escape = false;
+      continue;
+    }
+    result += char;
+    escape = !escape && char === "\\";
+  }
+  return result;
+}
+
+function quotePropertyAtPosition(input: string, position: number): string | null {
+  if (Number.isNaN(position) || position < 0 || position >= input.length) {
+    return null;
+  }
+  let start = position;
+  while (start < input.length && /\s/.test(input[start])) start += 1;
+  if (start >= input.length) return null;
+  if (input[start] === '"') return null;
+  let end = start;
+  while (end < input.length && !/[\s:]/.test(input[end])) end += 1;
+  if (end <= start) return null;
+  let colonIndex = end;
+  while (colonIndex < input.length && /\s/.test(input[colonIndex])) colonIndex += 1;
+  if (colonIndex >= input.length || input[colonIndex] !== ":") return null;
+  const key = input.slice(start, end);
+  if (!/^[\w\-]+$/.test(key)) return null;
+  const escaped = key.replace(/"/g, '\\"');
+  return `${input.slice(0, start)}"${escaped}"${input.slice(colonIndex)}`;
+}
+
+function normalizeBracketPairs(input: string): string {
+  const stack: string[] = [];
+  let result = "";
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    result += char;
+
+    if (char === '"' && !escape) {
+      inString = !inString;
+    }
+    escape = !escape && char === "\\";
+    if (inString) continue;
+
+    if (char === "{" || char === "[") {
+      stack.push(char);
+      continue;
+    }
+
+    if (char === "}" || char === "]") {
+      const expected = char === "}" ? "{" : "[";
+      if (stack.length === 0) {
+        result = result.slice(0, -1);
+        continue;
+      }
+      while (stack.length && stack[stack.length - 1] !== expected) {
+        const missing = stack.pop();
+        if (!missing) break;
+        result += missing === "{" ? "}" : "]";
+      }
+      if (!stack.length) {
+        result = result.slice(0, -1);
+        continue;
+      }
+      stack.pop();
+    }
+  }
+
+  while (stack.length) {
+    const missing = stack.pop();
+    result += missing === "{" ? "}" : "]";
+  }
+
+  return result;
+}
+
+function reduceDuplicateCommas(input: string): string {
+  return input.replace(/,,+/g, ",");
+}
+
+function quoteUnquotedKeys(input: string): string {
+  return input.replace(/([{,]\s*)([A-Za-z0-9_\-]+)\s*:/g, (match, prefix, key) => {
+    if (key.startsWith('"')) return match;
+    return `${prefix}"${key}":`;
+  });
+}
+
+function insertMissingCommas(input: string): string {
+  let result = "";
+  let inString = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    const prev = input[i - 1];
+
+    result += char;
+
+    if (char === '"' && prev !== "\\") {
+      inString = !inString;
+      if (!inString) {
+        let j = i + 1;
+        while (j < input.length && /\s/.test(input[j])) j += 1;
+        if (j < input.length && input[j] === '"') {
+          result += ",";
+        }
+      }
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === "}") {
+      let j = i + 1;
+      while (j < input.length && /\s/.test(input[j])) j += 1;
+      if (j < input.length && input[j] === "{") {
+        result += ",";
+      }
+    }
+  }
+
+  return result;
+}
+
+function parseErrorPosition(message: string | undefined): number | null {
+  if (!message) return null;
+  const match = message.match(/position\s+(\d+)/i);
+  if (!match) return null;
+  const value = Number.parseInt(match[1], 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function repairJsonFromError(attempt: string, error: unknown): string | null {
+  if (!(error instanceof SyntaxError)) return null;
+  const position = parseErrorPosition(error.message);
+  if (position == null || position <= 0 || position >= attempt.length) {
+    return null;
+  }
+  const message = error.message ?? "";
+  if (
+    /Expected\s+','\s+or\s+'\]/i.test(message) ||
+    /Expected\s+','\s+or\s+'\}/i.test(message) ||
+    /Unexpected string/i.test(message)
+  ) {
+    return `${attempt.slice(0, position)},${attempt.slice(position)}`;
+  }
+  if (/double-quoted property name/i.test(message)) {
+    return quotePropertyAtPosition(attempt, position);
+  }
+  return null;
+}
+
+function parseSectionJson(text: string): Partial<ReportSection> {
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  const addAttempt = (value: string | null | undefined) => {
+    if (!value) return;
+    const trimmed = value.trim();
+    if (!trimmed.length) return;
+    if (seen.has(trimmed)) return;
+    seen.add(trimmed);
+    queue.push(trimmed);
+  };
+
+  const sanitized = sanitizeJsonString(text);
+  addAttempt(sanitized);
+
+  const normalizedQuotes = normalizeSmartQuotes(sanitized);
+  addAttempt(normalizedQuotes);
+
+  const singleQuotedKeys = convertSingleQuotedKeys(normalizedQuotes);
+  addAttempt(singleQuotedKeys);
+
+  const noTrailingCommas = stripTrailingCommas(singleQuotedKeys);
+  addAttempt(noTrailingCommas);
+
+  const dedupedCommas = reduceDuplicateCommas(noTrailingCommas);
+  addAttempt(dedupedCommas);
+
+  const quotedKeys = quoteUnquotedKeys(dedupedCommas);
+  addAttempt(quotedKeys);
+
+  const insertedCommas = insertMissingCommas(quotedKeys);
+  addAttempt(insertedCommas);
+
+  const escapedNewlines = escapeBareNewlines(insertedCommas);
+  addAttempt(escapedNewlines);
+
+  const escapedQuotes = escapeDanglingQuotes(escapedNewlines);
+  addAttempt(escapedQuotes);
+
+  const normalizedBrackets = normalizeBracketPairs(escapedQuotes);
+  addAttempt(normalizedBrackets);
+
+  let lastError: unknown;
+  while (queue.length) {
+    const attempt = queue.shift()!;
+    try {
+      return JSON.parse(attempt) as Partial<ReportSection>;
+    } catch (error) {
+      lastError = error;
+      const repaired = repairJsonFromError(attempt, error);
+      if (repaired) {
+        addAttempt(repaired);
+        continue;
+      }
+      try {
+        const repairedJson = jsonrepair(attempt);
+        return JSON.parse(repairedJson) as Partial<ReportSection>;
+      } catch (repairError) {
+        lastError = repairError;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Failed to parse section JSON");
+}
+
 function hasMeaningfulContent(cards: ReportCard[]): boolean {
   return cards.some((card) => card.content.trim().toLowerCase() !== "content is generating...");
 }
@@ -676,9 +862,9 @@ function isSectionComplete(section: ReportSection | undefined | null): boolean {
   if (!section) return false;
   const { report_level: reportLevel, learn_more_level: learnMoreLevel, unlock_mastery_level: masteryLevel } = section;
   if (!reportLevel || !learnMoreLevel || !masteryLevel) return false;
-  if (reportLevel.cards.length !== REPORT_LEVEL_CONCEPTUAL_ROLES.length) return false;
-  if (learnMoreLevel.cards.length !== LEARN_MORE_LEVEL_CONCEPTUAL_ROLES.length) return false;
-  if (masteryLevel.cards.length !== UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES.length) return false;
+  if (reportLevel.cards.length !== REPORT_LEVEL_CARD_COUNT) return false;
+  if (learnMoreLevel.cards.length !== LEARN_MORE_LEVEL_CARD_COUNT) return false;
+  if (masteryLevel.cards.length !== UNLOCK_MASTERY_LEVEL_CARD_COUNT) return false;
   if (!Array.isArray(reportLevel.action_tips) || reportLevel.action_tips.length < 5) return false;
   return (
     hasMeaningfulContent(reportLevel.cards) &&
@@ -711,7 +897,11 @@ async function fetchExistingPlan(admin: SupabaseAdminClient, userId: string): Pr
   if (error) throw error;
   if (!data?.plan) return null;
   const plan = data.plan as ReportPlan;
-  if (!Array.isArray(plan.sections)) plan.sections = [];
+  if (!Array.isArray(plan.sections)) {
+    plan.sections = [];
+  } else {
+    plan.sections = plan.sections.map((section) => normalizeReportSection(section));
+  }
   return plan;
 }
 
@@ -721,17 +911,23 @@ async function fetchExistingPlan(admin: SupabaseAdminClient, userId: string): Pr
 function buildSectionPrompt(title: SectionTitle, answers: Record<string, unknown>, metrics: FameMetrics): string {
   const serializedAnswers = JSON.stringify(answers, null, 2);
   const serializedMetrics = JSON.stringify(metrics, null, 2);
+  const sectionFocus = SECTION_FOCUS_PROMPTS[title] ?? "";
   const monetizationDirective =
-    title === "Monetization"
+    title === "Monetization Strategies"
       ? `
 Specific requirements for this section:
 - Translate the onboarding answers (niche, audience size, growth stage, constraints, revenue goals) into monetization paths.
-- Provide distinct card topics covering revenue blockers, mindset shifts, and diversified income systems.
-- Every action tip, action step, and advanced move should suggest a concrete monetization experiment (offer idea, partnership, pricing test, funnel) the user can try immediately.
-- Surface at least one recurring/compounding offer (membership, subscription, retainer) and one premium/high-ticket option tied to their niche.
+- Mirror the UX structure: cards such as "Revenue Roadblocks", "The Money Mindset", "Multiple Revenue Streams", plus two cards that deliver platform-specific offer ideas and validation loops.
+- Report-level action tips must cover: launch a $7–$27 digital product, activate 5 affiliate partnerships, test a membership or Patreon tier, pre-sell a signature workshop/course, and build a monetization tracking spreadsheet.
+- Learn-more content should include a paragraph on why monetization serves the audience, five action steps (audit current income, survey demand, research affiliates, outline a product, set up tracking), and three mindset tips (1,000 engaged fans is enough; selling = serving; passive income = stability).
+- Unlock-mastery cards need to introduce the Revenue Diversification Matrix, Value Ladder strategy, pricing psychology, evergreen funnels, premium positioning, troubleshooting for low sales/mindset issues, and long-term planning (multiple revenue engines, product ecosystems, exit optionality).
+- Every recommendation should reference the user’s monetization stage (Foundation, Testing, Optimization, Expansion) and the platforms/offers they already use.
 `
       : "";
   return `Generate the section titled "${title}".
+Section-specific focus:
+${sectionFocus}
+
 User onboarding responses:
 ${serializedAnswers}
 
@@ -740,72 +936,177 @@ ${serializedMetrics}
 
 ${monetizationDirective}
 
+STRICT COMPLETENESS RULES
+- Report Level MUST include exactly 5 cards AND 5 detailed action_tips.
+- Learn More Level MUST include exactly 6 cards.
+- Unlock Mastery Level MUST include exactly 6 cards.
+- Every card must be 80-120 words of complete prose (no placeholders, no fragments). Each card MUST be a JSON object with "ai_generated_title" and "content" keys—never raw strings.
+- Every action tip must be a concrete, single-sentence directive (no placeholders).
+- No card or action tip may restate the same recommendation as another; every insight must be uniquely worded and cover a distinct angle.
+- Never omit cards or tips; infer specifics when needed rather than leaving blanks.
+
+${SECTION_OUTPUT_TEMPLATE}
+
 Return JSON only using the structure defined in SYSTEM_PROMPT.`;
 }
 
 async function generateSection(admin: SupabaseAdminClient, userId: string, title: SectionTitle, answers: Record<string, unknown>, metrics: FameMetrics): Promise<ReportSection> {
-  const prompt = buildSectionPrompt(title, answers, metrics);
+  const basePrompt = buildSectionPrompt(title, answers, metrics);
+  const sectionStart = Date.now();
 
   if (!isClaudeAvailable && !isGeminiAvailable) {
     await logReportEvent(admin, userId, "llm_unavailable", { section: title });
     return createEmptySectionPayload(title);
   }
 
-  const tryClaude = async () => {
+  type ProviderExecutor = (overridePrompt?: string) => Promise<{ text: string; provider: "claude" }>;
+
+  const tryClaude = async (): Promise<ProviderExecutor | null> => {
     if (!isClaudeAvailable) return null;
-    const text = await callClaudeJson({
-      system: SYSTEM_PROMPT,
-      prompt,
-      maxTokens: 2500,
-      responseFormat: CLAUDE_RESPONSE_FORMAT,
-    });
-    return { text, provider: "claude" as const };
+    const execute: ProviderExecutor = async (overridePrompt) => {
+      const text = await callClaudeJson({
+        system: SYSTEM_PROMPT,
+        prompt: overridePrompt ?? basePrompt,
+        maxTokens: 5800,
+        temperature: 0.3,
+      });
+      return { text, provider: "claude" as const };
+    };
+    return execute;
   };
 
-  const tryGemini = async () => {
+  const tryGemini = async (): Promise<ProviderExecutor | null> => {
     if (!isGeminiAvailable) return null;
-    const text = await callGeminiJson({ prompt: `${SYSTEM_PROMPT}\n\n${prompt}`, maxTokens: 2500 });
-    return { text, provider: "gemini" as const };
+    return null;
   };
 
   const providers = [tryClaude, tryGemini];
   const errors: unknown[] = [];
+  const MAX_PROVIDER_ATTEMPTS = 5;
 
   for (const provider of providers) {
-    try {
-      const result = await provider();
-      if (!result) continue;
-      const json = extractJsonBlock(result.text) ?? result.text;
-      const parsed = JSON.parse(json) as Partial<ReportSection>;
-      const sectionTitle = typeof parsed.section_title === "string" && parsed.section_title.trim().length
-        ? parsed.section_title.trim()
-        : title;
-      const reportLevel = sanitizeReportLevel(parsed.report_level, "Report Level");
-      const learnMoreLevel = sanitizeLearningLevel(
-        parsed.learn_more_level,
-        "Learn More",
-        LEARN_MORE_LEVEL_CONCEPTUAL_ROLES,
-      );
-      const unlockMasteryLevel = sanitizeLearningLevel(
-        parsed.unlock_mastery_level,
-        "Unlock Mastery",
-        UNLOCK_MASTERY_LEVEL_CONCEPTUAL_ROLES,
-      );
-      const payload = {
-        section_title: sectionTitle,
-        report_level: reportLevel,
-        learn_more_level: learnMoreLevel,
-        unlock_mastery_level: unlockMasteryLevel,
-      };
-      console.info(`[report] section "${title}" generated via ${result.provider}`);
-      return payload;
-    } catch (error) {
-      errors.push(error);
-      await logReportEvent(admin, userId, "section_generation_error", { section: title, message: String(error) });
+    const executor = await provider();
+    if (!executor) continue;
+    const providerName = provider === tryClaude ? "claude" : "gemini";
+    let attemptPrompt = basePrompt;
+    for (let attempt = 1; attempt <= MAX_PROVIDER_ATTEMPTS; attempt += 1) {
+      let rawText: string | null = null;
+      try {
+        console.info(`[report] section "${title}" attempt ${attempt} requesting ${providerName}`);
+        const result = await executor(attempt === 1 ? basePrompt : attemptPrompt);
+        rawText = result.text;
+        const json = extractJsonBlock(rawText) ?? rawText;
+        const parsed = parseSectionJson(json);
+        const sectionTitle = typeof parsed.section_title === "string" && parsed.section_title.trim().length
+          ? parsed.section_title.trim()
+          : title;
+        const normalizedReportCards = normalizeRawCardArray(
+          (parsed.report_level as { cards?: unknown })?.cards,
+          `${sectionTitle} Report`,
+        );
+        const normalizedLearnCards = normalizeRawCardArray(
+          (parsed.learn_more_level as { cards?: unknown })?.cards,
+          `${sectionTitle} Learn More`,
+        );
+        const normalizedMasteryCards = normalizeRawCardArray(
+          (parsed.unlock_mastery_level as { cards?: unknown })?.cards,
+          `${sectionTitle} Mastery`,
+        );
+        if (parsed.report_level) {
+          (parsed.report_level as ReportLevel).cards = normalizedReportCards;
+        }
+        if (parsed.learn_more_level) {
+          (parsed.learn_more_level as LearningLevel).cards = normalizedLearnCards;
+        }
+        if (parsed.unlock_mastery_level) {
+          (parsed.unlock_mastery_level as LearningLevel).cards = normalizedMasteryCards;
+        }
+        const rawValidation = validateRawSectionContent({
+          section_title: sectionTitle,
+          report_level: parsed.report_level as ReportLevel,
+          learn_more_level: parsed.learn_more_level as LearningLevel,
+          unlock_mastery_level: parsed.unlock_mastery_level as LearningLevel,
+        });
+        if (!rawValidation.valid) {
+          console.warn(
+            `[report] section "${title}" via ${result.provider} attempt ${attempt} incomplete (${rawValidation.reason}); retrying`,
+          );
+          const invalidSnippet = json.slice(0, 1500);
+          attemptPrompt = `${basePrompt}
+
+IMPORTANT: Your previous response was incomplete (${rawValidation.reason}).
+- Report Level must include 5 cards and 5 fully written action tips.
+- Learn More Level must include 6 cards.
+- Unlock Mastery Level must include 6 cards.
+- Every card needs unique content (no placeholders) and complete sentences (80-120 words).
+- Rewrite the entire JSON object from scratch, following the schema exactly.
+
+--- Invalid JSON snippet ---
+${invalidSnippet}
+--- End snippet ---
+`;
+          continue;
+        }
+        const reportLevel = sanitizeReportLevel(parsed.report_level, "Report Level");
+        const learnMoreLevel = sanitizeLearningLevel(
+          parsed.learn_more_level,
+          "Learn More",
+          LEARN_MORE_LEVEL_CARD_COUNT,
+        );
+        const unlockMasteryLevel = sanitizeLearningLevel(
+          parsed.unlock_mastery_level,
+          "Unlock Mastery",
+          UNLOCK_MASTERY_LEVEL_CARD_COUNT,
+        );
+        const payload = normalizeReportSection({
+          section_title: sectionTitle,
+          report_level: reportLevel,
+          learn_more_level: learnMoreLevel,
+          unlock_mastery_level: unlockMasteryLevel,
+        });
+        const sectionDuration = ((Date.now() - sectionStart) / 1000).toFixed(1);
+        console.info(
+          `[report] section "${title}" generated via ${result.provider} (attempt ${attempt}) in ${sectionDuration}s`,
+        );
+        return payload;
+      } catch (error) {
+        errors.push(error);
+        await logReportEvent(admin, userId, "section_generation_error", {
+          section: title,
+          message: String(error),
+        });
+        if (error instanceof SyntaxError) {
+          const sanitized = sanitizeJsonString(extractJsonBlock(rawText ?? "") ?? rawText ?? "");
+          const snippet = sanitized.slice(0, 1500);
+          console.warn(`[report] failed to parse section "${title}" attempt ${attempt}`, {
+            provider: providerName,
+            message: error.message,
+            snippet,
+          });
+          attemptPrompt = `${basePrompt}
+
+IMPORTANT: Your previous response was INVALID JSON (${error.message}).
+- Output ONLY valid JSON matching the schema example.
+- Arrays must have exact card counts (Report 5, Learn More 6, Unlock Mastery 6).
+- Use double quotes around every key/value. No trailing commas.
+- Each "ai_generated_title" must be unique and should feel like a real headline (never reuse placeholder phrases).
+- Rewrite from scratch; do not copy the malformed structure below.
+
+--- Invalid payload snippet ---
+${snippet}
+--- End snippet ---
+`;
+        }
+        continue;
+      }
     }
   }
 
-  console.warn(`[report] section "${title}" fell back to placeholder after errors`, errors);
+  const failedDuration = ((Date.now() - sectionStart) / 1000).toFixed(1);
+  console.warn(
+    `[report] section "${title}" fell back to placeholder after errors in ${failedDuration}s`,
+    errors,
+  );
   await logReportEvent(admin, userId, "section_generation_failed", { section: title, errors });
   return createEmptySectionPayload(title);
 }
@@ -829,6 +1130,7 @@ function countCompletedSections(sections: ReportSection[]): number {
 
 export async function generateReportForUser(userId: string): Promise<ReportPlan> {
   if (!userId) throw new Error("User ID is required to generate report");
+  const reportStart = Date.now();
 
   const admin = supabaseAdmin();
   const { data: onboarding, error: onboardingError } = await admin.from("onboarding_sessions").select("answers").eq("user_id", userId).maybeSingle();
@@ -844,17 +1146,40 @@ export async function generateReportForUser(userId: string): Promise<ReportPlan>
   await logReportEvent(admin, userId, "report_generation_started", { sections_ready: countCompletedSections(report.sections) });
   await saveReport(admin, userId, report);
 
-  for (const title of SECTION_TITLES) {
-    const existing = report.sections.find((s) => s.section_title === title);
-    if (isSectionComplete(existing)) continue;
+  const MAX_GENERATION_ROUNDS = 3;
+  for (let round = 1; round <= MAX_GENERATION_ROUNDS; round += 1) {
+    for (const title of SECTION_TITLES) {
+      const existing = report.sections.find((s) => s.section_title === title);
+      if (isSectionComplete(existing)) continue;
 
-    await logReportEvent(admin, userId, "section_generation_started", { section: title });
-    const generated = await generateSection(admin, userId, title, answers, metrics);
-    report.sections = ensureSectionOrder(report.sections.map((s) => (s.section_title === title ? generated : s)));
-    await saveReport(admin, userId, report);
-    await logReportEvent(admin, userId, "section_generation_completed", { section: title, completed_sections: countCompletedSections(report.sections) });
+      await logReportEvent(admin, userId, "section_generation_started", { section: title, round });
+      const generated = await generateSection(admin, userId, title, answers, metrics);
+      report.sections = ensureSectionOrder(report.sections.map((s) => (s.section_title === title ? generated : s)));
+      await saveReport(admin, userId, report);
+      await logReportEvent(admin, userId, "section_generation_completed", {
+        section: title,
+        round,
+        completed_sections: countCompletedSections(report.sections),
+      });
+    }
+
+    if (report.sections.every(isSectionComplete)) {
+      break;
+    }
   }
 
-  await logReportEvent(admin, userId, "report_generation_completed", { sections_ready: countCompletedSections(report.sections) });
+  const completed = countCompletedSections(report.sections);
+  if (completed === SECTION_TITLES.length) {
+    await logReportEvent(admin, userId, "report_generation_completed", { sections_ready: completed });
+  } else {
+    await logReportEvent(admin, userId, "report_generation_incomplete", {
+      sections_ready: completed,
+      missing: SECTION_TITLES.length - completed,
+    });
+  }
+  const totalDuration = ((Date.now() - reportStart) / 1000).toFixed(1);
+  console.info(
+    `[report] generation finished in ${totalDuration}s (${completed}/${SECTION_TITLES.length} sections ready)`,
+  );
   return report;
 }

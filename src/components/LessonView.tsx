@@ -25,7 +25,6 @@ function LessonCard({ card, accentColor, index }: { card: SectionCard; accentCol
       className="p-5 rounded-2xl border bg-background/90 shadow-sm"
       style={{ borderColor: `${accentColor}33` }}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground mb-1">{card.conceptualRole}</p>
       <h4 className="text-sm font-semibold mb-2" style={{ color: accentColor }}>{card.aiTitle}</h4>
       <p className="text-sm leading-relaxed text-foreground/85">
         {renderHighlightedText(card.content, accentColor)}
@@ -161,9 +160,9 @@ export function LessonView({ isOpen, onClose, section }: LessonViewProps) {
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {block.cards.map((card, idx) => (
-                        <LessonCard key={`${blockIdx}-${card.conceptualRole}-${idx}`} card={card} accentColor={accentColor} index={idx} />
-                      ))}
+                        {block.cards.map((card, idx) => (
+                          <LessonCard key={`${blockIdx}-${card.aiTitle}-${idx}`} card={card} accentColor={accentColor} index={idx} />
+                        ))}
                     </div>
                   </div>
                 ))}

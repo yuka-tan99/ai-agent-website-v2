@@ -25,7 +25,7 @@ export function renderHighlightedText(
           <span
             key={`hl-${index}`}
             className="font-semibold"
-            style={{ color: accentColor }}
+            style={{ color: '#9932CC' }}
           >
             {token}
           </span>

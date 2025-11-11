@@ -87,7 +87,39 @@ export async function GET(req: NextRequest) {
   }
 
   if (process.env.DEBUG_PLAN === "true" && Array.isArray(planPayload) && planPayload.length) {
-    console.info("[report-plan] sample section", JSON.stringify(planPayload[0]?.report_level ?? {}, null, 2));
+    const PLACEHOLDER = "content is generating...";
+    const sectionStatuses = planPayload.map((section, index) => {
+      const title =
+        typeof (section as { section_title?: string })?.section_title === "string" &&
+        (section as { section_title?: string }).section_title?.trim().length
+          ? (section as { section_title?: string }).section_title
+          : `Section ${index + 1}`;
+      const cards = [
+        ...(((section as any)?.report_level?.cards as Array<{ content?: string }>) ?? []),
+        ...(((section as any)?.learn_more_level?.cards as Array<{ content?: string }>) ?? []),
+        ...(((section as any)?.unlock_mastery_level?.cards as Array<{ content?: string }>) ?? []),
+      ];
+      const ready = cards.every(
+        (card) =>
+          typeof card?.content === "string" &&
+          card.content.trim().length > 0 &&
+          card.content.trim().toLowerCase() !== PLACEHOLDER,
+      );
+      return { title, ready };
+    });
+    const readyCount = sectionStatuses.filter((status) => status.ready).length;
+    if (readyCount === sectionStatuses.length) {
+      console.info("[report-plan] section readiness", {
+        ready: readyCount,
+        total: sectionStatuses.length,
+        sections: sectionStatuses,
+      });
+    } else {
+      console.info("[report-plan] section readiness", {
+        ready: readyCount,
+        total: sectionStatuses.length,
+      });
+    }
   }
 
   return NextResponse.json({ plan: planPayload, fameScore, hasOnboarding });

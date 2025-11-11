@@ -19,8 +19,8 @@ export function ActionPriorityMatrix() {
     { title: 'Define content calendar', impact: 'high', effort: 'medium', section: 'Section 6' },
     { title: 'Set up idea bank', impact: 'medium', effort: 'low', section: 'Section 6' },
     { title: 'Write brand story', impact: 'high', effort: 'medium', section: 'Section 4' },
-    { title: 'Map 3 new revenue streams', impact: 'high', effort: 'medium', section: 'Section 8' },
-    { title: 'Study 3 creators in niche', impact: 'medium', effort: 'medium', section: 'Section 9' },
+    { title: 'Map 3 new revenue streams', impact: 'high', effort: 'medium', section: 'Section 9' },
+    { title: 'Study 3 creators in niche', impact: 'medium', effort: 'medium', section: 'Section 8' },
     { title: 'Set posting boundaries', impact: 'medium', effort: 'low', section: 'Section 7' }
   ];
 

@@ -12,7 +12,6 @@ export type CardIconKey =
   | 'FolderKanban';
 
 export interface SectionCard {
-  conceptualRole: string;
   aiTitle: string;
   content: string;
   icon: CardIconKey;

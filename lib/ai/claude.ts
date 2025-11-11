@@ -6,8 +6,8 @@ const anthropicModel =
   process.env.ANTHROPIC_MODEL ??
   "claude-3-7-sonnet-20250219";
 
-const MAX_TOKENS = 3000;
-const TIMEOUT_MS = 60_000;
+const MAX_TOKENS = 6000;
+const TIMEOUT_MS = 600_000;
 const RETRIES = 3;
 
 const anthropicClient = anthropicApiKey
@@ -60,6 +60,7 @@ export async function callClaudeJson({
           model: anthropicModel,
           max_tokens: Math.min(maxTokens ?? MAX_TOKENS, MAX_TOKENS),
           temperature,
+          ...(responseFormat ? { response_format: responseFormat } : {}),
           system,
           messages: [
             {

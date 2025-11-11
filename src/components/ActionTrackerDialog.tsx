@@ -596,67 +596,67 @@ const defaultActions: ActionItem[] = [
     completed: false
   },
 
-  // SECTION 8: Monetization Strategies
+  // SECTION 8: Advanced Marketing Types
   {
     id: 'action-8-1',
-    title: 'Launch a starter digital offer',
-    description: 'Create and publish a $7-27 guide, template, or resource that solves a recurring audience problem',
-    section: 'Section 8: Monetization Strategies',
-    sectionNumber: 8,
-    priority: 'major',
-    estimatedTime: '3 hours',
-    completed: false
-  },
-  {
-    id: 'action-8-2',
-    title: 'Activate 5 affiliate partnerships',
-    description: 'List products you genuinely recommend, join their programs, and add links to your bio and pinned comments',
-    section: 'Section 8: Monetization Strategies',
-    sectionNumber: 8,
-    priority: 'quick-win',
-    estimatedTime: '90 mins',
-    completed: false
-  },
-  {
-    id: 'action-8-3',
-    title: 'Build monetization dashboard',
-    description: 'Set up a tracking sheet to monitor income streams and ensure no single source exceeds 40% of revenue',
-    section: 'Section 8: Monetization Strategies',
-    sectionNumber: 8,
-    priority: 'fill-in',
-    estimatedTime: '60 mins',
-    completed: false
-  },
-
-  // SECTION 9: Advanced Marketing Types
-  {
-    id: 'action-9-1',
     title: 'Create success swipe file',
     description: 'Analyze top 10 posts from 5 successful creators in your niche, document patterns',
-    section: 'Section 9: Advanced Marketing',
-    sectionNumber: 9,
+    section: 'Section 8: Advanced Marketing',
+    sectionNumber: 8,
     priority: 'major',
     estimatedTime: '2 hours',
     completed: false
   },
   {
-    id: 'action-9-2',
+    id: 'action-8-2',
     title: 'Test strategic trend participation',
     description: 'Create your unique spin on one trending format adapted to your niche',
-    section: 'Section 9: Advanced Marketing',
-    sectionNumber: 9,
+    section: 'Section 8: Advanced Marketing',
+    sectionNumber: 8,
     priority: 'fill-in',
     estimatedTime: '45 mins',
     completed: false
   },
   {
-    id: 'action-9-3',
+    id: 'action-8-3',
     title: 'Study one viral post daily for 30 days',
     description: 'Screenshot, analyze why it went viral, brainstorm how to adapt to your content',
-    section: 'Section 9: Advanced Marketing',
-    sectionNumber: 9,
+    section: 'Section 8: Advanced Marketing',
+    sectionNumber: 8,
     priority: 'fill-in',
     estimatedTime: '15 mins/day',
+    completed: false
+  },
+
+  // SECTION 9: Monetization Strategies
+  {
+    id: 'action-9-1',
+    title: 'Launch a starter digital offer',
+    description: 'Create and publish a $7-27 guide, template, or resource that solves a recurring audience problem',
+    section: 'Section 9: Monetization Strategies',
+    sectionNumber: 9,
+    priority: 'major',
+    estimatedTime: '3 hours',
+    completed: false
+  },
+  {
+    id: 'action-9-2',
+    title: 'Activate 5 affiliate partnerships',
+    description: 'List products you genuinely recommend, join their programs, and add links to your bio and pinned comments',
+    section: 'Section 9: Monetization Strategies',
+    sectionNumber: 9,
+    priority: 'quick-win',
+    estimatedTime: '90 mins',
+    completed: false
+  },
+  {
+    id: 'action-9-3',
+    title: 'Build monetization dashboard',
+    description: 'Set up a tracking sheet to monitor income streams and ensure no single source exceeds 40% of revenue',
+    section: 'Section 9: Monetization Strategies',
+    sectionNumber: 9,
+    priority: 'fill-in',
+    estimatedTime: '60 mins',
     completed: false
   }
 ];

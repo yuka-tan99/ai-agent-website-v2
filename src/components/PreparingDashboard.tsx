@@ -5,12 +5,8 @@ import { Sparkles } from 'lucide-react';
 import { Progress } from './ui/progress';
 import { BecomeFamousLogo } from './BecomeFamousLogo';
 
-type PreparingStatus = 'idle' | 'pending' | 'in-progress' | 'complete';
-
 interface PreparingDashboardProps {
-  onComplete: () => void;
   progress: number;
-  status: PreparingStatus;
 }
 
 const motivationalMessages = [
@@ -24,7 +20,7 @@ const motivationalMessages = [
   "Finalizing your custom report..."
 ];
 
-export function PreparingDashboard({ onComplete, progress, status }: PreparingDashboardProps) {
+export function PreparingDashboard({ progress }: PreparingDashboardProps) {
   const [animatedProgress, setAnimatedProgress] = useState(progress);
   const [messageIndex, setMessageIndex] = useState(0);
 
@@ -43,16 +39,6 @@ export function PreparingDashboard({ onComplete, progress, status }: PreparingDa
     const clamped = Math.max(0, Math.min(progress, 100));
     setAnimatedProgress(clamped);
   }, [progress]);
-
-  useEffect(() => {
-    if (status !== 'complete') return;
-    const timeout = window.setTimeout(() => {
-      onComplete();
-    }, 600);
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [status, onComplete]);
 
   return (
     <div className="min-h-screen bg-white flex items-center justify-center px-6">

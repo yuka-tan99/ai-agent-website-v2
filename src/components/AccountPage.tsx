@@ -32,7 +32,8 @@ import {
   Video,
   Timer,
   Activity,
-  Loader2
+  Loader2,
+  Target
 } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
 import { Card } from './ui/card';
@@ -91,6 +92,7 @@ interface AccountPageProps {
   hasCompletedOnboarding?: boolean;
   hasPaid?: boolean;
   onBecomeFamousNow?: () => void;
+  onUnlockDashboard?: () => void;
   onLogout?: () => void;
   initialSection?: SectionId;
   profileName?: string;
@@ -110,6 +112,7 @@ export function AccountPage({
   hasCompletedOnboarding = true,
   hasPaid = true,
   onBecomeFamousNow,
+  onUnlockDashboard,
   onLogout,
   initialSection = 'usage',
   profileName: profileNameProp,
@@ -195,6 +198,16 @@ export function AccountPage({
       status ? ["active", "trialing", "past_due"].includes(status) : false,
     [],
   );
+  const showOnboardingPrompt = activeSection === 'report' && !hasCompletedOnboarding;
+  const showPaywallPrompt = activeSection === 'report' && hasCompletedOnboarding && !hasPaid;
+  
+  const handleUnlockClick = useCallback(() => {
+    if (onUnlockDashboard) {
+      onUnlockDashboard();
+    } else if (onBecomeFamousNow) {
+      onBecomeFamousNow();
+    }
+  }, [onUnlockDashboard, onBecomeFamousNow]);
   
   // Form states
   const [email, setEmail] = useState(profileEmailProp ?? '');
@@ -1150,8 +1163,8 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Onboarding Prompt - Show if not completed onboarding or not paid */}
-          {(!hasCompletedOnboarding || !hasPaid) && activeSection === 'report' && (
+          {/* Onboarding Prompt */}
+          {showOnboardingPrompt && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -1169,18 +1182,10 @@ useEffect(() => {
                   )}
                 </div>
                 
-                <h2 className="mb-4">
-                  {!hasCompletedOnboarding 
-                    ? "Complete Your Creator Profile"
-                    : "Unlock Your Personalized Dashboard"
-                  }
-                </h2>
+                <h2 className="mb-4">Complete Your Creator Profile</h2>
                 
                 <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
-                  {!hasCompletedOnboarding 
-                    ? "Answer a few questions about your creator journey so we can build a personalized growth plan tailored specifically to your goals and challenges."
-                    : "Your personalized report is ready! Get access to your Fame Score, growth projections, action priority matrix, and 8 strategic sections designed to accelerate your success."
-                  }
+                  Answer a few questions about your creator journey so we can build a personalized growth plan tailored specifically to your goals and challenges.
                 </p>
                 
                 <Button
@@ -1188,8 +1193,72 @@ useEffect(() => {
                   className="px-12 py-6 rounded-full"
                   style={{ backgroundColor: '#9E5DAB' }}
                 >
-                  {!hasCompletedOnboarding ? "Become Famous Now" : "Unlock Dashboard"}
+                  Become Famous Now
                 </Button>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Paywall Prompt */}
+          {showPaywallPrompt && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="mt-6"
+            >
+              <Card className="p-8 md:p-10 border-2 space-y-6" style={{ borderColor: '#9E5DAB' }}>
+                <div className="space-y-4">
+                  <h2 className="text-2xl md:text-3xl font-semibold">Your Personalized Report is Ready!</h2>
+                  <p className="text-muted-foreground">
+                    We've analyzed your responses and created a comprehensive growth plan tailored specifically for you.
+                  </p>
+                </div>
+
+                <div className="grid sm:grid-cols-3 gap-4">
+                  {[
+                    {
+                      icon: <Target className="w-5 h-5" />,
+                      title: '9 Personalized Action Sections',
+                      text: 'From identifying your main problem to advanced marketing strategies',
+                    },
+                    {
+                      icon: <Sparkles className="w-5 h-5" />,
+                      title: 'Fame Score & Growth Projections',
+                      text: 'Track your progress with real-time analytics and benchmarks',
+                    },
+                    {
+                      icon: <CreditCard className="w-5 h-5" />,
+                      title: 'Priority Action Matrix',
+                      text: 'Know exactly what to focus on for maximum impact',
+                    },
+                  ].map((feature) => (
+                    <div key={feature.title} className="p-4 rounded-2xl border bg-muted/40 space-y-2">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#EBD7DC' }}>
+                        <span style={{ color: '#9E5DAB' }}>{feature.icon}</span>
+                      </div>
+                      <p className="font-semibold text-sm">{feature.title}</p>
+                      <p className="text-xs text-muted-foreground">{feature.text}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  Your path to fame starts here. Join thousands of creators who've transformed their social media presence with data-driven insights and personalized strategies.
+                </p>
+
+                <div className="space-y-3">
+                  <Button
+                    onClick={handleUnlockClick}
+                    className="w-full py-6 rounded-full text-base font-semibold transition-all duration-200 hover:scale-105 active:scale-100"
+                    style={{ backgroundColor: '#9E5DAB' }}
+                  >
+                    Unlock Your Dashboard
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    One-time payment • Lifetime access • 30-day money-back guarantee
+                  </p>
+                </div>
               </Card>
             </motion.div>
           )}

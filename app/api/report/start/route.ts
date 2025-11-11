@@ -9,6 +9,8 @@ import {
 import { getProductByKey } from "@/lib/products";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
+const activeGenerations = new Set<string>();
+
 type StartReportPayload = {
   userId?: string;
 };
@@ -75,10 +77,24 @@ function isExistingPlanComplete(plan: unknown): boolean {
   return false;
 }
 
+function normalizeGrantProductKey(key: string | null | undefined): string | null {
+  switch (key) {
+    case "report":
+    case "bundle_with_plan":
+    case "bundle_with_plan_manual":
+      return "report_plan";
+    case "ai":
+      return "ai_subscription";
+    default:
+      return key ?? null;
+  }
+}
+
 function hasActiveReportAccess(grants: Array<Record<string, any>>): boolean {
   const now = Date.now();
   for (const grant of grants) {
-    const product = getProductByKey(grant.product_key);
+    const normalizedKey = normalizeGrantProductKey(grant.product_key);
+    const product = getProductByKey(normalizedKey);
     if (!product?.access?.report) continue;
 
     const starts = grant.access_starts_at
@@ -138,6 +154,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (!grants || !hasActiveReportAccess(grants)) {
+    console.warn("[report/start] report access missing or inactive", {
+      userId,
+      grants: grants?.map((grant) => ({
+        product_key: grant.product_key,
+        access_starts_at: grant.access_starts_at,
+        access_ends_at: grant.access_ends_at,
+      })),
+      now: new Date().toISOString(),
+    });
     return NextResponse.json(
       { error: "Report access not granted" },
       { status: 403 },
@@ -170,6 +195,16 @@ export async function POST(req: NextRequest) {
     console.info("[report/start] existing plan incomplete, regenerating", { userId });
   }
 
+  if (activeGenerations.has(userId)) {
+    console.info("[report/start] generation already active", { userId });
+    return NextResponse.json(
+      { status: "in-progress" },
+      { status: 202 },
+    );
+  }
+
+  activeGenerations.add(userId);
+
   try {
     console.info("[report/start] generating report", { userId });
     const report = await generateReportForUser(userId);
@@ -184,5 +219,7 @@ export async function POST(req: NextRequest) {
       { error: "Failed to generate report" },
       { status: 500 },
     );
+  } finally {
+    activeGenerations.delete(userId);
   }
 }

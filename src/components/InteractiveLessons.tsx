@@ -29,7 +29,6 @@ function LessonCard({ card, accentColor, index }: { card: SectionCard; accentCol
       className="p-4 rounded-2xl border bg-background/90"
       style={{ borderColor: `${accentColor}33` }}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground mb-1">{card.conceptualRole}</p>
       <h4 className="text-sm font-semibold mb-2" style={{ color: accentColor }}>{card.aiTitle}</h4>
       <p className="text-sm leading-relaxed">
         {renderHighlightedText(card.content, accentColor)}
@@ -185,9 +184,9 @@ export function InteractiveLessons({
                       <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Learn More Level</p>
                     </div>
                     <div className="grid grid-cols-1 gap-3">
-                      {currentSection.learnMoreLevel.cards.map((card, idx) => (
-                        <LessonCard key={`learn-${card.conceptualRole}-${idx}`} card={card} accentColor={accentColor} index={idx} />
-                      ))}
+                        {currentSection.learnMoreLevel.cards.map((card, idx) => (
+                          <LessonCard key={`learn-${card.aiTitle}-${idx}`} card={card} accentColor={accentColor} index={idx} />
+                        ))}
                     </div>
                   </div>
 
@@ -197,9 +196,9 @@ export function InteractiveLessons({
                       <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Unlock Mastery</p>
                     </div>
                     <div className="grid grid-cols-1 gap-3">
-                      {currentSection.unlockMasteryLevel.cards.map((card, idx) => (
-                        <LessonCard key={`mastery-${card.conceptualRole}-${idx}`} card={card} accentColor={accentColor} index={idx} />
-                      ))}
+                        {currentSection.unlockMasteryLevel.cards.map((card, idx) => (
+                          <LessonCard key={`mastery-${card.aiTitle}-${idx}`} card={card} accentColor={accentColor} index={idx} />
+                        ))}
                     </div>
                   </div>
                 </div>
